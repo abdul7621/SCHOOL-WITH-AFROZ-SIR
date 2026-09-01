@@ -17,6 +17,7 @@ import { ReportsCenter } from './pages/Reports/ReportsCenter';
 import { ParentDashboard } from './pages/ParentPortal/ParentDashboard';
 import { TenantsList } from './pages/SuperAdmin/TenantsList';
 import { SchoolPublicWebsite } from './pages/PublicWebsite/SchoolPublicWebsite';
+import { SaaSLandingPage } from './pages/SaaSLanding/SaaSLandingPage';
 
 export const App = () => {
   return (
@@ -24,6 +25,7 @@ export const App = () => {
       <TenantProvider>
         <AuthProvider>
           <Routes>
+            <Route path="/landing" element={<SaaSLandingPage />} />
             <Route path="/website" element={<SchoolPublicWebsite />} />
             <Route path="/login" element={<Login />} />
 
