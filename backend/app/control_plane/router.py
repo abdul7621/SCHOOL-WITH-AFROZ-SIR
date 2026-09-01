@@ -138,3 +138,20 @@ async def update_tenant_status(
         data={"id": tenant.id, "slug": tenant.slug, "status": tenant.status},
         message=f"Tenant '{tenant.slug}' status updated to {req.status}",
     )
+
+
+@router.post("/tenants/demo/seed")
+async def seed_demo_school_data(
+    tenant_slug: str = "sample",
+):
+    """
+    1-Click Live Demo Seeder: Populates the tenant database with 50+ students,
+    30 days attendance history, fee receipts, day-book vouchers, and homework.
+    """
+    from app.core.database import tenant_db_manager
+    from app.control_plane.demo_seeder import DemoSchoolSeeder
+
+    async with tenant_db_manager.get_session(tenant_slug) as session:
+        result = await DemoSchoolSeeder.seed_full_demo_school(session)
+        return success_response(data=result, message="Demo School successfully populated with live students, attendance, and finances!")
+

@@ -23,8 +23,8 @@ export const Sidebar = () => {
 
   const navItems = [
     { to: '/', label: 'Dashboard', icon: LayoutDashboard, show: true },
-    { to: '/students', label: 'Students & Admission', icon: Users, show: hasPermission('students:view') },
-    { to: '/academics', label: 'Classes & Sessions', icon: GraduationCap, show: hasPermission('academics:manage') },
+    { to: '/students', label: 'Students & 360° Profile', icon: Users, show: hasPermission('students:view') },
+    { to: '/academics/timetable', label: 'Timetable & Syllabus', icon: GraduationCap, show: true },
     { to: '/attendance', label: 'Daily Attendance', icon: CalendarCheck, show: hasPermission('attendance:view') },
     { to: '/fees', label: 'Fee Collection (FIFO)', icon: CreditCard, show: hasPermission('fees:view') },
     { to: '/exams', label: 'Exams & Marks', icon: BookOpen, show: hasPermission('academics:manage') },

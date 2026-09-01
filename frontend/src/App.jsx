@@ -18,6 +18,7 @@ import { ParentDashboard } from './pages/ParentPortal/ParentDashboard';
 import { TenantsList } from './pages/SuperAdmin/TenantsList';
 import { SchoolPublicWebsite } from './pages/PublicWebsite/SchoolPublicWebsite';
 import { SaaSLandingPage } from './pages/SaaSLanding/SaaSLandingPage';
+import { TimetableSyllabusView } from './pages/Academics/TimetableSyllabusView';
 
 export const App = () => {
   return (
@@ -34,6 +35,7 @@ export const App = () => {
               <Route index element={<Dashboard />} />
               <Route path="students" element={<StudentList />} />
               <Route path="students/admit" element={<StudentList />} />
+              <Route path="academics/timetable" element={<TimetableSyllabusView />} />
               <Route path="attendance" element={<AttendanceMarker />} />
               <Route path="fees" element={<FeeCollection />} />
               <Route path="exams" element={<MarksEntry />} />

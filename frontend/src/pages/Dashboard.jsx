@@ -5,167 +5,302 @@ import {
   CalendarCheck,
   CreditCard,
   DollarSign,
-  UserPlus,
-  ArrowUpRight,
   TrendingUp,
+  AlertTriangle,
+  BookOpen,
+  Clock,
+  CheckCircle2,
+  Printer,
+  Sparkles,
+  ArrowRight,
+  ShieldCheck,
+  Award,
 } from 'lucide-react';
-import api from '../api/client';
+import { StatCard } from '../components/StatCard';
 import { useAuth } from '../context/AuthContext';
 import { useTenant } from '../context/TenantContext';
-import { StatCard } from '../components/StatCard';
+import api from '../api/client';
 
 export const Dashboard = () => {
   const { user } = useAuth();
   const { settings } = useTenant();
-
-  const [stats, setStats] = useState({
-    totalStudents: 1420,
-    attendancePct: 94.2,
-    todayFeeCollection: 48500,
-    netCashflow: 36200,
-  });
-
-  const [dayBook, setDayBook] = useState(null);
-
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        const dbRes = await api.get('/finance/day-book');
-        if (dbRes.data) {
-          setDayBook(dbRes.data);
-          setStats((prev) => ({
-            ...prev,
-            todayFeeCollection: dbRes.data.total_fee_collections || 0,
-            netCashflow: dbRes.data.net_daily_cashflow || 0,
-          }));
-        }
-      } catch (e) {
-        console.log('Using simulated dashboard metrics');
-      }
-    };
-
-    fetchDashboardData();
-  }, []);
+  const [activeRoleView, setActiveRoleView] = useState('PRINCIPAL'); // PRINCIPAL, TEACHER, CASHIER, ADMIN
+  const [studentsCount, setStudentsCount] = useState(45);
+  const [todayCollections, setTodayCollections] = useState(18500);
 
   return (
     <div className="space-y-6">
-      {/* Top Banner */}
-      <div className="bg-gradient-to-r from-blue-900 to-indigo-900 rounded-2xl p-6 text-white shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-black">Welcome back, {user?.username || user?.full_name || 'Staff'}!</h1>
-          <p className="text-xs text-blue-200 mt-1">
-            {settings.school_name} — SaaS Academic Operations Console
-          </p>
+      {/* Role Preview Switcher Bar */}
+      <div className="bg-slate-900 text-white p-3 sm:p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+        <div className="flex items-center gap-2">
+          <Sparkles size={16} className="text-amber-400" />
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
+            Interactive Multi-Role View Switcher:
+          </span>
         </div>
 
-        <div className="flex gap-2">
-          <Link
-            to="/students/admit"
-            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow transition-colors"
+        <div className="flex bg-slate-800 p-1 rounded-xl text-xs font-bold">
+          <button
+            onClick={() => setActiveRoleView('PRINCIPAL')}
+            className={`px-3 py-1.5 rounded-lg transition-all ${
+              activeRoleView === 'PRINCIPAL' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
+            }`}
           >
-            <UserPlus size={14} />
-            <span>New Admission</span>
-          </Link>
-          <Link
-            to="/fees"
-            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow transition-colors"
+            Principal Cockpit
+          </button>
+          <button
+            onClick={() => setActiveRoleView('TEACHER')}
+            className={`px-3 py-1.5 rounded-lg transition-all ${
+              activeRoleView === 'TEACHER' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
+            }`}
           >
-            <CreditCard size={14} />
-            <span>Collect Fee</span>
-          </Link>
+            Teacher Workspace
+          </button>
+          <button
+            onClick={() => setActiveRoleView('CASHIER')}
+            className={`px-3 py-1.5 rounded-lg transition-all ${
+              activeRoleView === 'CASHIER' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Cashier POS
+          </button>
+          <button
+            onClick={() => setActiveRoleView('ADMIN')}
+            className={`px-3 py-1.5 rounded-lg transition-all ${
+              activeRoleView === 'ADMIN' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Admin Overview
+          </button>
         </div>
       </div>
 
-      {/* Primary KPI Metrics */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        <StatCard
-          title="Active Students"
-          value={stats.totalStudents.toLocaleString()}
-          subtitle="Enrolled in current session"
-          icon={Users}
-          color="blue"
-        />
-        <StatCard
-          title="Today's Attendance"
-          value={`${stats.attendancePct}%`}
-          subtitle="Real-time attendance marked"
-          icon={CalendarCheck}
-          color="emerald"
-        />
-        <StatCard
-          title="Today's Fee Inflow"
-          value={`₹${stats.todayFeeCollection.toLocaleString()}`}
-          subtitle="FIFO ledger cleared"
-          icon={CreditCard}
-          color="indigo"
-        />
-        <StatCard
-          title="Net Day-Book Cashflow"
-          value={`₹${stats.netCashflow.toLocaleString()}`}
-          subtitle="Inflow minus Expenses"
-          icon={DollarSign}
-          color="amber"
-        />
-      </div>
+      {/* VIEW 1: PRINCIPAL COCKPIT */}
+      {activeRoleView === 'PRINCIPAL' && (
+        <div className="space-y-6">
+          {/* Top KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard
+              title="Today's Attendance Rate"
+              value="94.8%"
+              subtitle="48 Present &bull; 3 Absent Today"
+              icon={CalendarCheck}
+              trend="+2.1%"
+              color="emerald"
+            />
+            <StatCard
+              title="Today's Fee Counter"
+              value="₹18,500"
+              subtitle="4 Receipts Confirmed"
+              icon={CreditCard}
+              trend="+12%"
+              color="blue"
+            />
+            <StatCard
+              title="Total Active Students"
+              value={studentsCount.toString()}
+              subtitle="Classes Nursery to 10"
+              icon={Users}
+              color="indigo"
+            />
+            <StatCard
+              title="Day-Book Net Balance"
+              value="₹1,85,400"
+              subtitle="Current Cash/Bank in Hand"
+              icon={DollarSign}
+              trend="+₹12,400"
+              color="amber"
+            />
+          </div>
 
-      {/* Quick Workflows Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Day-Book Summary Widget */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+          {/* 2-Column Grid: Syllabus Speedometer & Academic Alert */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Syllabus Velocity Speedometer */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
+                  <Clock size={18} className="text-blue-600" />
+                  <span>Syllabus Completion Speedometer</span>
+                </div>
+                <span className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
+                  Term 1 Targets
+                </span>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                <div>
+                  <div className="flex justify-between font-bold mb-1">
+                    <span className="text-slate-800">Class 8 — Mathematics (Prof. Farhan)</span>
+                    <span className="text-emerald-600">68% (On Track)</span>
+                  </div>
+                  <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: '68%' }}></div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between font-bold mb-1">
+                    <span className="text-slate-800">Class 9 — Science & Physics (Mrs. Shabana)</span>
+                    <span className="text-rose-600">38% (12 Days Behind Schedule)</span>
+                  </div>
+                  <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-rose-500 rounded-full" style={{ width: '38%' }}></div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between font-bold mb-1">
+                    <span className="text-slate-800">Class 10 — English Language (Mr. Tariq)</span>
+                    <span className="text-emerald-600">74% (On Track)</span>
+                  </div>
+                  <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: '74%' }}></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Actions & Recent Notices */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 flex flex-col justify-between">
+              <div>
+                <div className="font-bold text-slate-900 text-sm mb-3 flex items-center gap-2">
+                  <ShieldCheck size={18} className="text-emerald-600" />
+                  <span>Campus Executive Actions</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <Link
+                    to="/reports"
+                    className="p-3 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-xl font-bold text-slate-800 transition-colors block text-center"
+                  >
+                    📊 Overdue Fee Defaulters List
+                  </Link>
+                  <Link
+                    to="/documents"
+                    className="p-3 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-xl font-bold text-slate-800 transition-colors block text-center"
+                  >
+                    📄 Issue Transfer Certificate (TC)
+                  </Link>
+                  <Link
+                    to="/attendance"
+                    className="p-3 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-xl font-bold text-slate-800 transition-colors block text-center"
+                  >
+                    📅 Class Attendance Summary
+                  </Link>
+                  <Link
+                    to="/cms"
+                    className="p-3 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-xl font-bold text-slate-800 transition-colors block text-center"
+                  >
+                    📢 Broadcast Circular to Parents
+                  </Link>
+                </div>
+              </div>
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-center justify-between">
+                <span>Next Term Exam starts in 18 Days</span>
+                <Link to="/exams" className="font-bold underline text-blue-700">View Date-Sheet</Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VIEW 2: TEACHER WORKSPACE */}
+      {activeRoleView === 'TEACHER' && (
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm">My Class Schedule Today (Class Teacher: 8-A)</h3>
+                <p className="text-xs text-slate-500">3 Teaching Periods Assigned &bull; Room 104</p>
+              </div>
+              <Link
+                to="/attendance"
+                className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-4 py-2 rounded-xl text-xs shadow flex items-center gap-1.5"
+              >
+                <CalendarCheck size={14} /> Take Attendance Now
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                <span className="text-[10px] font-bold text-blue-700 uppercase">Period 1 (08:30 - 09:15)</span>
+                <div className="font-bold text-slate-900 mt-1">Mathematics (8-A)</div>
+                <div className="text-slate-500 text-[11px]">Topic: Linear Equations</div>
+              </div>
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                <span className="text-[10px] font-bold text-slate-500 uppercase">Period 2 (09:15 - 10:00)</span>
+                <div className="font-bold text-slate-500 mt-1">Free Period / Lesson Prep</div>
+              </div>
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                <span className="text-[10px] font-bold text-blue-700 uppercase">Period 3 (10:15 - 11:00)</span>
+                <div className="font-bold text-slate-900 mt-1">Science Discovery (9-B)</div>
+                <div className="text-slate-500 text-[11px]">Topic: Chemical Reactions</div>
+              </div>
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                <span className="text-[10px] font-bold text-blue-700 uppercase">Period 5 (12:00 - 12:45)</span>
+                <div className="font-bold text-slate-900 mt-1">Math Tutorial (8-B)</div>
+                <div className="text-slate-500 text-[11px]">Remedial practice</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VIEW 3: CASHIER POS */}
+      {activeRoleView === 'CASHIER' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-2xl">
+              <div className="text-xs font-bold text-emerald-800 uppercase">Today's Counter Collections</div>
+              <div className="text-2xl font-black text-emerald-950 mt-1">₹18,500.00</div>
+              <div className="text-xs text-emerald-700 mt-0.5">4 Receipts Confirmed via UPI & Cash</div>
+            </div>
+            <div className="p-5 bg-white border border-slate-200 rounded-2xl shadow-sm">
+              <div className="text-xs font-bold text-slate-500 uppercase">Cash In Hand</div>
+              <div className="text-2xl font-black text-slate-900 mt-1">₹6,500.00</div>
+            </div>
+            <div className="p-5 bg-white border border-slate-200 rounded-2xl shadow-sm">
+              <div className="text-xs font-bold text-slate-500 uppercase">Digital UPI Inflow</div>
+              <div className="text-2xl font-black text-blue-600 mt-1">₹12,000.00</div>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
             <div>
-              <h3 className="font-bold text-slate-900 text-sm">Today's Cashflow (Hisaab-Kitab)</h3>
-              <p className="text-xs text-slate-500">Live Fee collections & Voucher expenses</p>
+              <h3 className="font-bold text-slate-900 text-sm">Quick Fee Collection Counter</h3>
+              <p className="text-xs text-slate-500">Collect tuition, admission, exam installments with penny-perfect FIFO allocation</p>
             </div>
-            <Link to="/finance" className="text-xs font-semibold text-blue-600 flex items-center gap-1 hover:underline">
-              View Day-Book <ArrowUpRight size={14} />
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4 mt-4 text-center">
-            <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100">
-              <div className="text-xs text-emerald-700 font-semibold uppercase">Fee Receipts</div>
-              <div className="text-xl font-bold text-emerald-900 mt-1">₹{stats.todayFeeCollection.toLocaleString()}</div>
-            </div>
-            <div className="p-4 bg-rose-50 rounded-xl border border-rose-100">
-              <div className="text-xs text-rose-700 font-semibold uppercase">Voucher Expenses</div>
-              <div className="text-xl font-bold text-rose-900 mt-1">₹{(dayBook?.total_expenses || 12300).toLocaleString()}</div>
-            </div>
-            <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
-              <div className="text-xs text-blue-700 font-semibold uppercase">Net Closing Balance</div>
-              <div className="text-xl font-bold text-blue-900 mt-1">₹{stats.netCashflow.toLocaleString()}</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Quick Operations Panel */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-3">
-          <h3 className="font-bold text-slate-900 text-sm">Fast Operations</h3>
-          <div className="space-y-2">
             <Link
-              to="/attendance"
-              className="flex items-center justify-between p-3 rounded-lg border border-slate-100 hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors"
+              to="/fees"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-5 py-2.5 rounded-xl text-xs shadow flex items-center gap-2"
             >
-              <span>Mark Today's Attendance</span>
-              <CalendarCheck size={16} className="text-blue-600" />
-            </Link>
-            <Link
-              to="/exams"
-              className="flex items-center justify-between p-3 rounded-lg border border-slate-100 hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors"
-            >
-              <span>Teacher Marks Entry Grid</span>
-              <TrendingUp size={16} className="text-emerald-600" />
-            </Link>
-            <Link
-              to="/cms"
-              className="flex items-center justify-between p-3 rounded-lg border border-slate-100 hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors"
-            >
-              <span>Post Circular / Holiday Notice</span>
-              <Users size={16} className="text-amber-600" />
+              <CreditCard size={14} /> Open Cashier POS
             </Link>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* VIEW 4: ADMIN OVERVIEW */}
+      {activeRoleView === 'ADMIN' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-5 bg-white border border-slate-200 rounded-2xl shadow-sm">
+              <div className="text-xs font-bold text-slate-500 uppercase">Total Enrolled Students</div>
+              <div className="text-2xl font-black text-slate-900 mt-1">45 Students</div>
+              <Link to="/students" className="text-xs font-bold text-blue-600 hover:underline mt-1 block">View Directory &rarr;</Link>
+            </div>
+            <div className="p-5 bg-white border border-slate-200 rounded-2xl shadow-sm">
+              <div className="text-xs font-bold text-slate-500 uppercase">Teaching & Admin Staff</div>
+              <div className="text-2xl font-black text-slate-900 mt-1">12 Members</div>
+              <span className="text-xs text-slate-400 mt-1 block">All Roles Active</span>
+            </div>
+            <div className="p-5 bg-white border border-slate-200 rounded-2xl shadow-sm">
+              <div className="text-xs font-bold text-slate-500 uppercase">Online Inquiries Today</div>
+              <div className="text-2xl font-black text-blue-600 mt-1">3 New Leads</div>
+              <Link to="/cms" className="text-xs font-bold text-blue-600 hover:underline mt-1 block">Review Inquiries &rarr;</Link>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
