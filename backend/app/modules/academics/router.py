@@ -1,0 +1,386 @@
+from typing import List
+from fastapi import APIRouter, Depends, status
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from app.core.database import get_tenant_db
+from app.core.exceptions import ResourceNotFoundException, AppException
+from app.shared.responses import success_response
+from app.middlewares.auth_middleware import RequirePermission
+from app.modules.academics.models import (
+    AcademicYear,
+    ClassLevel,
+    Section,
+    Subject,
+    ClassSubject,
+    ClassTeacher,
+)
+from app.modules.academics.schemas import (
+    AcademicYearCreate,
+    AcademicYearResponse,
+    ClassLevelCreate,
+    ClassLevelResponse,
+    SectionCreate,
+    SectionResponse,
+    SubjectCreate,
+    SubjectResponse,
+    AssignSubjectsToClassRequest,
+    ClassTeacherAssignRequest,
+)
+
+router = APIRouter(prefix="/academics", tags=["Academics & Sessions"])
+
+
+# ==========================================
+# 1. Academic Years (Sessions)
+# ==========================================
+@router.get("/years")
+async def list_academic_years(db: AsyncSession = Depends(get_tenant_db)):
+    """Lists all academic sessions in the school."""
+    stmt = select(AcademicYear).order_by(AcademicYear.start_date.desc())
+    result = await db.execute(stmt)
+    years = result.scalars().all()
+    return success_response(
+        data=[
+            {
+                "id": y.id,
+                "name": y.name,
+                "start_date": str(y.start_date),
+                "end_date": str(y.end_date),
+                "is_current": y.is_current,
+                "is_locked": y.is_locked,
+            }
+            for y in years
+        ]
+    )
+
+
+@router.post("/years", dependencies=[Depends(RequirePermission("academics:manage"))], status_code=status.HTTP_201_CREATED)
+async def create_academic_year(req: AcademicYearCreate, db: AsyncSession = Depends(get_tenant_db)):
+    """Creates a new academic year session (e.g. 2026-2027)."""
+    if req.is_current:
+        # Mark all other years as not current
+        await db.execute(update(AcademicYear).values(is_current=False))
+
+    year = AcademicYear(
+        name=req.name,
+        start_date=req.start_date,
+        end_date=req.end_date,
+        is_current=req.is_current,
+    )
+    db.add(year)
+    await db.commit()
+    await db.refresh(year)
+
+    return success_response(
+        data={"id": year.id, "name": year.name, "is_current": year.is_current},
+        message=f"Academic Year '{year.name}' created successfully",
+    )
+
+
+@router.patch("/years/{year_id}/set-current", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def set_current_academic_year(year_id: str, db: AsyncSession = Depends(get_tenant_db)):
+    """Sets the active operational academic year for the school."""
+    stmt = select(AcademicYear).where(AcademicYear.id == year_id)
+    result = await db.execute(stmt)
+    year = result.scalar_one_or_none()
+
+    if not year:
+        raise ResourceNotFoundException("AcademicYear", year_id)
+
+    await db.execute(update(AcademicYear).values(is_current=False))
+    year.is_current = True
+    await db.commit()
+
+    return success_response(
+        data={"id": year.id, "name": year.name, "is_current": True},
+        message=f"Academic Year '{year.name}' set as active current session",
+    )
+
+
+# ==========================================
+# 2. Classes & Sections
+# ==========================================
+@router.get("/classes")
+async def list_classes(db: AsyncSession = Depends(get_tenant_db)):
+    """Lists all classes with their active sections."""
+    stmt = select(ClassLevel).options(selectinload(ClassLevel.sections)).order_by(ClassLevel.numeric_order.asc())
+    result = await db.execute(stmt)
+    classes = result.scalars().all()
+
+    class_list = []
+    for c in classes:
+        class_list.append({
+            "id": c.id,
+            "name": c.name,
+            "numeric_order": c.numeric_order,
+            "description": c.description,
+            "sections": [{"id": s.id, "name": s.name, "capacity": s.capacity} for s in c.sections],
+        })
+
+    return success_response(data=class_list)
+
+
+@router.post("/classes", dependencies=[Depends(RequirePermission("academics:manage"))], status_code=status.HTTP_201_CREATED)
+async def create_class(req: ClassLevelCreate, db: AsyncSession = Depends(get_tenant_db)):
+    """Creates a class and optionally seeds initial sections (e.g. ['A', 'B'])."""
+    class_obj = ClassLevel(
+        name=req.name,
+        numeric_order=req.numeric_order,
+        description=req.description,
+    )
+    db.add(class_obj)
+    await db.flush()
+
+    sections_to_add = req.initial_sections or ["A"]
+    for sec_name in sections_to_add:
+        sec = Section(class_id=class_obj.id, name=sec_name.upper(), capacity=45)
+        db.add(sec)
+
+    await db.commit()
+    await db.refresh(class_obj)
+
+    return success_response(
+        data={"id": class_obj.id, "name": class_obj.name, "sections": sections_to_add},
+        message=f"Class '{class_obj.name}' created with sections",
+    )
+
+
+@router.post("/classes/{class_id}/sections", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def add_section_to_class(class_id: str, req: SectionCreate, db: AsyncSession = Depends(get_tenant_db)):
+    """Adds a new section to an existing class."""
+    stmt = select(ClassLevel).where(ClassLevel.id == class_id)
+    result = await db.execute(stmt)
+    class_obj = result.scalar_one_or_none()
+
+    if not class_obj:
+        raise ResourceNotFoundException("ClassLevel", class_id)
+
+    sec = Section(class_id=class_id, name=req.name.upper(), capacity=req.capacity)
+    db.add(sec)
+    await db.commit()
+    await db.refresh(sec)
+
+    return success_response(
+        data={"id": sec.id, "class_id": sec.class_id, "name": sec.name, "capacity": sec.capacity},
+        message=f"Section '{sec.name}' added to '{class_obj.name}'",
+    )
+
+
+# ==========================================
+# 3. Subjects & Class Subject Mapping
+# ==========================================
+@router.get("/subjects")
+async def list_subjects(db: AsyncSession = Depends(get_tenant_db)):
+    """Lists all subjects offered by the school."""
+    stmt = select(Subject).order_by(Subject.name.asc())
+    result = await db.execute(stmt)
+    subjects = result.scalars().all()
+    return success_response(
+        data=[
+            {
+                "id": s.id,
+                "code": s.code,
+                "name": s.name,
+                "subject_type": s.subject_type,
+                "is_elective": s.is_elective,
+            }
+            for s in subjects
+        ]
+    )
+
+
+@router.post("/subjects", dependencies=[Depends(RequirePermission("academics:manage"))], status_code=status.HTTP_201_CREATED)
+async def create_subject(req: SubjectCreate, db: AsyncSession = Depends(get_tenant_db)):
+    """Creates a new subject."""
+    sub = Subject(
+        code=req.code.upper(),
+        name=req.name,
+        subject_type=req.subject_type,
+        is_elective=req.is_elective,
+    )
+    db.add(sub)
+    await db.commit()
+    await db.refresh(sub)
+    return success_response(data={"id": sub.id, "code": sub.code, "name": sub.name}, message="Subject created")
+
+
+@router.post("/classes/{class_id}/subjects", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def assign_subjects_to_class(
+    class_id: str,
+    req: AssignSubjectsToClassRequest,
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Assigns multiple subjects to a class."""
+    for sub_id in req.subject_ids:
+        # Check if already assigned
+        existing = await db.execute(select(ClassSubject).where(ClassSubject.class_id == class_id, ClassSubject.subject_id == sub_id))
+        if not existing.scalar_one_or_none():
+            db.add(ClassSubject(class_id=class_id, subject_id=sub_id, is_mandatory=True))
+
+    await db.commit()
+    return success_response(message=f"Subjects mapped to class successfully")
+
+
+# ==========================================
+# 4. Class Teacher Assignment
+# ==========================================
+@router.post("/class-teachers", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def assign_class_teacher(req: ClassTeacherAssignRequest, db: AsyncSession = Depends(get_tenant_db)):
+    """Assigns a staff member as the Class Teacher for a class-section in an academic year."""
+    stmt = select(ClassTeacher).where(
+        ClassTeacher.academic_year_id == req.academic_year_id,
+        ClassTeacher.class_id == req.class_id,
+        ClassTeacher.section_id == req.section_id,
+    )
+    result = await db.execute(stmt)
+    mapping = result.scalar_one_or_none()
+
+    if mapping:
+        mapping.teacher_user_id = req.teacher_user_id
+    else:
+        mapping = ClassTeacher(
+            academic_year_id=req.academic_year_id,
+            class_id=req.class_id,
+            section_id=req.section_id,
+            teacher_user_id=req.teacher_user_id,
+        )
+        db.add(mapping)
+
+    await db.commit()
+    return success_response(message="Class teacher assigned successfully")
+
+
+# ==========================================
+# 5. Class Homework & Assignments (Proposal Section 4 & 14)
+# ==========================================
+@router.post("/homework", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def create_class_homework(
+    academic_year_id: str,
+    class_id: str,
+    section_id: str,
+    subject_id: str,
+    title: str,
+    description: str,
+    due_date: str,
+    attachment_url: str = None,
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Teacher Action: Assigns daily homework / classwork to a class-section."""
+    from datetime import datetime
+    from app.modules.academics.models import ClassHomework
+    due = datetime.strptime(due_date, "%Y-%m-%d").date()
+
+    hw = ClassHomework(
+        academic_year_id=academic_year_id,
+        class_id=class_id,
+        section_id=section_id,
+        subject_id=subject_id,
+        title=title,
+        description=description,
+        due_date=due,
+        attachment_url=attachment_url,
+        assigned_by_teacher_id=current_user.id,
+    )
+    db.add(hw)
+    await db.commit()
+    await db.refresh(hw)
+    return success_response(data={"homework_id": hw.id}, message="Homework assigned successfully.")
+
+
+@router.get("/homework")
+async def list_class_homework(
+    class_id: str,
+    section_id: str,
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Lists homework assignments for a class-section."""
+    from app.modules.academics.models import ClassHomework
+    stmt = (
+        select(ClassHomework)
+        .options(selectinload(ClassHomework.subject), selectinload(ClassHomework.assigned_by))
+        .where(ClassHomework.class_id == class_id, ClassHomework.section_id == section_id)
+        .order_by(ClassHomework.assigned_date.desc())
+    )
+    res = await db.execute(stmt)
+    records = res.scalars().all()
+    return success_response(
+        data=[
+            {
+                "id": r.id,
+                "title": r.title,
+                "description": r.description,
+                "subject_name": r.subject.name if r.subject else "General",
+                "assigned_date": str(r.assigned_date),
+                "due_date": str(r.due_date),
+                "attachment_url": r.attachment_url,
+                "assigned_by": r.assigned_by.username if r.assigned_by else "Teacher",
+            }
+            for r in records
+        ]
+    )
+
+
+# ==========================================
+# 6. Student Leave Requests (Proposal Section 4 & 14)
+# ==========================================
+@router.post("/leaves")
+async def submit_student_leave_request(
+    student_id: str,
+    from_date: str,
+    to_date: str,
+    reason: str,
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Parent/Student Action: Submits leave request."""
+    from datetime import datetime
+    from app.modules.academics.models import StudentLeaveRequest
+    f_date = datetime.strptime(from_date, "%Y-%m-%d").date()
+    t_date = datetime.strptime(to_date, "%Y-%m-%d").date()
+
+    leave = StudentLeaveRequest(
+        student_id=student_id,
+        from_date=f_date,
+        to_date=t_date,
+        reason=reason,
+        status="PENDING",
+    )
+    db.add(leave)
+    await db.commit()
+    await db.refresh(leave)
+    return success_response(data={"leave_id": leave.id}, message="Leave request submitted successfully.")
+
+
+@router.get("/leaves", dependencies=[Depends(RequirePermission("attendance:view"))])
+async def list_student_leave_requests(
+    student_id: str = None,
+    status: str = None,
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Staff Action: Reviews student leave applications."""
+    from app.modules.academics.models import StudentLeaveRequest
+    stmt = select(StudentLeaveRequest).options(selectinload(StudentLeaveRequest.student)).order_by(StudentLeaveRequest.created_at.desc())
+    if student_id:
+        stmt = stmt.where(StudentLeaveRequest.student_id == student_id)
+    if status:
+        stmt = stmt.where(StudentLeaveRequest.status == status)
+
+    res = await db.execute(stmt)
+    records = res.scalars().all()
+    return success_response(
+        data=[
+            {
+                "id": r.id,
+                "student_id": r.student_id,
+                "student_name": f"{r.student.first_name} {r.student.last_name or ''}".strip() if r.student else "-",
+                "from_date": str(r.from_date),
+                "to_date": str(r.to_date),
+                "reason": r.reason,
+                "status": r.status,
+                "approval_remarks": r.approval_remarks,
+            }
+            for r in records
+        ]
+    )
+

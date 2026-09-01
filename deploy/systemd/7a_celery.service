@@ -1,0 +1,23 @@
+[Unit]
+Description=7A School ERP — Celery Background Worker & Notification Queue
+After=network.target redis.service mysql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/7a-school-erp/backend
+Environment="PATH=/var/www/7a-school-erp/backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+EnvironmentFile=/var/www/7a-school-erp/backend/.env
+
+ExecStart=/var/www/7a-school-erp/backend/venv/bin/celery -A app.core.celery_app.celery_app worker \
+    --loglevel=INFO \
+    --concurrency=2
+
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

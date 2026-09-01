@@ -1,0 +1,30 @@
+[Unit]
+Description=7A School ERP — FastAPI Production Backend Service (Gunicorn + Uvicorn)
+After=network.target mysql.service redis.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/7a-school-erp/backend
+Environment="PATH=/var/www/7a-school-erp/backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+EnvironmentFile=/var/www/7a-school-erp/backend/.env
+
+# Gunicorn running 4 Uvicorn async workers
+ExecStart=/var/www/7a-school-erp/backend/venv/bin/gunicorn app.main:app \
+    --workers 4 \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --bind 127.0.0.1:8000 \
+    --timeout 120 \
+    --keep-alive 5 \
+    --access-logfile /var/log/7a_erp_access.log \
+    --error-logfile /var/log/7a_erp_error.log
+
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
