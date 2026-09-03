@@ -1,3 +1,4 @@
+from datetime import date
 from fastapi import APIRouter, Depends, Response
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
@@ -171,7 +172,7 @@ async def view_transfer_certificate_html(
     st, enroll, cls_lvl, sec, parent = row
 
     settings_res = await db.execute(select(SystemSetting))
-    settings_dict = {s.setting_key: s.setting_value.strip('"') for s in settings_res.scalars().all()}
+    settings_dict = {s.setting_key: (s.setting_value.strip('"') if isinstance(s.setting_value, str) else str(s.setting_value)) for s in settings_res.scalars().all()}
     school_name = settings_dict.get("school_name", "7A Model Academy")
     primary_color = settings_dict.get("theme_primary_color", "#1E40AF")
 
@@ -232,14 +233,14 @@ async def view_id_cards_batch_html(
             "section_name": sec.name,
             "roll_no": enroll.roll_no,
             "dob": str(st.dob),
-            "blood_group": st.blood_group,
+            "blood_group": getattr(st, "blood_group", "O+"),
             "primary_phone": parent.primary_phone,
         }
         for st, enroll, cls_lvl, sec, parent in rows
     ]
 
     settings_res = await db.execute(select(SystemSetting))
-    settings_dict = {s.setting_key: s.setting_value.strip('"') for s in settings_res.scalars().all()}
+    settings_dict = {s.setting_key: (s.setting_value.strip('"') if isinstance(s.setting_value, str) else str(s.setting_value)) for s in settings_res.scalars().all()}
     school_name = settings_dict.get("school_name", "7A Model Academy")
     primary_color = settings_dict.get("theme_primary_color", "#1E40AF")
 

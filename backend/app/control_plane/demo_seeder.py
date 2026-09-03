@@ -15,8 +15,9 @@ from app.modules.finance.models import FinanceCategory, FinanceVoucher
 from app.modules.attendance.models import AttendanceSession, StudentDailyAttendance
 from app.modules.exams.models import ExamTerm, GradingScale, ExamSchedule, StudentExamMark
 from app.modules.development.models import DevelopmentCriteria, StudentDevelopmentRecord, DisciplineIncident, StudentAward
-from app.modules.cms.models import PublicNotice, AdmissionInquiry
+from app.modules.cms.models import Notice, AdmissionInquiry
 from app.modules.settings.models import SystemSetting
+from app.modules.users_rbac.models import User
 
 
 class DemoSchoolSeeder:
@@ -62,11 +63,25 @@ class DemoSchoolSeeder:
         cls_res = await db.execute(cls_stmt)
         classes = cls_res.scalars().all()
 
-        # 3. Active Status
+        # 3. Active Status & Lookups
         st_stmt = select(StudentStatus).where(StudentStatus.code == "ACTIVE")
         st_res = await db.execute(st_stmt)
         active_status = st_res.scalar_one_or_none()
         status_id = active_status.id if active_status else None
+
+        gender_stmt = select(LookupValue).join(LookupCategory).where(LookupCategory.code == "GENDER")
+        gender_res = await db.execute(gender_stmt)
+        genders = {g.code: g.id for g in gender_res.scalars().all()}
+
+        bg_stmt = select(LookupValue).join(LookupCategory).where(LookupCategory.code == "BLOOD_GROUP")
+        bg_res = await db.execute(bg_stmt)
+        blood_groups = {b.code: b.id for b in bg_res.scalars().all()}
+        default_bg_id = list(blood_groups.values())[0] if blood_groups else None
+
+        admin_stmt = select(User).limit(1)
+        admin_res = await db.execute(admin_stmt)
+        admin_user = admin_res.scalar_one_or_none()
+        admin_id = admin_user.id if admin_user else str(uuid.uuid4())
 
         # 4. Seed Students
         created_students = []
@@ -94,11 +109,10 @@ class DemoSchoolSeeder:
                 admission_no=f"ADM-2026-{adm_counter:04d}",
                 first_name=fn,
                 last_name=ln,
-                gender=gender,
+                gender_id=genders.get(gender),
                 dob=date(dob_year, (i % 12) + 1, (i % 25) + 1),
-                admission_date=date(2026, 4, 1),
-                blood_group=random.choice(["A+", "B+", "O+", "AB+"]),
-                current_status_id=status_id,
+                blood_group_id=default_bg_id,
+                status_id=status_id,
             )
             db.add(student)
             await db.flush()
@@ -111,6 +125,7 @@ class DemoSchoolSeeder:
                     class_id=target_class.id,
                     section_id=target_section.id,
                     roll_no=(i % 30) + 1,
+                    enrollment_date=date(2026, 4, 1),
                     is_active=True,
                 )
                 db.add(enrollment)
@@ -212,6 +227,7 @@ class DemoSchoolSeeder:
                         total_amount_paid=base_amt,
                         status="CONFIRMED",
                         reference_no=f"UPI{random.randint(10000000, 99999999)}",
+                        collected_by_user_id=admin_id,
                     )
                     db.add(receipt)
                     await db.flush()
@@ -245,9 +261,12 @@ class DemoSchoolSeeder:
                     transaction_date=today - timedelta(days=random.randint(1, 10)),
                     voucher_type=v_type,
                     category_id=cat.id,
+                    payment_mode_id=upi_mode.id if upi_mode else None,
                     amount=amt,
-                    narration=narr,
+                    party_name="Vendor / Sponsor",
+                    description=narr,
                     status="POSTED",
+                    created_by_user_id=admin_id,
                 )
                 db.add(vch)
 
@@ -258,7 +277,7 @@ class DemoSchoolSeeder:
             ("Annual Inter-School Sports & Football Meet 2026", "Students interested in participating in 100m sprint and football trial contact the sports teacher.", "GENERAL", False),
         ]
         for title, content, cat, is_pinned in notices:
-            db.add(PublicNotice(title=title, content=content, category=cat, is_pinned=is_pinned, is_public=True, published_date=today))
+            db.add(Notice(title=title, content=content, category=cat, is_pinned=is_pinned, is_public=True, published_date=today))
 
         inquiries = [
             ("Aarav Patel", "Kishore Patel", "9823456781", "aarav.p@gmail.com", "Class 5", "Inquiring about school bus route to Civil Lines"),
@@ -266,10 +285,10 @@ class DemoSchoolSeeder:
             ("Rohan Iyer", "Subramanian Iyer", "9823456783", "iyer.sub@gmail.com", "Class 9", "Transferred from Mumbai, looking for CBSE admission"),
         ]
         for app_name, p_name, ph, em, tc, msg in inquiries:
-            db.add(AdmissionInquiry(applicant_name=app_name, parent_name=p_name, phone=ph, email=em, target_class=tc, message=msg, status="NEW"))
+            db.add(AdmissionInquiry(applicant_name=app_name, parent_name=p_name, phone=ph, email=em, target_class_name=tc, message=msg, status="NEW"))
 
         # 9. Seed Discipline Incidents & Awards
-        if created_students:
+        if len(created_students) > 3:
             db.add(DisciplineIncident(
                 student_id=created_students[3].id,
                 incident_date=today - timedelta(days=4),
@@ -278,7 +297,7 @@ class DemoSchoolSeeder:
                 action_taken="VERBAL_WARNING",
                 description="Repeatedly attending assembly without official school tie",
                 parent_notified=True,
-                reported_by_user_id="default_admin",
+                reported_by_user_id=admin_id,
             ))
             db.add(StudentAward(
                 student_id=created_students[0].id,
@@ -288,7 +307,7 @@ class DemoSchoolSeeder:
                 award_date=today - timedelta(days=2),
                 description="Exemplary leadership, punctuality, and peer support",
                 certificate_issued=True,
-                awarded_by_user_id="default_admin",
+                awarded_by_user_id=admin_id,
             ))
 
         await db.commit()

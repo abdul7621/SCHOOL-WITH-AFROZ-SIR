@@ -6,7 +6,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_tenant_db
 from app.core.exceptions import ResourceNotFoundException, AppException
 from app.shared.responses import success_response
-from app.middlewares.auth_middleware import RequirePermission
+from app.middlewares.auth_middleware import RequirePermission, get_current_user, CurrentTenantUser
 from app.modules.academics.models import (
     AcademicYear,
     ClassLevel,

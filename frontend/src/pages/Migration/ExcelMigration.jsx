@@ -1,14 +1,31 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FileSpreadsheet, Download, Upload, CheckCircle2, AlertTriangle, XCircle, ArrowRight, RefreshCw } from 'lucide-react';
 import api from '../../api/client';
 
 export const ExcelMigration = () => {
   const [file, setFile] = useState(null);
-  const [academicYearId, setAcademicYearId] = useState('default_year');
+  const [academicYears, setAcademicYears] = useState([]);
+  const [academicYearId, setAcademicYearId] = useState('');
   const [dryRunReport, setDryRunReport] = useState(null);
   const [loading, setLoading] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [commitResult, setCommitResult] = useState(null);
+
+  useEffect(() => {
+    const fetchYears = async () => {
+      try {
+        const res = await api.get('/academics/years');
+        if (res.data && res.data.length > 0) {
+          setAcademicYears(res.data);
+          const curr = res.data.find((y) => y.is_current) || res.data[0];
+          setAcademicYearId(curr.id);
+        }
+      } catch (e) {
+        console.log('Error fetching academic years:', e);
+      }
+    };
+    fetchYears();
+  }, []);
 
   const handleDownloadTemplate = async () => {
     try {

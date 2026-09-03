@@ -46,8 +46,12 @@ async def tenant_login(
 
 
 @router.post("/refresh")
-async def refresh_access_token(req: RefreshTokenRequest, request: Request):
-    """Refreshes short-lived access token using valid refresh token."""
+async def refresh_access_token(
+    req: RefreshTokenRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Refreshes short-lived access token using valid refresh token and preserves RBAC permissions."""
     payload = decode_token(req.refresh_token)
     if payload.get("type") != "refresh":
         raise InvalidCredentialsException("Invalid token type: refresh token expected")
@@ -59,9 +63,35 @@ async def refresh_access_token(req: RefreshTokenRequest, request: Request):
     if request_tenant_slug and tenant_slug != request_tenant_slug:
         raise InvalidCredentialsException("Refresh token tenant mismatch")
 
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from app.modules.users_rbac.models import User, Role
+
+    stmt = (
+        select(User)
+        .options(selectinload(User.roles).selectinload(Role.permissions))
+        .where(User.id == user_id, User.is_active == True)
+    )
+    res = await db.execute(stmt)
+    user = res.scalar_one_or_none()
+    if not user:
+        raise InvalidCredentialsException("User account not found or inactive")
+
+    roles = [r.name for r in user.roles if r.is_active]
+    permissions_set = set()
+    for r in user.roles:
+        if r.is_active:
+            for p in r.permissions:
+                permissions_set.add(p.code)
+
     new_access_token = create_access_token(
-        subject=user_id,
-        claims={"tenant_slug": tenant_slug},
+        subject=user.id,
+        claims={
+            "tenant_slug": tenant_slug,
+            "user_type": user.user_type,
+            "roles": roles,
+            "permissions": list(permissions_set),
+        },
     )
 
     return success_response(

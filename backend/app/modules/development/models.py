@@ -62,7 +62,7 @@ class DisciplineIncident(BaseTenantModel):
     reported_by_user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
 
     student = relationship("app.modules.students.models.Student")
-    reported_by = relationship("app.modules.auth.models.User")
+    reported_by = relationship("app.modules.users_rbac.models.User")
 
 
 class StudentAward(BaseTenantModel):
@@ -78,4 +78,4 @@ class StudentAward(BaseTenantModel):
     awarded_by_user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
 
     student = relationship("app.modules.students.models.Student")
-    awarded_by = relationship("app.modules.auth.models.User")
+    awarded_by = relationship("app.modules.users_rbac.models.User")

@@ -40,7 +40,7 @@ export const SchoolPublicWebsite = () => {
       try {
         const [nRes, gRes] = await Promise.all([
           api.get('/cms/notices/public'),
-          api.get('/cms/gallery/albums'),
+          api.get('/cms/gallery/public'),
         ]);
         if (nRes.data) setNotices(nRes.data);
         if (gRes.data) setGallery(gRes.data);
@@ -55,12 +55,12 @@ export const SchoolPublicWebsite = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await api.post('/cms/inquiries/public', {
+      await api.post('/cms/inquiries', {
         applicant_name: applicantName,
         parent_name: parentName,
         phone,
-        email,
-        target_class: targetClass,
+        email: email || undefined,
+        target_class_name: targetClass,
         message,
       });
       setSubmitted(true);

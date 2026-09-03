@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Dict, Any
 from app.modules.exams.services import ExamService
 

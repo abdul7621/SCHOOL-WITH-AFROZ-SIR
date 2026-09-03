@@ -250,11 +250,21 @@ class ExcelMigrationService:
         classes = cls_res.scalars().all()
         class_map = {c.name.strip().lower(): c for c in classes}
 
-        # Active student status
+        # Active student status & Lookups
         status_stmt = select(StudentStatus).where(StudentStatus.code == "ACTIVE")
         st_res = await db.execute(status_stmt)
         active_status = st_res.scalar_one_or_none()
         status_id = active_status.id if active_status else None
+
+        from app.modules.lookups.models import LookupCategory
+        gender_stmt = select(LookupValue).join(LookupCategory).where(LookupCategory.code == "GENDER")
+        gender_res = await db.execute(gender_stmt)
+        genders = {g.code.upper(): g.id for g in gender_res.scalars().all()}
+
+        bg_stmt = select(LookupValue).join(LookupCategory).where(LookupCategory.code == "BLOOD_GROUP")
+        bg_res = await db.execute(bg_stmt)
+        blood_groups = {b.code.upper(): b.id for b in bg_res.scalars().all()}
+        default_bg_id = list(blood_groups.values())[0] if blood_groups else None
 
         imported_count = 0
 
@@ -309,11 +319,10 @@ class ExcelMigrationService:
                 admission_no=adm_no,
                 first_name=first_name,
                 last_name=last_name,
-                gender=gender,
+                gender_id=genders.get(gender, list(genders.values())[0] if genders else None),
                 dob=dob,
-                admission_date=date.today(),
-                blood_group=blood_group,
-                current_status_id=status_id,
+                blood_group_id=blood_groups.get(blood_group, default_bg_id) if blood_group else default_bg_id,
+                status_id=status_id,
             )
             db.add(student)
             await db.flush()
@@ -325,6 +334,7 @@ class ExcelMigrationService:
                 class_id=matched_class.id,
                 section_id=matched_section.id,
                 roll_no=roll_no,
+                enrollment_date=date.today(),
                 is_active=True,
             )
             db.add(enrollment)

@@ -157,7 +157,7 @@ class ExamService:
         4. Overall summary stats.
         """
         # 1. Fetch Exam Term & Student details
-        term_stmt = select(ExamTerm).where(ExamTerm.id == exam_term_id)
+        term_stmt = select(ExamTerm).options(selectinload(ExamTerm.academic_year)).where(ExamTerm.id == exam_term_id)
         term_res = await db.execute(term_stmt)
         term = term_res.scalar_one_or_none()
         if not term:
@@ -285,7 +285,7 @@ class ExamService:
         return {
             "school_info": {
                 "term_name": term.name,
-                "session_name": "2026-2027",
+                "session_name": term.academic_year.name if term.academic_year else "2026-2027",
             },
             "student_profile": {
                 "student_id": student.id,

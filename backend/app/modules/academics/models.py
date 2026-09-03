@@ -99,7 +99,7 @@ class ClassHomework(BaseTenantModel):
     class_level = relationship("ClassLevel")
     section = relationship("Section")
     subject = relationship("Subject")
-    assigned_by = relationship("app.modules.auth.models.User")
+    assigned_by = relationship("app.modules.users_rbac.models.User")
 
 
 class StudentLeaveRequest(BaseTenantModel):

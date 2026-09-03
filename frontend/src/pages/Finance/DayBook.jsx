@@ -8,6 +8,8 @@ export const DayBook = () => {
   const [loading, setLoading] = useState(false);
   const [showVoucherModal, setShowVoucherModal] = useState(false);
   const [categories, setCategories] = useState([]);
+  const [paymentModes, setPaymentModes] = useState([]);
+  const [paymentModeId, setPaymentModeId] = useState('');
 
   // Voucher form state
   const [voucherType, setVoucherType] = useState('EXPENSE');
@@ -15,6 +17,31 @@ export const DayBook = () => {
   const [categoryId, setCategoryId] = useState('');
   const [partyName, setPartyName] = useState('');
   const [description, setDescription] = useState('');
+
+  // Fetch initial lookups
+  useEffect(() => {
+    const fetchInitialData = async () => {
+      try {
+        const [catRes, modeRes] = await Promise.all([
+          api.get('/finance/categories'),
+          api.get('/lookups/payment-modes'),
+        ]);
+        if (catRes.data && catRes.data.length > 0) {
+          setCategories(catRes.data);
+          const filtered = catRes.data.filter((c) => c.category_type === 'EXPENSE');
+          if (filtered.length > 0) setCategoryId(filtered[0].id);
+          else setCategoryId(catRes.data[0].id);
+        }
+        if (modeRes.data && modeRes.data.length > 0) {
+          setPaymentModes(modeRes.data);
+          setPaymentModeId(modeRes.data[0].id);
+        }
+      } catch (e) {
+        console.log('Error fetching finance lookups:', e);
+      }
+    };
+    fetchInitialData();
+  }, []);
 
   const fetchDayBook = async () => {
     setLoading(true);
@@ -34,15 +61,19 @@ export const DayBook = () => {
 
   const handleCreateVoucher = async (e) => {
     e.preventDefault();
+    if (!categoryId || !paymentModeId || !amount) {
+      alert('Please select category, payment mode and enter amount');
+      return;
+    }
     try {
       const payload = {
         voucher_type: voucherType,
         transaction_date: selectedDate,
         amount: parseFloat(amount),
-        category_id: categoryId || 'default_cat',
-        payment_mode_id: 'CASH',
-        party_name: partyName,
-        description: description,
+        category_id: categoryId,
+        payment_mode_id: paymentModeId,
+        party_name: partyName || undefined,
+        description: description || undefined,
       };
       await api.post('/finance/vouchers', payload);
       setShowVoucherModal(false);
@@ -190,6 +221,34 @@ export const DayBook = () => {
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold"
                   placeholder="0.00"
                 />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Category</label>
+                <select
+                  value={categoryId}
+                  onChange={(e) => setCategoryId(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-800"
+                >
+                  {categories
+                    .filter((c) => c.category_type === voucherType)
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Payment Mode</label>
+                <select
+                  value={paymentModeId}
+                  onChange={(e) => setPaymentModeId(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-800"
+                >
+                  {paymentModes.map((pm) => (
+                    <option key={pm.id} value={pm.id}>{pm.name}</option>
+                  ))}
+                </select>
               </div>
 
               <div>

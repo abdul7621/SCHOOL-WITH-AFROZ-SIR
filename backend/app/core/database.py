@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 from collections import OrderedDict
 from typing import AsyncGenerator, Dict, Optional
 from sqlalchemy.ext.asyncio import (
@@ -109,6 +110,40 @@ class TenantDatabaseManager:
             self._session_factories[tenant_slug] = session_factory
             logger.info(f"Created dynamic DB engine for tenant '{tenant_slug}' (DB: {db_name})")
             return session_factory
+
+    @asynccontextmanager
+    async def get_session(self, tenant_slug: str) -> AsyncGenerator[AsyncSession, None]:
+        """Provides an async session context for a specific tenant slug without requiring an HTTP Request."""
+        from sqlalchemy import select
+        from app.control_plane.models import Tenant
+
+        if tenant_slug in self._session_factories:
+            factory = self._session_factories[tenant_slug]
+        else:
+            async with ControlAsyncSessionLocal() as control_session:
+                stmt = select(Tenant).where(Tenant.slug == tenant_slug)
+                res = await control_session.execute(stmt)
+                tenant = res.scalar_one_or_none()
+                if not tenant:
+                    raise TenantNotFoundException(tenant_slug)
+
+                factory = await self.get_tenant_session_factory(
+                    tenant_slug=tenant.slug,
+                    db_name=tenant.db_name,
+                    db_user=tenant.db_user or settings.TENANT_MYSQL_ADMIN_USER,
+                    db_pass=tenant.db_password or settings.TENANT_MYSQL_ADMIN_PASSWORD,
+                    db_host=tenant.db_host or settings.TENANT_MYSQL_HOST,
+                    db_port=tenant.db_port or settings.TENANT_MYSQL_PORT,
+                )
+
+        async with factory() as session:
+            try:
+                yield session
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                await session.close()
 
     async def dispose_tenant_engine(self, tenant_slug: str):
         async with self._lock:

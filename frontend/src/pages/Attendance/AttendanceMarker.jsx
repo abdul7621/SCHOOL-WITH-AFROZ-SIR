@@ -4,6 +4,9 @@ import api from '../../api/client';
 
 export const AttendanceMarker = () => {
   const [classes, setClasses] = useState([]);
+  const [academicYears, setAcademicYears] = useState([]);
+  const [academicYearId, setAcademicYearId] = useState('');
+  const [statusMap, setStatusMap] = useState({});
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedSection, setSelectedSection] = useState('');
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
@@ -12,41 +15,59 @@ export const AttendanceMarker = () => {
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Load Classes
+  // Load Classes, Academic Years, and Lookups
   useEffect(() => {
-    const fetchClasses = async () => {
+    const fetchInitialData = async () => {
       try {
-        const res = await api.get('/academics/classes');
-        if (res.data && res.data.length > 0) {
-          setClasses(res.data);
-          setSelectedClass(res.data[0].id);
-          if (res.data[0].sections?.length > 0) {
-            setSelectedSection(res.data[0].sections[0].id);
+        const [clsRes, yrRes, valRes] = await Promise.all([
+          api.get('/academics/classes'),
+          api.get('/academics/years'),
+          api.get('/lookups/categories/ATTENDANCE_STATUS/values'),
+        ]);
+
+        if (clsRes.data && clsRes.data.length > 0) {
+          setClasses(clsRes.data);
+          setSelectedClass(clsRes.data[0].id);
+          if (clsRes.data[0].sections?.length > 0) {
+            setSelectedSection(clsRes.data[0].sections[0].id);
           }
         }
+
+        if (yrRes.data && yrRes.data.length > 0) {
+          setAcademicYears(yrRes.data);
+          const curr = yrRes.data.find((y) => y.is_current) || yrRes.data[0];
+          setAcademicYearId(curr.id);
+        }
+
+        if (valRes.data && valRes.data.length > 0) {
+          const map = {};
+          valRes.data.forEach((v) => {
+            map[v.code] = v.id;
+          });
+          setStatusMap(map);
+        }
       } catch (e) {
-        console.log('Error fetching classes:', e);
+        console.log('Error fetching initial data:', e);
       }
     };
-    fetchClasses();
+    fetchInitialData();
   }, []);
 
   // Fetch Roster
   const loadRoster = async () => {
-    if (!selectedClass || !selectedSection) return;
+    if (!selectedClass || !selectedSection || !academicYearId) return;
     setLoading(true);
     setSuccessMsg('');
     try {
       const res = await api.get('/attendance/roster', {
         params: {
-          academic_year_id: 'default_year',
+          academic_year_id: academicYearId,
           class_id: selectedClass,
           section_id: selectedSection,
           attendance_date: attendanceDate,
         },
       });
       if (res.data && res.data.students) {
-        // Default to PRESENT if unrecorded
         const updated = res.data.students.map((s) => ({
           ...s,
           status_code: s.status_code || 'PRESENT',
@@ -62,7 +83,7 @@ export const AttendanceMarker = () => {
 
   useEffect(() => {
     loadRoster();
-  }, [selectedClass, selectedSection, attendanceDate]);
+  }, [selectedClass, selectedSection, attendanceDate, academicYearId]);
 
   const updateStudentStatus = (studentId, status) => {
     setRoster((prev) =>
@@ -75,16 +96,17 @@ export const AttendanceMarker = () => {
   };
 
   const saveAttendance = async () => {
+    if (!academicYearId || !selectedClass || !selectedSection) return;
     setSaving(true);
     try {
       const payload = {
-        academic_year_id: 'default_year',
+        academic_year_id: academicYearId,
         class_id: selectedClass,
         section_id: selectedSection,
         attendance_date: attendanceDate,
         records: roster.map((s) => ({
           student_id: s.student_id,
-          attendance_status_code: s.status_code,
+          attendance_status_id: statusMap[s.status_code] || s.attendance_status_id || Object.values(statusMap)[0],
           remarks: s.remarks || undefined,
         })),
       };

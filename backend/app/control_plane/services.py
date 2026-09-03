@@ -1109,7 +1109,7 @@ class TenantProvisioningService:
                 ]
                 for c_name, order_idx in class_names:
                     cls_id = str(uuid.uuid4())
-                    cursor.execute("INSERT INTO classes (id, name, code, order_index) VALUES (%s, %s, %s, %s);", (cls_id, c_name, f"CLS_{order_idx}", order_idx))
+                    cursor.execute("INSERT INTO classes (id, name, numeric_order, description) VALUES (%s, %s, %s, %s);", (cls_id, c_name, order_idx, f"Standard {c_name}"))
                     # Sections A & B
                     sec_a_id = str(uuid.uuid4())
                     sec_b_id = str(uuid.uuid4())

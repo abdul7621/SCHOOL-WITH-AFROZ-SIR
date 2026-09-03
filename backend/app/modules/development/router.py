@@ -14,12 +14,16 @@ from app.modules.development.models import (
     DevelopmentScale,
     DevelopmentRule,
     StudentDevelopmentRecord,
+    DisciplineIncident,
+    StudentAward,
 )
 from app.modules.development.schemas import (
     DevelopmentCriteriaCreate,
     DevelopmentScaleCreate,
     DevelopmentRuleCreate,
     SubmitDevelopmentEvaluationsRequest,
+    DisciplineIncidentCreate,
+    StudentAwardCreate,
 )
 
 router = APIRouter(prefix="/development", tags=["Qualitative Development & Behavioral Assessment"])

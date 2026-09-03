@@ -8,10 +8,39 @@ export const FeeCollection = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [ledger, setLedger] = useState(null);
   const [paymentAmount, setPaymentAmount] = useState('');
-  const [paymentMode, setPaymentMode] = useState('UPI_QR');
+  const [paymentModes, setPaymentModes] = useState([]);
+  const [paymentModeId, setPaymentModeId] = useState('');
+  const [academicYears, setAcademicYears] = useState([]);
+  const [academicYearId, setAcademicYearId] = useState('');
   const [referenceNo, setReferenceNo] = useState('');
   const [loading, setLoading] = useState(false);
   const [receipt, setReceipt] = useState(null);
+
+  // Load Initial Configuration (Payment Modes & Academic Years)
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const [modeRes, yrRes] = await Promise.all([
+          api.get('/lookups/payment-modes'),
+          api.get('/academics/years'),
+        ]);
+
+        if (modeRes.data && modeRes.data.length > 0) {
+          setPaymentModes(modeRes.data);
+          setPaymentModeId(modeRes.data[0].id);
+        }
+
+        if (yrRes.data && yrRes.data.length > 0) {
+          setAcademicYears(yrRes.data);
+          const curr = yrRes.data.find((y) => y.is_current) || yrRes.data[0];
+          setAcademicYearId(curr.id);
+        }
+      } catch (e) {
+        console.log('Error fetching fee collection config:', e);
+      }
+    };
+    fetchConfig();
+  }, []);
 
   // Search Students
   useEffect(() => {
@@ -34,7 +63,9 @@ export const FeeCollection = () => {
     setLoading(true);
     setReceipt(null);
     try {
-      const res = await api.get(`/fees/ledger/${student.id}`);
+      const res = await api.get(`/fees/ledger/${student.id}`, {
+        params: academicYearId ? { academic_year_id: academicYearId } : {},
+      });
       if (res.data) {
         setLedger(res.data);
         setPaymentAmount(res.data.net_outstanding_balance || '');
@@ -48,16 +79,16 @@ export const FeeCollection = () => {
 
   const handleCollectPayment = async (e) => {
     e.preventDefault();
-    if (!selectedStudent || !paymentAmount) return;
+    if (!selectedStudent || !paymentAmount || !academicYearId || !paymentModeId) return;
 
     setLoading(true);
     try {
       const payload = {
         student_id: selectedStudent.id,
-        academic_year_id: 'default_year',
+        academic_year_id: academicYearId,
         total_amount_paid: parseFloat(paymentAmount),
-        payment_mode_id: paymentMode,
-        reference_no: referenceNo || undefined,
+        payment_mode_id: paymentModeId,
+        transaction_reference_no: referenceNo || undefined,
       };
       const res = await api.post('/fees/collect', payload);
       if (res.data) {
@@ -197,14 +228,13 @@ export const FeeCollection = () => {
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Payment Mode</label>
                 <select
-                  value={paymentMode}
-                  onChange={(e) => setPaymentMode(e.target.value)}
+                  value={paymentModeId}
+                  onChange={(e) => setPaymentModeId(e.target.value)}
                   className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg font-semibold text-slate-800"
                 >
-                  <option value="UPI_QR">UPI / QR Code</option>
-                  <option value="CASH">Cash Counter</option>
-                  <option value="BANK_TRANSFER">Bank Transfer (NEFT/IMPS)</option>
-                  <option value="CHEQUE">Cheque</option>
+                  {paymentModes.map((pm) => (
+                    <option key={pm.id} value={pm.id}>{pm.name}</option>
+                  ))}
                 </select>
               </div>
 

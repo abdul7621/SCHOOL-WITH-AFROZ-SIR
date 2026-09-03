@@ -28,5 +28,9 @@ class BaseTenantModel(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __abstract__ = True
 
 
+TenantBase = BaseTenantModel
+
+
 class BaseControlModel(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __abstract__ = True
+

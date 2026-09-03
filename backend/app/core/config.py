@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     CONTROL_DB_USER: str = "root"
     CONTROL_DB_PASSWORD: str = "root"
     CONTROL_DB_NAME: str = "saas_control_db"
+    INITIAL_SUPER_ADMIN_EMAIL: str = "superadmin@7aedu.com"
+    INITIAL_SUPER_ADMIN_PASSWORD: str = "AdminSecurePassword123!"
+    INITIAL_SUPER_ADMIN_NAME: str = "Platform Super Admin"
 
     # Default MySQL Root/Admin for Tenant Provisioning
     TENANT_MYSQL_HOST: str = "127.0.0.1"
