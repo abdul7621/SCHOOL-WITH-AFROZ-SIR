@@ -13,6 +13,7 @@ from app.modules.cms.schemas import (
     NoticeCreate,
     AdmissionInquiryCreate,
     GalleryMediaCreate,
+    InquiryStatusUpdate,
 )
 
 router = APIRouter(prefix="/cms", tags=["Public School Website CMS & Notices"])
@@ -115,6 +116,30 @@ async def list_admission_inquiries(
             }
             for i in inquiries
         ]
+    )
+
+
+@router.patch("/inquiries/{inquiry_id}/status", dependencies=[Depends(RequirePermission("students:view"))])
+async def update_admission_inquiry_status(
+    inquiry_id: str,
+    req: InquiryStatusUpdate,
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Admin Endpoint: Updates inquiry pipeline status (e.g. CONTACTED, ENROLLED, CLOSED)."""
+    stmt = select(AdmissionInquiry).where(AdmissionInquiry.id == inquiry_id)
+    res = await db.execute(stmt)
+    inquiry = res.scalar_one_or_none()
+
+    if not inquiry:
+        raise ResourceNotFoundException("AdmissionInquiry", inquiry_id)
+
+    inquiry.status = req.status.upper()
+    await db.commit()
+    await db.refresh(inquiry)
+
+    return success_response(
+        data={"id": inquiry.id, "status": inquiry.status},
+        message=f"Inquiry status updated to {inquiry.status}",
     )
 
 

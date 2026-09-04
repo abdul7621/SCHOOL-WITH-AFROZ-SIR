@@ -267,7 +267,7 @@ export const FeeCollection = () => {
                 <div>Receipt No: <strong>{receipt.receipt_no}</strong></div>
                 <div>Amount: <strong>₹{receipt.total_amount_paid}</strong></div>
                 <a
-                  href={`/api/v1/documents/fee-receipt/${receipt.receipt_no}/html`}
+                  href={`/api/v1/documents/fee-receipt/${receipt.receipt_no}/html?tenant_slug=${localStorage.getItem('tenant_slug') || 'sample'}`}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 mt-2 bg-emerald-600 text-white px-3 py-1.5 rounded-md font-semibold text-xs hover:bg-emerald-700"

@@ -5,8 +5,10 @@ import api from '../../api/client';
 export const CMSManager = () => {
   const [notices, setNotices] = useState([]);
   const [inquiries, setInquiries] = useState([]);
-  const [tab, setTab] = useState('notices');
+  const [gallery, setGallery] = useState([]);
+  const [tab, setTab] = useState('notices'); // notices, inquiries, gallery
   const [showModal, setShowModal] = useState(false);
+  const [showGalleryModal, setShowGalleryModal] = useState(false);
 
   // New Notice form
   const [title, setTitle] = useState('');
@@ -14,6 +16,12 @@ export const CMSManager = () => {
   const [category, setCategory] = useState('GENERAL');
   const [isPinned, setIsPinned] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // New Gallery form
+  const [mediaTitle, setMediaTitle] = useState('');
+  const [mediaAlbum, setMediaAlbum] = useState('Annual Function');
+  const [mediaUrl, setMediaUrl] = useState('');
+  const [mediaType, setMediaType] = useState('IMAGE');
 
   const fetchNotices = async () => {
     try {
@@ -33,10 +41,31 @@ export const CMSManager = () => {
     }
   };
 
+  const fetchGallery = async () => {
+    try {
+      const res = await api.get('/cms/gallery/public');
+      if (res.data) setGallery(res.data);
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
   useEffect(() => {
     fetchNotices();
     fetchInquiries();
+    fetchGallery();
   }, []);
+
+  const handleStatusChange = async (inquiryId, newStatus) => {
+    try {
+      await api.patch(`/cms/inquiries/${inquiryId}/status`, { status: newStatus });
+      setInquiries((prev) =>
+        prev.map((i) => (i.id === inquiryId ? { ...i, status: newStatus } : i))
+      );
+    } catch (e) {
+      alert('Failed to update inquiry status: ' + e.message);
+    }
+  };
 
   const handleCreateNotice = async (e) => {
     e.preventDefault();
@@ -56,6 +85,28 @@ export const CMSManager = () => {
       fetchNotices();
     } catch (err) {
       alert('Error publishing notice: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCreateGallery = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.post('/cms/gallery', {
+        title: mediaTitle,
+        album_name: mediaAlbum,
+        media_url: mediaUrl,
+        media_type: mediaType,
+        is_published: true,
+      });
+      setShowGalleryModal(false);
+      setMediaTitle('');
+      setMediaUrl('');
+      fetchGallery();
+    } catch (err) {
+      alert('Error adding gallery item: ' + err.message);
     } finally {
       setSaving(false);
     }
@@ -90,6 +141,14 @@ export const CMSManager = () => {
             >
               Admission Inquiries ({inquiries.length})
             </button>
+            <button
+              onClick={() => setTab('gallery')}
+              className={`px-3 py-1.5 rounded-md transition-all ${
+                tab === 'gallery' ? 'bg-white text-blue-700 shadow-sm font-bold' : 'text-slate-600'
+              }`}
+            >
+              Media Gallery ({gallery.length})
+            </button>
           </div>
 
           {tab === 'notices' && (
@@ -101,10 +160,20 @@ export const CMSManager = () => {
               <span>Publish Notice</span>
             </button>
           )}
+
+          {tab === 'gallery' && (
+            <button
+              onClick={() => setShowGalleryModal(true)}
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg shadow transition-colors"
+            >
+              <Plus size={14} />
+              <span>Add Media Photo</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {tab === 'notices' ? (
+      {tab === 'notices' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {notices.length > 0 ? (
             notices.map((n) => (
@@ -129,7 +198,9 @@ export const CMSManager = () => {
             </div>
           )}
         </div>
-      ) : (
+      )}
+
+      {tab === 'inquiries' && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
@@ -139,7 +210,7 @@ export const CMSManager = () => {
                 <th className="py-3 px-4">Phone</th>
                 <th className="py-3 px-4">Target Class</th>
                 <th className="py-3 px-4">Message</th>
-                <th className="py-3 px-4">Status</th>
+                <th className="py-3 px-4">Status Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
@@ -152,9 +223,24 @@ export const CMSManager = () => {
                     <td className="py-3 px-4">{i.target_class}</td>
                     <td className="py-3 px-4 text-slate-500 max-w-xs truncate">{i.message || '-'}</td>
                     <td className="py-3 px-4">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800">
-                        {i.status}
-                      </span>
+                      <select
+                        value={i.status}
+                        onChange={(e) => handleStatusChange(i.id, e.target.value)}
+                        className={`px-2 py-1 rounded text-[11px] font-bold border ${
+                          i.status === 'ENROLLED'
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            : i.status === 'CONTACTED'
+                            ? 'bg-amber-50 text-amber-800 border-amber-200'
+                            : i.status === 'CLOSED'
+                            ? 'bg-slate-100 text-slate-700 border-slate-200'
+                            : 'bg-blue-50 text-blue-800 border-blue-200'
+                        }`}
+                      >
+                        <option value="NEW">NEW</option>
+                        <option value="CONTACTED">CONTACTED</option>
+                        <option value="ENROLLED">ENROLLED</option>
+                        <option value="CLOSED">CLOSED</option>
+                      </select>
                     </td>
                   </tr>
                 ))
@@ -167,6 +253,35 @@ export const CMSManager = () => {
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {tab === 'gallery' && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          {gallery.length > 0 ? (
+            gallery.map((g) => (
+              <div key={g.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                <div className="h-44 bg-slate-100 overflow-hidden">
+                  <img
+                    src={g.media_url}
+                    alt={g.title}
+                    className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                    onError={(e) => {
+                      e.target.src = 'https://images.unsplash.com/photo-1577896851231-70ef18881754?w=600';
+                    }}
+                  />
+                </div>
+                <div className="p-3">
+                  <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">{g.album_name}</span>
+                  <h4 className="font-bold text-slate-900 text-xs mt-0.5">{g.title}</h4>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="col-span-3 text-center py-12 bg-white rounded-xl border border-slate-200 text-slate-400 text-xs">
+              No gallery media uploaded yet.
+            </div>
+          )}
         </div>
       )}
 
@@ -241,6 +356,69 @@ export const CMSManager = () => {
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold shadow disabled:opacity-50"
                 >
                   {saving ? 'Publishing...' : 'Publish'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Media Photo Modal */}
+      {showGalleryModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <h3 className="font-bold text-slate-900 text-sm">Add Public Gallery Media</h3>
+            <form onSubmit={handleCreateGallery} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Photo Title / Caption</label>
+                <input
+                  type="text"
+                  required
+                  value={mediaTitle}
+                  onChange={(e) => setMediaTitle(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                  placeholder="e.g. Science Fair Prize Distribution"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Album / Event Name</label>
+                <input
+                  type="text"
+                  required
+                  value={mediaAlbum}
+                  onChange={(e) => setMediaAlbum(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                  placeholder="e.g. Annual Function / Sports Meet"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Image URL</label>
+                <input
+                  type="url"
+                  required
+                  value={mediaUrl}
+                  onChange={(e) => setMediaUrl(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                  placeholder="https://images.unsplash.com/..."
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowGalleryModal(false)}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold shadow disabled:opacity-50"
+                >
+                  {saving ? 'Adding...' : 'Add to Gallery'}
                 </button>
               </div>
             </form>

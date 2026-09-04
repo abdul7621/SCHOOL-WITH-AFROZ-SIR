@@ -163,18 +163,21 @@ async def cancel_voucher(
 
 @router.get("/day-book", dependencies=[Depends(RequirePermission("finance:view"))])
 async def get_day_book(
-    report_date: date = Query(default_factory=date.today),
+    report_date: Optional[date] = Query(None),
+    transaction_date: Optional[date] = Query(None),
     db: AsyncSession = Depends(get_tenant_db),
 ):
     """
     Consolidated Day-Book: Combines student fee collections and financial vouchers
     for the selected date to produce total cash inflow, outflow, and net daily balance.
     """
+    target_date = report_date or transaction_date or date.today()
+
     # 1. Active Fee Collections on this date
     fee_stmt = (
         select(func.sum(FeeCollection.total_amount_paid))
         .where(
-            FeeCollection.collection_date == report_date,
+            FeeCollection.collection_date == target_date,
             FeeCollection.status == "CONFIRMED",
         )
     )
@@ -185,7 +188,7 @@ async def get_day_book(
     inc_stmt = (
         select(func.sum(FinanceVoucher.amount))
         .where(
-            FinanceVoucher.transaction_date == report_date,
+            FinanceVoucher.transaction_date == target_date,
             FinanceVoucher.voucher_type == "INCOME",
             FinanceVoucher.status == "POSTED",
         )
@@ -197,7 +200,7 @@ async def get_day_book(
     exp_stmt = (
         select(func.sum(FinanceVoucher.amount))
         .where(
-            FinanceVoucher.transaction_date == report_date,
+            FinanceVoucher.transaction_date == target_date,
             FinanceVoucher.voucher_type == "EXPENSE",
             FinanceVoucher.status == "POSTED",
         )
@@ -209,7 +212,7 @@ async def get_day_book(
 
     return success_response(
         data={
-            "report_date": str(report_date),
+            "report_date": str(target_date),
             "total_fee_collections": float(total_fee),
             "total_other_income": float(other_income),
             "total_gross_income": float(total_fee + other_income),

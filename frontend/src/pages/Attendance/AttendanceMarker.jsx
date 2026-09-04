@@ -81,6 +81,16 @@ export const AttendanceMarker = () => {
     }
   };
 
+  const handleClassChange = (classId) => {
+    setSelectedClass(classId);
+    const cls = classes.find((c) => c.id === classId);
+    if (cls && cls.sections && cls.sections.length > 0) {
+      setSelectedSection(cls.sections[0].id);
+    } else {
+      setSelectedSection('');
+    }
+  };
+
   useEffect(() => {
     loadRoster();
   }, [selectedClass, selectedSection, attendanceDate, academicYearId]);
@@ -155,11 +165,24 @@ export const AttendanceMarker = () => {
           <label className="block text-slate-500 mb-1">Class</label>
           <select
             value={selectedClass}
-            onChange={(e) => setSelectedClass(e.target.value)}
+            onChange={(e) => handleClassChange(e.target.value)}
             className="border border-slate-200 rounded-lg px-3 py-1.5 bg-slate-50 font-semibold text-slate-800"
           >
             {classes.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-slate-500 mb-1">Section</label>
+          <select
+            value={selectedSection}
+            onChange={(e) => setSelectedSection(e.target.value)}
+            className="border border-slate-200 rounded-lg px-3 py-1.5 bg-slate-50 font-semibold text-slate-800"
+          >
+            {(classes.find((c) => c.id === selectedClass)?.sections || []).map((s) => (
+              <option key={s.id} value={s.id}>Section {s.name}</option>
             ))}
           </select>
         </div>

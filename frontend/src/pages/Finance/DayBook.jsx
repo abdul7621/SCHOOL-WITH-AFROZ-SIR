@@ -46,7 +46,9 @@ export const DayBook = () => {
   const fetchDayBook = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/finance/day-book', { params: { transaction_date: selectedDate } });
+      const res = await api.get('/finance/day-book', {
+        params: { report_date: selectedDate, transaction_date: selectedDate },
+      });
       if (res.data) setDayBook(res.data);
     } catch (e) {
       console.log(e);

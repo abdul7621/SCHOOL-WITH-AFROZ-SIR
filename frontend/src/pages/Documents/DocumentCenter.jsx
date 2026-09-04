@@ -123,7 +123,7 @@ export const DocumentCenter = () => {
                 </div>
 
                 <a
-                  href={`/api/v1/documents/transfer-certificate/${selectedStudent.id}/html?leaving_reason=${encodeURIComponent(leavingReason)}&conduct=${encodeURIComponent(conduct)}`}
+                  href={`/api/v1/documents/transfer-certificate/${selectedStudent.id}/html?leaving_reason=${encodeURIComponent(leavingReason)}&conduct=${encodeURIComponent(conduct)}&tenant_slug=${localStorage.getItem('tenant_slug') || 'sample'}`}
                   target="_blank"
                   rel="noreferrer"
                   className="w-full flex items-center justify-center gap-2 mt-2 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg transition-colors"
@@ -162,7 +162,7 @@ export const DocumentCenter = () => {
             </div>
 
             <a
-              href={`/api/v1/documents/id-cards/batch/html?class_id=${selectedClass}`}
+              href={`/api/v1/documents/id-cards/batch/html?class_id=${selectedClass}&tenant_slug=${localStorage.getItem('tenant_slug') || 'sample'}`}
               target="_blank"
               rel="noreferrer"
               className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg transition-colors shadow"

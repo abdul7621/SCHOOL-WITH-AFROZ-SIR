@@ -86,3 +86,26 @@ class ClassTeacherAssignRequest(BaseModel):
     class_id: str
     section_id: str
     teacher_user_id: str
+
+
+class HomeworkCreateRequest(BaseModel):
+    academic_year_id: str
+    class_id: str
+    section_id: str
+    subject_id: str
+    title: str
+    description: str
+    due_date: date
+    attachment_url: Optional[str] = None
+
+
+class StudentLeaveSubmitRequest(BaseModel):
+    student_id: str
+    from_date: date
+    to_date: date
+    reason: str
+
+
+class StudentLeaveStatusUpdateRequest(BaseModel):
+    status: str
+    approval_remarks: Optional[str] = None

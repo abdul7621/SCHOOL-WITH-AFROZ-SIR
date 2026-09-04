@@ -6,6 +6,7 @@ import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { StudentList } from './pages/Students/StudentList';
+import { AdmissionForm } from './pages/Students/AdmissionForm';
 import { AttendanceMarker } from './pages/Attendance/AttendanceMarker';
 import { FeeCollection } from './pages/Fees/FeeCollection';
 import { MarksEntry } from './pages/Exams/MarksEntry';
@@ -19,6 +20,7 @@ import { TenantsList } from './pages/SuperAdmin/TenantsList';
 import { SchoolPublicWebsite } from './pages/PublicWebsite/SchoolPublicWebsite';
 import { SaaSLandingPage } from './pages/SaaSLanding/SaaSLandingPage';
 import { TimetableSyllabusView } from './pages/Academics/TimetableSyllabusView';
+import { ClassesAndSessions } from './pages/Academics/ClassesAndSessions';
 
 export const App = () => {
   return (
@@ -34,7 +36,8 @@ export const App = () => {
             <Route path="/" element={<Layout />}>
               <Route index element={<Dashboard />} />
               <Route path="students" element={<StudentList />} />
-              <Route path="students/admit" element={<StudentList />} />
+              <Route path="students/admit" element={<AdmissionForm />} />
+              <Route path="academics" element={<ClassesAndSessions />} />
               <Route path="academics/timetable" element={<TimetableSyllabusView />} />
               <Route path="attendance" element={<AttendanceMarker />} />
               <Route path="fees" element={<FeeCollection />} />

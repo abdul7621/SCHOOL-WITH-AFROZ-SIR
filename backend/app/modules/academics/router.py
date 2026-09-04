@@ -26,6 +26,9 @@ from app.modules.academics.schemas import (
     SubjectResponse,
     AssignSubjectsToClassRequest,
     ClassTeacherAssignRequest,
+    HomeworkCreateRequest,
+    StudentLeaveSubmitRequest,
+    StudentLeaveStatusUpdateRequest,
 )
 
 router = APIRouter(prefix="/academics", tags=["Academics & Sessions"])
@@ -256,31 +259,22 @@ async def assign_class_teacher(req: ClassTeacherAssignRequest, db: AsyncSession 
 # ==========================================
 @router.post("/homework", dependencies=[Depends(RequirePermission("academics:manage"))])
 async def create_class_homework(
-    academic_year_id: str,
-    class_id: str,
-    section_id: str,
-    subject_id: str,
-    title: str,
-    description: str,
-    due_date: str,
-    attachment_url: str = None,
+    req: HomeworkCreateRequest,
     current_user: CurrentTenantUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
 ):
     """Teacher Action: Assigns daily homework / classwork to a class-section."""
-    from datetime import datetime
     from app.modules.academics.models import ClassHomework
-    due = datetime.strptime(due_date, "%Y-%m-%d").date()
 
     hw = ClassHomework(
-        academic_year_id=academic_year_id,
-        class_id=class_id,
-        section_id=section_id,
-        subject_id=subject_id,
-        title=title,
-        description=description,
-        due_date=due,
-        attachment_url=attachment_url,
+        academic_year_id=req.academic_year_id,
+        class_id=req.class_id,
+        section_id=req.section_id,
+        subject_id=req.subject_id,
+        title=req.title,
+        description=req.description,
+        due_date=req.due_date,
+        attachment_url=req.attachment_url,
         assigned_by_teacher_id=current_user.id,
     )
     db.add(hw)
@@ -327,23 +321,17 @@ async def list_class_homework(
 # ==========================================
 @router.post("/leaves")
 async def submit_student_leave_request(
-    student_id: str,
-    from_date: str,
-    to_date: str,
-    reason: str,
+    req: StudentLeaveSubmitRequest,
     db: AsyncSession = Depends(get_tenant_db),
 ):
     """Parent/Student Action: Submits leave request."""
-    from datetime import datetime
     from app.modules.academics.models import StudentLeaveRequest
-    f_date = datetime.strptime(from_date, "%Y-%m-%d").date()
-    t_date = datetime.strptime(to_date, "%Y-%m-%d").date()
 
     leave = StudentLeaveRequest(
-        student_id=student_id,
-        from_date=f_date,
-        to_date=t_date,
-        reason=reason,
+        student_id=req.student_id,
+        from_date=req.from_date,
+        to_date=req.to_date,
+        reason=req.reason,
         status="PENDING",
     )
     db.add(leave)
@@ -383,4 +371,28 @@ async def list_student_leave_requests(
             for r in records
         ]
     )
+
+
+@router.patch("/leaves/{leave_id}/status", dependencies=[Depends(RequirePermission("attendance:mark"))])
+async def update_student_leave_status(
+    leave_id: str,
+    req: StudentLeaveStatusUpdateRequest,
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Teacher/Staff Action: Approves or rejects student leave request."""
+    from app.modules.academics.models import StudentLeaveRequest
+    stmt = select(StudentLeaveRequest).where(StudentLeaveRequest.id == leave_id)
+    res = await db.execute(stmt)
+    leave = res.scalar_one_or_none()
+
+    if not leave:
+        raise ResourceNotFoundException("StudentLeaveRequest", leave_id)
+
+    leave.status = req.status.upper()
+    if req.approval_remarks:
+        leave.approval_remarks = req.approval_remarks
+
+    await db.commit()
+    await db.refresh(leave)
+    return success_response(data={"leave_id": leave.id, "status": leave.status}, message=f"Leave request marked as {leave.status}")
 

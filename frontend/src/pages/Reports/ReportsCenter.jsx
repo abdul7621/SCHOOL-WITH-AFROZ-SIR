@@ -9,14 +9,36 @@ export const ReportsCenter = () => {
   const [financeData, setFinanceData] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  const [academicYears, setAcademicYears] = useState([]);
+  const [academicYearId, setAcademicYearId] = useState('');
+
   // Filters
   const [fromDate, setFromDate] = useState(new Date().toISOString().slice(0, 8) + '01');
   const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
 
+  // Load active academic year
+  useEffect(() => {
+    const fetchYears = async () => {
+      try {
+        const res = await api.get('/academics/years');
+        if (res.data && res.data.length > 0) {
+          setAcademicYears(res.data);
+          const curr = res.data.find((y) => y.is_current) || res.data[0];
+          setAcademicYearId(curr.id);
+        }
+      } catch (e) {
+        console.log(e);
+      }
+    };
+    fetchYears();
+  }, []);
+
   const fetchDefaulters = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/reports/fees/defaulters', { params: { academic_year_id: 'default_year' } });
+      const res = await api.get('/reports/fees/defaulters', {
+        params: academicYearId ? { academic_year_id: academicYearId } : { academic_year_id: 'default_year' },
+      });
       if (res.data) setDefaultersData(res.data);
     } catch (e) {
       console.log(e);
@@ -54,7 +76,7 @@ export const ReportsCenter = () => {
     if (activeTab === 'defaulters') fetchDefaulters();
     if (activeTab === 'collections') fetchCollections();
     if (activeTab === 'finance') fetchFinanceStatement();
-  }, [activeTab]);
+  }, [activeTab, academicYearId, fromDate, toDate]);
 
   return (
     <div className="space-y-6">

@@ -167,6 +167,8 @@ class StudentService:
                 "full_name": f"{student.first_name} {student.last_name or ''}".strip(),
                 "dob": str(student.dob),
                 "gender_label": gender.label if gender else None,
+                "class_id": cls_lvl.id,
+                "section_id": sec.id,
                 "class_name": cls_lvl.name,
                 "section_name": sec.name,
                 "roll_no": enroll.roll_no,

@@ -78,6 +78,14 @@ class ReportsService:
         """
         Lists all students with pending/overdue fee demands.
         """
+        if not academic_year_id or academic_year_id == "default_year":
+            yr_res = await db.execute(select(AcademicYear).where(AcademicYear.is_current == True))
+            curr_yr = yr_res.scalar_one_or_none()
+            if not curr_yr:
+                yr_res2 = await db.execute(select(AcademicYear).limit(1))
+                curr_yr = yr_res2.scalar_one_or_none()
+            academic_year_id = curr_yr.id if curr_yr else "none"
+
         stmt = (
             select(
                 Student,
@@ -145,6 +153,14 @@ class ReportsService:
         """
         Generates month-wide attendance register for an entire class.
         """
+        if not academic_year_id or academic_year_id == "default_year":
+            yr_res = await db.execute(select(AcademicYear).where(AcademicYear.is_current == True))
+            curr_yr = yr_res.scalar_one_or_none()
+            if not curr_yr:
+                yr_res2 = await db.execute(select(AcademicYear).limit(1))
+                curr_yr = yr_res2.scalar_one_or_none()
+            academic_year_id = curr_yr.id if curr_yr else "none"
+
         # 1. Enrolled students
         st_stmt = (
             select(Student, StudentEnrollment)

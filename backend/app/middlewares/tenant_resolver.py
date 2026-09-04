@@ -15,7 +15,11 @@ class TenantResolverMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         path = request.url.path
         host = request.headers.get("host", "").split(":")[0].lower()
-        custom_tenant_slug = request.headers.get("x-tenant-slug")
+        custom_tenant_slug = (
+            request.headers.get("x-tenant-slug")
+            or request.query_params.get("tenant_slug")
+            or request.query_params.get("tenant")
+        )
 
         # 1. Health checks, docs, and Control Plane bypass
         if path.startswith("/health") or path.startswith("/docs") or path.startswith("/openapi.json") or path.startswith("/redoc"):
@@ -28,6 +32,10 @@ class TenantResolverMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         request.state.is_control_plane = False
+
+        # Development localhost fallback
+        if not custom_tenant_slug and host in ["localhost", "127.0.0.1", "testserver"]:
+            custom_tenant_slug = "sample"
 
         # 2. Determine lookup domain or slug
         lookup_key = custom_tenant_slug if custom_tenant_slug else host

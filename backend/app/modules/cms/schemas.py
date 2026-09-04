@@ -28,3 +28,7 @@ class GalleryMediaCreate(BaseModel):
     media_url: str
     media_type: str = "IMAGE"
     is_published: bool = True
+
+
+class InquiryStatusUpdate(BaseModel):
+    status: str = Field(..., example="CONTACTED")

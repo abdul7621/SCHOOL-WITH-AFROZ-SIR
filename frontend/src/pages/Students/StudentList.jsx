@@ -32,7 +32,8 @@ export const StudentList = () => {
   const handleSeedDemoData = async () => {
     setSeeding(true);
     try {
-      await api.post('/control/tenants/demo/seed?tenant_slug=sample');
+      const tenantSlug = localStorage.getItem('tenant_slug') || 'sample';
+      await api.post(`/control/tenants/demo/seed?tenant_slug=${tenantSlug}`);
       alert('Success: Populated school with 50+ students, attendance history, and fee collections!');
       fetchStudents();
     } catch (e) {
