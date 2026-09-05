@@ -43,13 +43,18 @@ The server at `187.127.176.21` is a Hostinger Cloud VPS running Ubuntu 24.04 LTS
 
 ### Direct SSH Connection
 ```bash
-# Connect as root using SSH Key
+# Connect as root:
 ssh root@187.127.176.21
 ```
+- **Server IP:** `187.127.176.21`
+- **Username:** `root`
+- **Password:** `Abdul@#762Abdul`
+- **Port:** `22`
 
-### SSH Key Setup
-- The root account on `187.127.176.21` has the local machine's public SSH key installed in `/root/.ssh/authorized_keys`.
-- Password authentication can also be used if configured from Hostinger VPS Dashboard.
+### SSH Key Setup (Optional for passwordless login)
+- Local public key can be copied to VPS:
+  `cat ~/.ssh/id_ed25519.pub | ssh root@187.127.176.21 "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"`
+- Developers can either login via the root password above or configure their public keys.
 
 ---
 
