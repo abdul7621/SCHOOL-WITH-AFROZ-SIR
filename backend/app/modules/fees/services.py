@@ -20,6 +20,7 @@ from app.modules.fees.models import (
     StudentFeeDemand,
     FeeCollection,
     FeeCollectionItem,
+    FeeRefund,
 )
 from app.modules.fees.schemas import (
     CollectFeePaymentRequest,
@@ -431,3 +432,39 @@ class FeeService:
                 for r in receipts
             ],
         }
+
+    @classmethod
+    async def process_fee_refund(
+        cls,
+        student_id: str,
+        refund_amount: Decimal,
+        payment_mode_id: str,
+        reason: str,
+        user_id: str,
+        fee_collection_id: Optional[str],
+        refund_date: Optional[date],
+        db: AsyncSession,
+    ) -> FeeRefund:
+        """
+        Processes a fee refund to a student, preserving original collection receipts
+        and recording the refund transaction with audit authorization.
+        """
+        today_date = refund_date or date.today()
+        rand_suffix = str(uuid.uuid4())[:6].upper()
+        refund_no = f"REF-{today_date.strftime('%Y%m')}-{rand_suffix}"
+
+        refund = FeeRefund(
+            refund_no=refund_no,
+            student_id=student_id,
+            fee_collection_id=fee_collection_id,
+            refund_amount=refund_amount,
+            refund_date=today_date,
+            payment_mode_id=payment_mode_id,
+            reason=reason,
+            authorized_by_user_id=user_id,
+        )
+        db.add(refund)
+        await db.commit()
+        await db.refresh(refund)
+        return refund
+

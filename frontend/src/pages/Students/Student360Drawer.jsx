@@ -26,8 +26,12 @@ export const Student360Drawer = ({ student, isOpen, onClose }) => {
         {/* Header */}
         <div className="p-6 bg-slate-900 text-white flex items-start justify-between">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-blue-600 flex items-center justify-center font-black text-2xl text-white shadow-lg">
-              {student.full_name?.charAt(0) || 'S'}
+            <div className="w-14 h-14 rounded-2xl bg-blue-600 flex items-center justify-center font-black text-2xl text-white shadow-lg overflow-hidden shrink-0 border border-blue-400/30">
+              {student.profile_photo_url ? (
+                <img src={student.profile_photo_url} alt={student.full_name} className="w-full h-full object-cover" />
+              ) : (
+                student.full_name?.charAt(0) || 'S'
+              )}
             </div>
             <div>
               <div className="flex items-center gap-2">

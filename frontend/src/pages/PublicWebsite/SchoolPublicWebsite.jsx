@@ -80,8 +80,8 @@ export const SchoolPublicWebsite = () => {
       {/* Top Notification Bar */}
       <div className="bg-slate-900 text-slate-300 text-xs py-2 px-4 sm:px-8 flex justify-between items-center">
         <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1"><Phone size={12} className="text-blue-400" /> +91 98765 43210</span>
-          <span className="hidden sm:flex items-center gap-1"><Mail size={12} className="text-blue-400" /> admissions@{settings.school_name?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'school'}.com</span>
+          <span className="flex items-center gap-1"><Phone size={12} className="text-blue-400" /> {settings.contact_phone || '+91 98765 43210'}</span>
+          <span className="hidden sm:flex items-center gap-1"><Mail size={12} className="text-blue-400" /> {settings.contact_email || `admissions@${settings.school_name?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'school'}.com`}</span>
         </div>
         <div className="flex items-center gap-3">
           <Link to="/parent-portal" className="text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1">
@@ -132,7 +132,7 @@ export const SchoolPublicWebsite = () => {
           </h1>
 
           <p className="text-slate-600 text-sm sm:text-base max-w-2xl mx-auto leading-relaxed">
-            Providing holistic, values-driven modern education from Nursery to Senior Secondary with world-class facilities and individualized mentorship.
+            {settings.about_us || 'Providing holistic, values-driven modern education from Nursery to Senior Secondary with world-class facilities and individualized mentorship.'}
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">

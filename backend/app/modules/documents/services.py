@@ -245,7 +245,7 @@ class DocumentGeneratorService:
                 </div>
                 <div class="id-body">
                     <div class="photo-box">
-                        <div class="photo-placeholder">PHOTO</div>
+                        {f'<img src="{s.get("profile_photo_url")}" class="student-photo" alt="Photo" />' if s.get("profile_photo_url") else '<div class="photo-placeholder">PHOTO</div>'}
                     </div>
                     <div class="id-info">
                         <div class="id-name">{s.get('full_name')}</div>
@@ -278,8 +278,9 @@ class DocumentGeneratorService:
                 .id-school {{ font-size: 13px; font-weight: 800; text-transform: uppercase; }}
                 .id-sub {{ font-size: 9px; letter-spacing: 1px; color: #e0e7ff; }}
                 .id-body {{ flex: 1; display: flex; padding: 8px; gap: 10px; align-items: center; }}
-                .photo-box {{ width: 75px; height: 95px; border: 1px solid #cbd5e1; border-radius: 4px; background: #f8fafc; display: flex; align-items: center; justify-content: center; }}
+                .photo-box {{ width: 75px; height: 95px; border: 1px solid #cbd5e1; border-radius: 4px; background: #f8fafc; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }}
                 .photo-placeholder {{ font-size: 10px; color: #94a3b8; font-weight: bold; }}
+                .student-photo {{ width: 100%; height: 100%; object-fit: cover; }}
                 .id-info {{ flex: 1; font-size: 11px; }}
                 .id-name {{ font-size: 13px; font-weight: 800; color: {brand_color}; margin-bottom: 4px; }}
                 .info-row {{ margin-bottom: 2px; color: #374151; }}
@@ -293,4 +294,319 @@ class DocumentGeneratorService:
         </body>
         </html>
         """
+
+    @staticmethod
+    def generate_fee_card_html(
+        data: Dict[str, Any],
+        school_name: str = "7A Model Academy",
+        brand_color: str = "#1E40AF",
+    ) -> str:
+        """
+        Renders a printable Student Fee Card / Statement of Account (PDF 3 Sec 13).
+        """
+        demands = data.get("demands", [])
+        receipts = data.get("receipts", [])
+
+        demand_rows = ""
+        for d in demands:
+            status_color = "#10B981" if d["status"] == "PAID" else ("#F59E0B" if d["status"] == "PARTIAL" else "#EF4444")
+            demand_rows += f"""
+            <tr>
+                <td style="padding: 6px 10px; border: 1px solid #E5E7EB;">{d.get('fee_head_name') or 'Tuition Fee'}</td>
+                <td style="padding: 6px 10px; border: 1px solid #E5E7EB; text-align: center;">{d.get('schedule_name') or '-'}</td>
+                <td style="padding: 6px 10px; border: 1px solid #E5E7EB; text-align: right;">₹{d.get('base_amount', 0):,.2f}</td>
+                <td style="padding: 6px 10px; border: 1px solid #E5E7EB; text-align: right; color: #10B981;">₹{d.get('concession_amount', 0):,.2f}</td>
+                <td style="padding: 6px 10px; border: 1px solid #E5E7EB; text-align: right; font-weight: bold;">₹{d.get('paid_amount', 0):,.2f}</td>
+                <td style="padding: 6px 10px; border: 1px solid #E5E7EB; text-align: right; font-weight: bold; color: #DC2626;">₹{d.get('balance_amount', 0):,.2f}</td>
+                <td style="padding: 6px 10px; border: 1px solid #E5E7EB; text-align: center;"><span style="color:{status_color};font-weight:bold;font-size:11px;">{d.get('status')}</span></td>
+            </tr>
+            """
+
+        receipt_rows = ""
+        for r in receipts:
+            receipt_rows += f"""
+            <tr>
+                <td style="padding: 6px 10px; border: 1px solid #E5E7EB; font-weight: bold;">{r.get('receipt_no')}</td>
+                <td style="padding: 6px 10px; border: 1px solid #E5E7EB; text-align: center;">{r.get('collection_date')}</td>
+                <td style="padding: 6px 10px; border: 1px solid #E5E7EB; text-align: center;">{r.get('payment_mode') or 'Cash'}</td>
+                <td style="padding: 6px 10px; border: 1px solid #E5E7EB; text-align: right; font-weight: bold; color: #10B981;">₹{r.get('total_amount_paid', 0):,.2f}</td>
+                <td style="padding: 6px 10px; border: 1px solid #E5E7EB; text-align: center;"><span style="color: {'#10B981' if r.get('status') == 'CONFIRMED' else '#DC2626'}; font-weight: bold; font-size: 11px;">{r.get('status')}</span></td>
+            </tr>
+            """
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>Fee Card - {data.get('student_name', 'Student')}</title>
+            <style>
+                @page {{ size: A4; margin: 12mm; }}
+                body {{ font-family: 'Segoe UI', Arial, sans-serif; color: #1F2937; margin: 0; padding: 15px; background: #fff; font-size: 13px; }}
+                .fee-card-container {{ max-width: 850px; margin: 0 auto; border: 2px solid {brand_color}; padding: 20px; border-radius: 6px; }}
+                .header {{ text-align: center; border-bottom: 2px solid {brand_color}; padding-bottom: 10px; margin-bottom: 15px; }}
+                .school-title {{ font-size: 24px; font-weight: 800; color: {brand_color}; margin: 0; text-transform: uppercase; }}
+                .doc-subtitle {{ font-size: 14px; font-weight: 700; color: #4B5563; margin-top: 4px; letter-spacing: 1px; }}
+                .info-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; background: #F9FAFB; padding: 12px; border-radius: 6px; margin-bottom: 15px; border: 1px solid #E5E7EB; }}
+                .summary-bar {{ display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 20px; }}
+                .summary-card {{ background: #F3F4F6; padding: 10px; border-radius: 6px; text-align: center; border: 1px solid #E5E7EB; }}
+                .summary-card.highlight {{ background: #EEF2FF; border-color: {brand_color}; }}
+                .summary-card.due {{ background: #FEF2F2; border-color: #FECACA; }}
+                .stat-value {{ font-size: 17px; font-weight: 800; color: {brand_color}; }}
+                .stat-value.danger {{ color: #DC2626; }}
+                .stat-value.success {{ color: #10B981; }}
+                .stat-label {{ font-size: 11px; font-weight: 600; color: #6B7280; text-transform: uppercase; margin-top: 2px; }}
+                table {{ width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 12px; }}
+                th {{ background-color: {brand_color}; color: #ffffff; padding: 8px 10px; text-align: center; border: 1px solid {brand_color}; }}
+                .section-head {{ font-size: 14px; font-weight: 700; color: {brand_color}; margin: 15px 0 8px 0; border-left: 3px solid {brand_color}; padding-left: 6px; }}
+                .signatures {{ display: flex; justify-content: space-between; margin-top: 35px; padding-top: 15px; }}
+                .sig-box {{ text-align: center; border-top: 1px solid #9CA3AF; width: 160px; padding-top: 4px; font-size: 12px; font-weight: 600; }}
+            </style>
+        </head>
+        <body>
+            <div class="fee-card-container">
+                <div class="header">
+                    <h1 class="school-title">{school_name}</h1>
+                    <div class="doc-subtitle">STUDENT CUMULATIVE FEE CARD / STATEMENT OF ACCOUNT</div>
+                </div>
+
+                <div class="info-grid">
+                    <div><strong>Student Name:</strong> {data.get('student_name')}</div>
+                    <div><strong>Admission No:</strong> {data.get('admission_no')}</div>
+                    <div><strong>Class & Section:</strong> {data.get('class_name')} - {data.get('section_name')}</div>
+                    <div><strong>Roll No:</strong> {data.get('roll_no') or '-'}</div>
+                    <div><strong>Statement Date:</strong> {date.today()}</div>
+                    <div><strong>Account Status:</strong> <span style="font-weight:bold; color: {'#10B981' if data.get('net_balance_due', 0) <= 0 else '#DC2626'};">{'ALL DUES CLEARED' if data.get('net_balance_due', 0) <= 0 else 'OUTSTANDING DUES PENDING'}</span></div>
+                </div>
+
+                <div class="summary-bar">
+                    <div class="summary-card">
+                        <div class="stat-value">₹{data.get('total_demanded', 0):,.2f}</div>
+                        <div class="stat-label">Total Demanded</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="stat-value success">₹{data.get('total_concession', 0):,.2f}</div>
+                        <div class="stat-label">Concessions / Mafi</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="stat-value">₹{data.get('total_fine', 0):,.2f}</div>
+                        <div class="stat-label">Late Fines</div>
+                    </div>
+                    <div class="summary-card highlight">
+                        <div class="stat-value success">₹{data.get('total_paid', 0):,.2f}</div>
+                        <div class="stat-label">Total Paid</div>
+                    </div>
+                    <div class="summary-card due">
+                        <div class="stat-value danger">₹{data.get('net_balance_due', 0):,.2f}</div>
+                        <div class="stat-label">Net Balance Due</div>
+                    </div>
+                </div>
+
+                <div class="section-head">DEMANDS & RECEIVABLES SCHEDULE</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="text-align: left;">Fee Head</th>
+                            <th>Schedule / Period</th>
+                            <th style="text-align: right;">Base Amount</th>
+                            <th style="text-align: right;">Concession</th>
+                            <th style="text-align: right;">Paid</th>
+                            <th style="text-align: right;">Balance Due</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {demand_rows if demand_rows else '<tr><td colspan="7" style="text-align:center;padding:10px;">No demands generated.</td></tr>'}
+                    </tbody>
+                </table>
+
+                <div class="section-head">COLLECTION & PAYMENT HISTORY</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="text-align: left;">Receipt No</th>
+                            <th>Date</th>
+                            <th>Mode</th>
+                            <th style="text-align: right;">Amount Paid</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {receipt_rows if receipt_rows else '<tr><td colspan="5" style="text-align:center;padding:10px;">No payment collections recorded.</td></tr>'}
+                    </tbody>
+                </table>
+
+                <div class="signatures">
+                    <div class="sig-box">Accountant / Cashier</div>
+                    <div class="sig-box">Parent / Guardian</div>
+                    <div class="sig-box">Principal</div>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        return html_content
+
+    @staticmethod
+    def generate_warning_letter_html(
+        incident_data: Dict[str, Any],
+        school_name: str = "7A Model Academy",
+        brand_color: str = "#DC2626",
+    ) -> str:
+        """
+        Renders a formal Disciplinary Warning / Notification Letter (PDF 2 Page 16 Sec 23).
+        """
+        st = incident_data.get("student", {})
+        ref_no = incident_data.get("ref_no", f"DISC-{date.today().year}-{incident_data.get('incident_id', '001')[:6].upper()}")
+        severity = incident_data.get("severity_level", "MEDIUM")
+        category = incident_data.get("category", "BEHAVIORAL").replace("_", " ")
+        action_taken = incident_data.get("action_taken", "WRITTEN_WARNING").replace("_", " ")
+        desc = incident_data.get("description", "Infraction of school code of conduct.")
+        inc_date = incident_data.get("incident_date", str(date.today()))
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>Disciplinary Notice - {ref_no}</title>
+            <style>
+                @page {{ size: A4; margin: 20mm; }}
+                body {{ font-family: 'Times New Roman', serif; color: #1F2937; margin: 0; padding: 25px; background: #fff; line-height: 1.6; font-size: 15px; }}
+                .notice-border {{ border: 3px double {brand_color}; padding: 35px; border-radius: 6px; }}
+                .header {{ text-align: center; border-bottom: 2px solid {brand_color}; padding-bottom: 12px; margin-bottom: 25px; }}
+                .school-title {{ font-size: 26px; font-weight: bold; color: {brand_color}; text-transform: uppercase; margin: 0; }}
+                .letter-title {{ font-size: 18px; font-weight: bold; color: #111827; letter-spacing: 1px; margin-top: 10px; text-decoration: underline; }}
+                .meta-bar {{ display: flex; justify-content: space-between; font-size: 14px; font-weight: bold; margin-bottom: 25px; }}
+                .student-box {{ background: #FEF2F2; border: 1px solid #FECACA; padding: 15px; border-radius: 6px; margin-bottom: 20px; font-size: 14px; }}
+                .student-box strong {{ color: #991B1B; }}
+                .severity-tag {{ display: inline-block; padding: 3px 10px; border-radius: 4px; background: #DC2626; color: white; font-weight: bold; font-size: 12px; }}
+                .content-section {{ margin-bottom: 25px; }}
+                .directive-box {{ border-left: 4px solid {brand_color}; background: #FFFBEB; padding: 12px 16px; margin: 20px 0; font-style: italic; }}
+                .signatures {{ display: flex; justify-content: space-between; margin-top: 55px; }}
+                .sig-box {{ text-align: center; border-top: 1px solid #374151; width: 170px; padding-top: 6px; font-size: 13px; font-weight: bold; }}
+            </style>
+        </head>
+        <body>
+            <div class="notice-border">
+                <div class="header">
+                    <h1 class="school-title">{school_name}</h1>
+                    <div style="font-size: 13px; color: #4B5563; margin-top: 4px;">OFFICE OF THE DISCIPLINE COMMITTEE & STUDENT WELFARE</div>
+                    <div class="letter-title">OFFICIAL DISCIPLINARY WARNING & NOTIFICATION</div>
+                </div>
+
+                <div class="meta-bar">
+                    <div>Reference: <span>{ref_no}</span></div>
+                    <div>Date of Issue: <span>{date.today()}</span></div>
+                </div>
+
+                <div class="student-box">
+                    <div><strong>To the Parent / Guardian of:</strong> {st.get('student_name', 'Student')} (Adm No: {st.get('admission_no', '-')})</div>
+                    <div><strong>Class & Section:</strong> {st.get('class_name', '-')} - {st.get('section_name', '-')} | <strong>Roll No:</strong> {st.get('roll_no', '-')}</div>
+                    <div><strong>Incident Date:</strong> {inc_date} | <strong>Infraction Category:</strong> {category}</div>
+                    <div style="margin-top: 6px;"><strong>Severity Level:</strong> <span class="severity-tag">{severity}</span></div>
+                </div>
+
+                <div class="content-section">
+                    <p>Dear Parent / Guardian,</p>
+                    <p>
+                        This official notice is issued to bring to your urgent attention an incident of unacceptable conduct involving your ward on <strong>{inc_date}</strong>. The school administration has thoroughly investigated the matter.
+                    </p>
+                    <p><strong>Incident Particulars & Findings:</strong></p>
+                    <div style="background: #F9FAFB; border: 1px solid #E5E7EB; padding: 12px 15px; border-radius: 4px; font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px;">
+                        {desc}
+                    </div>
+                    <p style="margin-top: 15px;">
+                        <strong>Action Imposed:</strong> <span style="font-weight: bold; color: {brand_color};">{action_taken}</span>
+                    </p>
+                    <div class="directive-box">
+                        <strong>Administrative Directive:</strong> As per the school's Code of Conduct, any further repeat of such behavior will lead to escalated administrative action, including mandatory parental counseling or formal suspension.
+                    </div>
+                    <p>
+                        Kindly acknowledge receipt of this warning letter and ensure remedial measures are undertaken at home to instill proper discipline.
+                    </p>
+                </div>
+
+                <div class="signatures">
+                    <div class="sig-box">Class Teacher</div>
+                    <div class="sig-box">Discipline In-Charge</div>
+                    <div class="sig-box">Principal</div>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        return html_content
+
+    @staticmethod
+    def generate_award_certificate_html(
+        award_data: Dict[str, Any],
+        school_name: str = "7A Model Academy",
+        brand_color: str = "#B45309",
+    ) -> str:
+        """
+        Renders an official Certificate of Merit / Honor (PDF 2 Page 9 Sec 13).
+        """
+        st = award_data.get("student", {})
+        award_name = award_data.get("award_name", "Excellence in Academics")
+        category = award_data.get("award_category", "ACADEMIC").replace("_", " ")
+        citation = award_data.get("description", "Demonstrating exemplary dedication, character, and scholastic excellence.")
+        award_date = award_data.get("award_date", str(date.today()))
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>Certificate of Merit - {st.get('student_name', 'Student')}</title>
+            <style>
+                @page {{ size: landscape; margin: 15mm; }}
+                body {{ font-family: 'Georgia', 'Times New Roman', serif; color: #1F2937; margin: 0; padding: 25px; background: #FFFDF9; }}
+                .cert-container {{ border: 8px double {brand_color}; padding: 35px 50px; border-radius: 12px; text-align: center; position: relative; background: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }}
+                .cert-crest {{ font-size: 42px; margin-bottom: 5px; color: {brand_color}; }}
+                .school-title {{ font-size: 32px; font-weight: bold; color: {brand_color}; text-transform: uppercase; margin: 0; letter-spacing: 2px; }}
+                .cert-heading {{ font-size: 24px; font-weight: normal; font-style: italic; color: #4B5563; margin-top: 15px; text-transform: uppercase; letter-spacing: 3px; }}
+                .cert-subtitle {{ font-size: 16px; color: #6B7280; margin-top: 6px; }}
+                .student-name {{ font-size: 36px; font-weight: bold; color: #1E3A8A; margin: 20px 0 10px 0; border-bottom: 2px solid #E5E7EB; display: inline-block; padding: 0 40px 8px 40px; font-family: 'Times New Roman', serif; }}
+                .cert-details {{ font-size: 18px; line-height: 1.8; color: #374151; max-width: 750px; margin: 0 auto 20px auto; }}
+                .award-badge {{ display: inline-block; font-size: 22px; font-weight: bold; color: {brand_color}; padding: 6px 20px; background: #FEF3C7; border: 1px solid #FDE68A; border-radius: 30px; margin-top: 10px; }}
+                .citation-text {{ font-style: italic; color: #4B5563; font-size: 15px; margin-top: 10px; }}
+                .cert-footer {{ display: flex; justify-content: space-between; margin-top: 50px; padding-top: 20px; }}
+                .sig-box {{ text-align: center; border-top: 2px solid #9CA3AF; width: 220px; padding-top: 8px; font-size: 14px; font-weight: bold; color: #374151; }}
+                .seal-box {{ width: 90px; height: 90px; border-radius: 50%; border: 3px dashed {brand_color}; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; color: {brand_color}; margin: 0 auto; text-transform: uppercase; }}
+            </style>
+        </head>
+        <body>
+            <div class="cert-container">
+                <div class="cert-crest">★ 🎓 ★</div>
+                <h1 class="school-title">{school_name}</h1>
+                <div class="cert-heading">Certificate of Merit & Recognition</div>
+                <div class="cert-subtitle">This certificate is proudly awarded to</div>
+
+                <div class="student-name">{st.get('student_name', 'Student')}</div>
+
+                <div class="cert-details">
+                    of <strong>Class {st.get('class_name', '-')} - {st.get('section_name', '-')}</strong> (Admission No: <strong>{st.get('admission_no', '-')}</strong>) in sincere recognition of outstanding achievement in <strong>{category}</strong>:
+                    <br />
+                    <div class="award-badge">{award_name}</div>
+                    <div class="citation-text">"{citation}"</div>
+                </div>
+
+                <div class="cert-footer">
+                    <div class="sig-box">
+                        <div>{award_date}</div>
+                        <div>Date of Award</div>
+                    </div>
+                    <div>
+                        <div class="seal-box">OFFICIAL<br/>SEAL</div>
+                    </div>
+                    <div class="sig-box">
+                        <div>Principal / Head of Institution</div>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        return html_content
 

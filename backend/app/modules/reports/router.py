@@ -77,3 +77,13 @@ async def get_income_expense_statement(
         db=db,
     )
     return success_response(data=report)
+
+
+@router.get("/dashboard/stats")
+async def get_dashboard_stats(db: AsyncSession = Depends(get_tenant_db)):
+    """
+    Role-tailored live aggregate metrics for Principal, Admin, Teacher, and Cashier dashboards.
+    Zero mock data — computed live from database.
+    """
+    stats = await ReportsService.get_dashboard_summary(db=db)
+    return success_response(data=stats)

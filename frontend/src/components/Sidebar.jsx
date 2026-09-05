@@ -15,6 +15,8 @@ import {
   BarChart3,
   Layers,
   School,
+  Briefcase,
+  Award,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTenant } from '../context/TenantContext';
@@ -33,6 +35,8 @@ export const Sidebar = () => {
   const schoolNavItems = [
     { to: '/', label: 'Principal Dashboard', icon: LayoutDashboard, show: true },
     { to: '/students', label: 'Students & 360° Profile', icon: Users, show: hasPermission('students:view') },
+    { to: '/staff', label: 'Staff & Teachers', icon: Briefcase, show: hasPermission('users:manage') },
+    { to: '/development', label: 'Discipline & Awards', icon: Award, show: hasPermission('development:evaluate') },
     { to: '/academics', label: 'Classes & Sessions', icon: Layers, show: true },
     { to: '/academics/timetable', label: 'Timetable & Syllabus', icon: GraduationCap, show: true },
     { to: '/attendance', label: 'Daily Attendance', icon: CalendarCheck, show: hasPermission('attendance:view') },

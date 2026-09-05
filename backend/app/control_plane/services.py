@@ -649,6 +649,27 @@ class TenantProvisioningService:
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
                 """)
 
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS fee_refunds (
+                    id VARCHAR(36) PRIMARY KEY,
+                    refund_no VARCHAR(50) UNIQUE NOT NULL,
+                    student_id VARCHAR(36) NOT NULL,
+                    fee_collection_id VARCHAR(36) NULL,
+                    refund_amount DECIMAL(10, 2) NOT NULL,
+                    refund_date DATE NOT NULL,
+                    payment_mode_id VARCHAR(36) NOT NULL,
+                    reason TEXT NOT NULL,
+                    authorized_by_user_id VARCHAR(36) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (student_id) REFERENCES students(id),
+                    FOREIGN KEY (fee_collection_id) REFERENCES fee_collections(id),
+                    FOREIGN KEY (payment_mode_id) REFERENCES payment_modes(id),
+                    FOREIGN KEY (authorized_by_user_id) REFERENCES users(id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """)
+
+
                 # Finance & Hisaab-Kitab
                 cursor.execute("""
                 CREATE TABLE IF NOT EXISTS finance_categories (

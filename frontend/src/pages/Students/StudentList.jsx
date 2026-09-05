@@ -118,7 +118,18 @@ export const StudentList = () => {
                   className="hover:bg-blue-50/50 cursor-pointer transition-colors"
                 >
                   <td className="py-3 px-4 font-mono font-bold text-blue-700">{st.admission_no}</td>
-                  <td className="py-3 px-4 font-bold text-slate-900">{st.full_name}</td>
+                  <td className="py-3 px-4 font-bold text-slate-900">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs overflow-hidden shrink-0 border border-blue-200">
+                        {st.profile_photo_url ? (
+                          <img src={st.profile_photo_url} alt={st.full_name} className="w-full h-full object-cover" />
+                        ) : (
+                          st.full_name?.charAt(0) || 'S'
+                        )}
+                      </div>
+                      <span>{st.full_name}</span>
+                    </div>
+                  </td>
                   <td className="py-3 px-4 text-slate-700">{st.class_name} - {st.section_name}</td>
                   <td className="py-3 px-4 text-slate-500">{st.roll_no || '-'}</td>
                   <td className="py-3 px-4 text-slate-700">{st.father_name || 'Farhan Khan'}</td>

@@ -286,3 +286,109 @@ class ReportsService:
             "total_expense": float(total_exp),
             "net_surplus_deficit": float(net_surplus),
         }
+
+    @classmethod
+    async def get_dashboard_summary(cls, db: AsyncSession) -> Dict[str, Any]:
+        """
+        Computes real-time live operational metrics for role-tailored dashboards.
+        Timezone-aware and zero-data empty-state safe.
+        """
+        try:
+            from zoneinfo import ZoneInfo
+            from datetime import datetime
+            tz = ZoneInfo("Asia/Kolkata")
+            today = datetime.now(tz).date()
+        except Exception:
+            today = date.today()
+
+        # 1. Total Active Students
+        st_count_stmt = select(func.count(StudentEnrollment.id)).where(StudentEnrollment.is_active == True)
+        total_students = (await db.execute(st_count_stmt)).scalar() or 0
+
+        # 2. Today's Attendance
+        att_marked_stmt = select(func.count(StudentDailyAttendance.id)).where(StudentDailyAttendance.attendance_date == today)
+        total_marked = (await db.execute(att_marked_stmt)).scalar() or 0
+
+        present_stmt = (
+            select(func.count(StudentDailyAttendance.id))
+            .join(LookupValue, StudentDailyAttendance.status_id == LookupValue.id)
+            .where(StudentDailyAttendance.attendance_date == today, LookupValue.code == "PRESENT")
+        )
+        total_present = (await db.execute(present_stmt)).scalar() or 0
+        total_absent = max(0, total_marked - total_present)
+        attendance_rate = round((total_present / total_marked * 100), 1) if total_marked > 0 else 0.0
+
+        # 3. Today's Fee Collections & Mode Breakdown
+        today_fee_stmt = select(func.sum(FeeCollection.total_amount_paid)).where(
+            FeeCollection.collection_date == today,
+            FeeCollection.status == "CONFIRMED"
+        )
+        today_fee = (await db.execute(today_fee_stmt)).scalar() or Decimal("0.00")
+
+        mode_stmt = (
+            select(PaymentMode.name, func.sum(FeeCollection.total_amount_paid))
+            .join(PaymentMode, FeeCollection.payment_mode_id == PaymentMode.id)
+            .where(FeeCollection.collection_date == today, FeeCollection.status == "CONFIRMED")
+            .group_by(PaymentMode.name)
+        )
+        mode_res = await db.execute(mode_stmt)
+        mode_breakdown = {name: float(amount or 0) for name, amount in mode_res.all()}
+
+        # 4. Total Outstanding Fee
+        out_stmt = select(func.sum(StudentFeeDemand.balance_amount)).where(
+            StudentFeeDemand.status.in_(["UNPAID", "PARTIALLY_PAID"])
+        )
+        total_outstanding = (await db.execute(out_stmt)).scalar() or Decimal("0.00")
+
+        # 5. Total Staff
+        from app.modules.staff.models import StaffProfile
+        staff_stmt = select(func.count(StaffProfile.id)).where(StaffProfile.is_active == True)
+        total_staff = (await db.execute(staff_stmt)).scalar() or 0
+
+        # 6. Pending Inquiries
+        from app.modules.cms.models import AdmissionInquiry
+        inquiry_stmt = select(func.count(AdmissionInquiry.id)).where(AdmissionInquiry.status == "NEW")
+        pending_inquiries = (await db.execute(inquiry_stmt)).scalar() or 0
+
+        # 7. Recent Collections
+        recent_collections_stmt = (
+            select(FeeCollection)
+            .options(selectinload(FeeCollection.student), selectinload(FeeCollection.payment_mode))
+            .where(FeeCollection.status == "CONFIRMED")
+            .order_by(FeeCollection.created_at.desc())
+            .limit(5)
+        )
+        recent_res = await db.execute(recent_collections_stmt)
+        recent_collections = [
+            {
+                "receipt_no": c.receipt_no,
+                "student_name": f"{c.student.first_name} {c.student.last_name or ''}".strip() if c.student else "Student",
+                "amount": float(c.total_amount_paid),
+                "mode": c.payment_mode.name if c.payment_mode else "Cash",
+                "time": str(c.collection_date),
+            }
+            for c in recent_res.scalars().all()
+        ]
+
+        return {
+            "date": str(today),
+            "total_students": total_students,
+            "attendance": {
+                "total_marked": total_marked,
+                "present": total_present,
+                "absent": total_absent,
+                "rate_percentage": attendance_rate,
+            },
+            "finance": {
+                "today_collections": float(today_fee),
+                "mode_breakdown": mode_breakdown,
+                "total_outstanding": float(total_outstanding),
+            },
+            "staff": {
+                "total_active": total_staff,
+            },
+            "admissions": {
+                "pending_inquiries": pending_inquiries,
+            },
+            "recent_collections": recent_collections,
+        }

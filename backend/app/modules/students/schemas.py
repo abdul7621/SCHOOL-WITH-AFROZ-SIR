@@ -24,6 +24,7 @@ class StudentAdmissionRequest(BaseModel):
     religion_id: Optional[str] = None
     caste_category_id: Optional[str] = None
     status_id: Optional[str] = None     # Defaults to 'ACTIVE'
+    profile_photo_url: Optional[str] = None
     emergency_contact: Optional[str] = None
     custom_attributes: Optional[Dict[str, Any]] = None  # Dynamic fields (e.g. BPL card no)
 
@@ -47,6 +48,7 @@ class StudentUpdateRequest(BaseModel):
     religion_id: Optional[str] = None
     caste_category_id: Optional[str] = None
     status_id: Optional[str] = None
+    profile_photo_url: Optional[str] = None
     emergency_contact: Optional[str] = None
     custom_attributes: Optional[Dict[str, Any]] = None
 
@@ -64,6 +66,7 @@ class StudentListItemResponse(BaseModel):
     primary_phone: str
     status_name: str
     is_active: bool
+    profile_photo_url: Optional[str] = None
 
     class Config:
         from_attributes = True

@@ -1,12 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { Globe, Plus, Pin, Calendar, CheckCircle2, Megaphone } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import {
+  Globe,
+  Plus,
+  Pin,
+  Calendar,
+  CheckCircle2,
+  Megaphone,
+  Building2,
+  Save,
+  ExternalLink,
+  Phone,
+  Mail,
+  MapPin,
+  Sparkles,
+} from 'lucide-react';
 import api from '../../api/client';
 
 export const CMSManager = () => {
   const [notices, setNotices] = useState([]);
   const [inquiries, setInquiries] = useState([]);
   const [gallery, setGallery] = useState([]);
-  const [tab, setTab] = useState('notices'); // notices, inquiries, gallery
+  const [tab, setTab] = useState('notices'); // notices, inquiries, gallery, content
   const [showModal, setShowModal] = useState(false);
   const [showGalleryModal, setShowGalleryModal] = useState(false);
 
@@ -23,12 +38,25 @@ export const CMSManager = () => {
   const [mediaUrl, setMediaUrl] = useState('');
   const [mediaType, setMediaType] = useState('IMAGE');
 
+  // Website Content Settings State
+  const [schoolSettings, setSchoolSettings] = useState({
+    school_name: '7A Model English School',
+    about_us: 'Providing holistic, values-driven modern education with state-of-the-art infrastructure and individualized mentorship.',
+    principal_message: 'Welcome to our institution where we ignite curiosity and instill discipline in every student.',
+    vision_mission: 'To foster intellectual curiosity, moral integrity, and lifelong learning.',
+    contact_phone: '+91 98765 43210',
+    contact_email: 'info@school.com',
+    contact_address: '123 Education Boulevard, Knowledge City',
+  });
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsSavedSuccess, setSettingsSavedSuccess] = useState(false);
+
   const fetchNotices = async () => {
     try {
       const res = await api.get('/cms/notices/public');
       if (res.data) setNotices(res.data);
     } catch (e) {
-      console.log(e);
+      console.error(e);
     }
   };
 
@@ -37,7 +65,7 @@ export const CMSManager = () => {
       const res = await api.get('/cms/inquiries');
       if (res.data) setInquiries(res.data);
     } catch (e) {
-      console.log(e);
+      console.error(e);
     }
   };
 
@@ -46,7 +74,22 @@ export const CMSManager = () => {
       const res = await api.get('/cms/gallery/public');
       if (res.data) setGallery(res.data);
     } catch (e) {
-      console.log(e);
+      console.error(e);
+    }
+  };
+
+  const fetchSettings = async () => {
+    try {
+      const res = await api.get('/settings');
+      if (res.data && Array.isArray(res.data)) {
+        const map = {};
+        res.data.forEach((s) => {
+          if (s.key) map[s.key] = s.value;
+        });
+        setSchoolSettings((prev) => ({ ...prev, ...map }));
+      }
+    } catch (e) {
+      console.error('Error fetching school settings:', e);
     }
   };
 
@@ -54,6 +97,7 @@ export const CMSManager = () => {
     fetchNotices();
     fetchInquiries();
     fetchGallery();
+    fetchSettings();
   }, []);
 
   const handleStatusChange = async (inquiryId, newStatus) => {
@@ -112,6 +156,29 @@ export const CMSManager = () => {
     }
   };
 
+  const handleSaveSettings = async (e) => {
+    e.preventDefault();
+    setSavingSettings(true);
+    setSettingsSavedSuccess(false);
+
+    try {
+      const keys = Object.keys(schoolSettings);
+      for (const k of keys) {
+        await api.post('/settings', {
+          setting_key: k,
+          setting_value: schoolSettings[k],
+          is_public: true,
+        });
+      }
+      setSettingsSavedSuccess(true);
+      setTimeout(() => setSettingsSavedSuccess(false), 3000);
+    } catch (err) {
+      alert('Error saving school settings: ' + err.message);
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -120,41 +187,61 @@ export const CMSManager = () => {
             <Globe size={20} className="text-blue-600" />
             <span>Public Website CMS & Communication</span>
           </h1>
-          <p className="text-xs text-slate-500">Manage public notices, admission enquiry leads, and gallery</p>
+          <p className="text-xs text-slate-500">
+            Manage circular notices, admission inquiries, media gallery, and public website content
+          </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="flex bg-slate-200 p-1 rounded-lg text-xs font-semibold">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to="/website"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl shadow-sm transition-colors"
+          >
+            <ExternalLink size={14} />
+            <span>Preview Website</span>
+          </Link>
+
+          <div className="flex bg-slate-200 p-1 rounded-xl text-xs font-semibold">
             <button
               onClick={() => setTab('notices')}
-              className={`px-3 py-1.5 rounded-md transition-all ${
+              className={`px-3 py-1.5 rounded-lg transition-all ${
                 tab === 'notices' ? 'bg-white text-blue-700 shadow-sm font-bold' : 'text-slate-600'
               }`}
             >
-              Public Notices ({notices.length})
+              Notices ({notices.length})
             </button>
             <button
               onClick={() => setTab('inquiries')}
-              className={`px-3 py-1.5 rounded-md transition-all ${
+              className={`px-3 py-1.5 rounded-lg transition-all ${
                 tab === 'inquiries' ? 'bg-white text-blue-700 shadow-sm font-bold' : 'text-slate-600'
               }`}
             >
-              Admission Inquiries ({inquiries.length})
+              Inquiries ({inquiries.length})
             </button>
             <button
               onClick={() => setTab('gallery')}
-              className={`px-3 py-1.5 rounded-md transition-all ${
+              className={`px-3 py-1.5 rounded-lg transition-all ${
                 tab === 'gallery' ? 'bg-white text-blue-700 shadow-sm font-bold' : 'text-slate-600'
               }`}
             >
-              Media Gallery ({gallery.length})
+              Gallery ({gallery.length})
+            </button>
+            <button
+              onClick={() => setTab('content')}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                tab === 'content' ? 'bg-white text-blue-700 shadow-sm font-bold' : 'text-slate-600'
+              }`}
+            >
+              About & Content
             </button>
           </div>
 
           {tab === 'notices' && (
             <button
               onClick={() => setShowModal(true)}
-              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg shadow transition-colors"
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow transition-colors"
             >
               <Plus size={14} />
               <span>Publish Notice</span>
@@ -164,7 +251,7 @@ export const CMSManager = () => {
           {tab === 'gallery' && (
             <button
               onClick={() => setShowGalleryModal(true)}
-              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg shadow transition-colors"
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow transition-colors"
             >
               <Plus size={14} />
               <span>Add Media Photo</span>
@@ -173,6 +260,9 @@ export const CMSManager = () => {
         </div>
       </div>
 
+      {/* ========================================================================= */}
+      {/* TAB 1: NOTICES */}
+      {/* ========================================================================= */}
       {tab === 'notices' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {notices.length > 0 ? (
@@ -200,6 +290,9 @@ export const CMSManager = () => {
         </div>
       )}
 
+      {/* ========================================================================= */}
+      {/* TAB 2: INQUIRIES */}
+      {/* ========================================================================= */}
       {tab === 'inquiries' && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <table className="w-full text-left border-collapse text-xs">
@@ -256,6 +349,9 @@ export const CMSManager = () => {
         </div>
       )}
 
+      {/* ========================================================================= */}
+      {/* TAB 3: GALLERY */}
+      {/* ========================================================================= */}
       {tab === 'gallery' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           {gallery.length > 0 ? (
@@ -285,7 +381,121 @@ export const CMSManager = () => {
         </div>
       )}
 
-      {/* Publish Notice Modal */}
+      {/* ========================================================================= */}
+      {/* TAB 4: SCHOOL INFO & ABOUT US CONTENT */}
+      {/* ========================================================================= */}
+      {tab === 'content' && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Building2 size={16} className="text-blue-600" />
+                <span>School Brand Profile & Website Content</span>
+              </h3>
+              <p className="text-xs text-slate-500">Updates the public school website, About Us, and contact information</p>
+            </div>
+
+            {settingsSavedSuccess && (
+              <div className="flex items-center gap-1.5 text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg text-xs font-bold animate-fade-in">
+                <CheckCircle2 size={14} />
+                <span>Website Content Synchronized!</span>
+              </div>
+            )}
+          </div>
+
+          <form onSubmit={handleSaveSettings} className="space-y-4 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Official School Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={schoolSettings.school_name}
+                  onChange={(e) => setSchoolSettings({ ...schoolSettings, school_name: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-900 text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Contact Phone Number *</label>
+                <input
+                  type="text"
+                  required
+                  value={schoolSettings.contact_phone}
+                  onChange={(e) => setSchoolSettings({ ...schoolSettings, contact_phone: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Official Email Address *</label>
+                <input
+                  type="email"
+                  required
+                  value={schoolSettings.contact_email}
+                  onChange={(e) => setSchoolSettings({ ...schoolSettings, contact_email: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Campus Physical Address</label>
+                <input
+                  type="text"
+                  value={schoolSettings.contact_address}
+                  onChange={(e) => setSchoolSettings({ ...schoolSettings, contact_address: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">About Our School</label>
+              <textarea
+                rows={3}
+                value={schoolSettings.about_us}
+                onChange={(e) => setSchoolSettings({ ...schoolSettings, about_us: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs leading-relaxed"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">Principal's Welcome Message</label>
+              <textarea
+                rows={3}
+                value={schoolSettings.principal_message}
+                onChange={(e) => setSchoolSettings({ ...schoolSettings, principal_message: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs leading-relaxed"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">Vision & Mission Statement</label>
+              <textarea
+                rows={3}
+                value={schoolSettings.vision_mission}
+                onChange={(e) => setSchoolSettings({ ...schoolSettings, vision_mission: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs leading-relaxed"
+              />
+            </div>
+
+            <div className="flex justify-end pt-3 border-t border-slate-100">
+              <button
+                type="submit"
+                disabled={savingSettings}
+                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold px-6 py-2.5 rounded-xl shadow transition-colors disabled:opacity-50"
+              >
+                <Save size={14} />
+                <span>{savingSettings ? 'Saving Content...' : 'Save & Publish to Website'}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal: Publish Notice */}
       {showModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
@@ -363,7 +573,7 @@ export const CMSManager = () => {
         </div>
       )}
 
-      {/* Add Media Photo Modal */}
+      {/* Modal: Add Gallery Media */}
       {showGalleryModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">

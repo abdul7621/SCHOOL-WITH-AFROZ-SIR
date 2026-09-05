@@ -1,5 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Calendar, CreditCard, Award, ChevronRight, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import {
+  Users,
+  Calendar,
+  CreditCard,
+  Award,
+  ChevronRight,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  FileText,
+  Plus,
+  X,
+  Clock,
+} from 'lucide-react';
 import api from '../../api/client';
 
 export const ParentDashboard = () => {
@@ -8,6 +21,16 @@ export const ParentDashboard = () => {
   const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Student Leave State
+  const [leaves, setLeaves] = useState([]);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [submittingLeave, setSubmittingLeave] = useState(false);
+  const [leaveForm, setLeaveForm] = useState({
+    from_date: new Date().toISOString().split('T')[0],
+    to_date: new Date().toISOString().split('T')[0],
+    reason: '',
+  });
 
   // 1. Fetch Parent's linked children
   useEffect(() => {
@@ -34,7 +57,7 @@ export const ParentDashboard = () => {
           setSelectedChildId('st_01');
         }
       } catch (err) {
-        console.log('Error fetching parent children:', err);
+        console.error('Error fetching parent children:', err);
         setError('Could not load student profiles.');
       } finally {
         setLoading(false);
@@ -54,11 +77,57 @@ export const ParentDashboard = () => {
           setOverview(res.data);
         }
       } catch (err) {
-        console.log('Error fetching child overview:', err);
+        console.error('Error fetching child overview:', err);
       }
     };
     fetchOverview();
   }, [selectedChildId]);
+
+  // 3. Fetch Leaves for Selected Child
+  const fetchLeaves = async () => {
+    if (!selectedChildId || selectedChildId === 'st_01') return;
+    try {
+      const res = await api.get('/academics/leaves', {
+        params: { student_id: selectedChildId },
+      });
+      if (res.data) {
+        setLeaves(res.data);
+      }
+    } catch (err) {
+      console.error('Error fetching student leaves:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchLeaves();
+  }, [selectedChildId]);
+
+  const handleApplyLeave = async (e) => {
+    e.preventDefault();
+    if (!selectedChildId) return;
+
+    setSubmittingLeave(true);
+    try {
+      await api.post('/academics/leaves', {
+        student_id: selectedChildId,
+        from_date: leaveForm.from_date,
+        to_date: leaveForm.to_date,
+        reason: leaveForm.reason,
+      });
+      setShowLeaveModal(false);
+      setLeaveForm({
+        from_date: new Date().toISOString().split('T')[0],
+        to_date: new Date().toISOString().split('T')[0],
+        reason: '',
+      });
+      fetchLeaves();
+      alert('Leave application submitted successfully. Class teacher will review.');
+    } catch (err) {
+      alert('Failed to submit leave application: ' + err.message);
+    } finally {
+      setSubmittingLeave(false);
+    }
+  };
 
   const selectedChild = children.find((c) => c.student_id === selectedChildId) || children[0];
 
@@ -150,6 +219,143 @@ export const ParentDashboard = () => {
           <div className="text-[11px] text-slate-500">Excellent Leadership & Discipline</div>
         </div>
       </div>
+
+      {/* Leave Application Section */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <FileText size={16} className="text-blue-600" />
+              <span>Student Leave Applications</span>
+            </h3>
+            <p className="text-xs text-slate-500">Submit illness or emergency leave request directly to class teacher</p>
+          </div>
+          <button
+            onClick={() => setShowLeaveModal(true)}
+            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-4 py-2 rounded-xl shadow transition-colors"
+          >
+            <Plus size={14} />
+            <span>Apply for Leave</span>
+          </button>
+        </div>
+
+        {/* Leave Requests Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
+                <th className="py-2.5 px-3">From Date</th>
+                <th className="py-2.5 px-3">To Date</th>
+                <th className="py-2.5 px-3">Reason</th>
+                <th className="py-2.5 px-3">Status</th>
+                <th className="py-2.5 px-3">Teacher Remarks</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium">
+              {leaves.length > 0 ? (
+                leaves.map((lv) => (
+                  <tr key={lv.id} className="hover:bg-slate-50/80">
+                    <td className="py-2.5 px-3 font-mono text-slate-700">{lv.from_date}</td>
+                    <td className="py-2.5 px-3 font-mono text-slate-700">{lv.to_date}</td>
+                    <td className="py-2.5 px-3 text-slate-800">{lv.reason}</td>
+                    <td className="py-2.5 px-3">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          lv.status === 'APPROVED'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : lv.status === 'REJECTED'
+                            ? 'bg-rose-100 text-rose-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        {lv.status}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-slate-500">{lv.approval_remarks || '-'}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={5} className="text-center py-6 text-slate-400">
+                    No leave requests submitted yet for this session.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Modal: Apply for Leave */}
+      {showLeaveModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                <Calendar size={16} className="text-blue-600" />
+                <span>Apply for Student Leave</span>
+              </h3>
+              <button onClick={() => setShowLeaveModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleApplyLeave} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">From Date *</label>
+                  <input
+                    type="date"
+                    required
+                    value={leaveForm.from_date}
+                    onChange={(e) => setLeaveForm({ ...leaveForm, from_date: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">To Date *</label>
+                  <input
+                    type="date"
+                    required
+                    value={leaveForm.to_date}
+                    onChange={(e) => setLeaveForm({ ...leaveForm, to_date: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Reason for Leave *</label>
+                <textarea
+                  required
+                  rows={3}
+                  placeholder="e.g. Fever and doctor advised 2 days bed rest / Urgent family event"
+                  value={leaveForm.reason}
+                  onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg leading-relaxed"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowLeaveModal(false)}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingLeave}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold shadow disabled:opacity-50"
+                >
+                  {submittingLeave ? 'Submitting...' : 'Submit Application'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

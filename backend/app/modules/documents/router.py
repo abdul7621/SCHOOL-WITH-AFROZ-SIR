@@ -235,6 +235,7 @@ async def view_id_cards_batch_html(
             "dob": str(st.dob),
             "blood_group": getattr(st, "blood_group", "O+"),
             "primary_phone": parent.primary_phone,
+            "profile_photo_url": st.profile_photo_url,
         }
         for st, enroll, cls_lvl, sec, parent in rows
     ]
@@ -246,6 +247,177 @@ async def view_id_cards_batch_html(
 
     html = DocumentGeneratorService.generate_id_cards_batch_html(
         students=students_list,
+        school_name=school_name,
+        brand_color=primary_color,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get("/fee-card/{student_id}/html", response_class=HTMLResponse)
+async def view_fee_card_html(
+    student_id: str,
+    academic_year_id: str = None,
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """
+    Renders comprehensive, print-ready Student Cumulative Fee Card / Statement of Account.
+    """
+    from app.modules.fees.services import FeeService
+    from app.modules.academics.models import AcademicYear
+
+    if not academic_year_id:
+        ay_res = await db.execute(select(AcademicYear).where(AcademicYear.is_active == True))
+        active_ay = ay_res.scalar_one_or_none()
+        if active_ay:
+            academic_year_id = active_ay.id
+        else:
+            ay_any = await db.execute(select(AcademicYear).limit(1))
+            first_ay = ay_any.scalar_one_or_none()
+            academic_year_id = first_ay.id if first_ay else None
+
+    ledger_data = await FeeService.get_student_ledger(
+        student_id=student_id,
+        academic_year_id=academic_year_id,
+        db=db,
+    )
+
+    settings_res = await db.execute(select(SystemSetting))
+    settings_dict = {s.setting_key: (s.setting_value.strip('"') if isinstance(s.setting_value, str) else str(s.setting_value)) for s in settings_res.scalars().all()}
+    school_name = settings_dict.get("school_name", "7A Model Academy")
+    primary_color = settings_dict.get("theme_primary_color", "#1E40AF")
+
+    html = DocumentGeneratorService.generate_fee_card_html(
+        data=ledger_data,
+        school_name=school_name,
+        brand_color=primary_color,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get("/warning-letter/{incident_id}/html", response_class=HTMLResponse)
+async def view_warning_letter_html(
+    incident_id: str,
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """
+    Renders formal Disciplinary Warning Notice & Parental Summons Letter.
+    """
+    from app.modules.development.models import DisciplineIncident
+    from app.modules.students.models import Student, StudentEnrollment
+    from app.modules.academics.models import ClassLevel, Section
+
+    stmt = (
+        select(DisciplineIncident, Student)
+        .join(Student, DisciplineIncident.student_id == Student.id)
+        .where(DisciplineIncident.id == incident_id)
+    )
+    res = await db.execute(stmt)
+    row = res.first()
+    if not row:
+        raise ResourceNotFoundException("DisciplineIncident", incident_id)
+
+    incident, student = row
+
+    enr_stmt = (
+        select(StudentEnrollment, ClassLevel, Section)
+        .join(ClassLevel, StudentEnrollment.class_id == ClassLevel.id)
+        .join(Section, StudentEnrollment.section_id == Section.id)
+        .where(StudentEnrollment.student_id == student.id, StudentEnrollment.is_active == True)
+    )
+    enr_res = await db.execute(enr_stmt)
+    enr_row = enr_res.first()
+
+    class_name = enr_row[1].name if enr_row else "Grade"
+    section_name = enr_row[2].name if enr_row else "A"
+    roll_no = enr_row[0].roll_no if enr_row else None
+
+    incident_data = {
+        "incident_id": incident.id,
+        "ref_no": f"DISC-{incident.incident_date.year if incident.incident_date else date.today().year}-{incident.id[:6].upper()}",
+        "incident_date": str(incident.incident_date),
+        "category": incident.category,
+        "severity_level": incident.severity_level,
+        "action_taken": incident.action_taken,
+        "description": incident.description,
+        "student": {
+            "student_name": f"{student.first_name} {student.last_name or ''}".strip(),
+            "admission_no": student.admission_no,
+            "class_name": class_name,
+            "section_name": section_name,
+            "roll_no": roll_no,
+        },
+    }
+
+    settings_res = await db.execute(select(SystemSetting))
+    settings_dict = {s.setting_key: (s.setting_value.strip('"') if isinstance(s.setting_value, str) else str(s.setting_value)) for s in settings_res.scalars().all()}
+    school_name = settings_dict.get("school_name", "7A Model Academy")
+    primary_color = settings_dict.get("theme_primary_color", "#DC2626")
+
+    html = DocumentGeneratorService.generate_warning_letter_html(
+        incident_data=incident_data,
+        school_name=school_name,
+        brand_color=primary_color,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get("/award-certificate/{award_id}/html", response_class=HTMLResponse)
+async def view_award_certificate_html(
+    award_id: str,
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """
+    Renders official Certificate of Merit / Honors for Student Achievement.
+    """
+    from app.modules.development.models import StudentAward
+    from app.modules.students.models import Student, StudentEnrollment
+    from app.modules.academics.models import ClassLevel, Section
+
+    stmt = (
+        select(StudentAward, Student)
+        .join(Student, StudentAward.student_id == Student.id)
+        .where(StudentAward.id == award_id)
+    )
+    res = await db.execute(stmt)
+    row = res.first()
+    if not row:
+        raise ResourceNotFoundException("StudentAward", award_id)
+
+    award, student = row
+
+    enr_stmt = (
+        select(StudentEnrollment, ClassLevel, Section)
+        .join(ClassLevel, StudentEnrollment.class_id == ClassLevel.id)
+        .join(Section, StudentEnrollment.section_id == Section.id)
+        .where(StudentEnrollment.student_id == student.id, StudentEnrollment.is_active == True)
+    )
+    enr_res = await db.execute(enr_stmt)
+    enr_row = enr_res.first()
+
+    class_name = enr_row[1].name if enr_row else "Grade"
+    section_name = enr_row[2].name if enr_row else "A"
+
+    award_data = {
+        "award_id": award.id,
+        "award_name": award.award_name,
+        "award_category": award.award_category,
+        "award_date": str(award.award_date),
+        "description": award.description or "For distinguished excellence and character.",
+        "student": {
+            "student_name": f"{student.first_name} {student.last_name or ''}".strip(),
+            "admission_no": student.admission_no,
+            "class_name": class_name,
+            "section_name": section_name,
+        },
+    }
+
+    settings_res = await db.execute(select(SystemSetting))
+    settings_dict = {s.setting_key: (s.setting_value.strip('"') if isinstance(s.setting_value, str) else str(s.setting_value)) for s in settings_res.scalars().all()}
+    school_name = settings_dict.get("school_name", "7A Model Academy")
+    primary_color = settings_dict.get("theme_primary_color", "#B45309")
+
+    html = DocumentGeneratorService.generate_award_certificate_html(
+        award_data=award_data,
         school_name=school_name,
         brand_color=primary_color,
     )

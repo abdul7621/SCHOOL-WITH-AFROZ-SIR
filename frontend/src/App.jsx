@@ -21,6 +21,8 @@ import { SchoolPublicWebsite } from './pages/PublicWebsite/SchoolPublicWebsite';
 import { SaaSLandingPage } from './pages/SaaSLanding/SaaSLandingPage';
 import { TimetableSyllabusView } from './pages/Academics/TimetableSyllabusView';
 import { ClassesAndSessions } from './pages/Academics/ClassesAndSessions';
+import { StaffDirectory } from './pages/Staff/StaffDirectory';
+import { DisciplineAndAwards } from './pages/Development/DisciplineAndAwards';
 
 export const App = () => {
   return (
@@ -37,6 +39,8 @@ export const App = () => {
               <Route index element={<Dashboard />} />
               <Route path="students" element={<StudentList />} />
               <Route path="students/admit" element={<AdmissionForm />} />
+              <Route path="staff" element={<StaffDirectory />} />
+              <Route path="development" element={<DisciplineAndAwards />} />
               <Route path="academics" element={<ClassesAndSessions />} />
               <Route path="academics/timetable" element={<TimetableSyllabusView />} />
               <Route path="attendance" element={<AttendanceMarker />} />

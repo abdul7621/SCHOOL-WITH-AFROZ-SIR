@@ -140,3 +140,22 @@ class FeeCollectionItem(BaseTenantModel):
 
     collection = relationship("FeeCollection", back_populates="items")
     demand = relationship("StudentFeeDemand")
+
+
+class FeeRefund(BaseTenantModel):
+    __tablename__ = "fee_refunds"
+
+    refund_no = Column(String(50), unique=True, nullable=False, index=True)  # 'REF-2026-0001'
+    student_id = Column(String(36), ForeignKey("students.id"), nullable=False, index=True)
+    fee_collection_id = Column(String(36), ForeignKey("fee_collections.id"), nullable=True, index=True)
+    refund_amount = Column(Numeric(10, 2), nullable=False)
+    refund_date = Column(Date, nullable=False, index=True)
+    payment_mode_id = Column(String(36), ForeignKey("payment_modes.id"), nullable=False)
+    reason = Column(Text, nullable=False)
+    authorized_by_user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+
+    student = relationship("app.modules.students.models.Student")
+    collection = relationship("FeeCollection")
+    payment_mode = relationship("app.modules.lookups.models.PaymentMode")
+    authorized_by = relationship("app.modules.users_rbac.models.User", foreign_keys=[authorized_by_user_id])
+

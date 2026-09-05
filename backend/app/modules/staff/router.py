@@ -8,7 +8,7 @@ from app.core.security import get_password_hash
 from app.core.exceptions import AppException
 from app.shared.responses import success_response
 from app.middlewares.auth_middleware import RequirePermission
-from app.modules.users_rbac.models import User, UserRole
+from app.modules.users_rbac.models import User, UserRole, Role
 from app.modules.staff.models import Department, Designation, StaffProfile
 from app.modules.staff.schemas import (
     DepartmentCreate,
@@ -143,3 +143,13 @@ async def create_designation(req: DesignationCreate, db: AsyncSession = Depends(
     await db.commit()
     await db.refresh(desig)
     return success_response(data={"id": desig.id, "title": desig.title}, message="Designation created")
+
+
+@router.get("/roles", dependencies=[Depends(RequirePermission("users:manage"))])
+async def list_roles(db: AsyncSession = Depends(get_tenant_db)):
+    """Lists available system roles for staff assignment."""
+    stmt = select(Role).where(Role.code != "PARENT").order_by(Role.name.asc())
+    result = await db.execute(stmt)
+    roles = result.scalars().all()
+    return success_response(data=[{"id": r.id, "name": r.name, "code": r.code} for r in roles])
+

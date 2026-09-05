@@ -129,3 +129,26 @@ class StudentFeeLedgerResponse(BaseModel):
     net_balance_due: Decimal
     demands: List[Dict[str, Any]] = []
     receipts: List[Dict[str, Any]] = []
+
+
+class FeeRefundCreate(BaseModel):
+    student_id: str
+    fee_collection_id: Optional[str] = None
+    refund_amount: Decimal = Field(..., gt=0, example=1000.00)
+    payment_mode_id: str
+    refund_date: Optional[date] = None
+    reason: str = Field(..., min_length=3, example="Student withdrawal refund approved by Principal")
+
+
+class FeeRefundResponse(BaseModel):
+    id: str
+    refund_no: str
+    student_id: str
+    student_name: str
+    admission_no: str
+    refund_amount: Decimal
+    refund_date: str
+    payment_mode_name: str
+    reason: str
+    authorized_by_name: str
+

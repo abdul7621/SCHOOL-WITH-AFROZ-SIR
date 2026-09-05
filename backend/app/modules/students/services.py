@@ -79,6 +79,7 @@ class StudentService:
             caste_category_id=req.caste_category_id,
             parent_id=parent.id,
             status_id=status_id,
+            profile_photo_url=req.profile_photo_url,
             emergency_contact=req.emergency_contact,
             custom_attributes=req.custom_attributes or {},
         )
@@ -176,6 +177,7 @@ class StudentService:
                 "primary_phone": parent.primary_phone,
                 "status_name": st_status.name,
                 "is_active": enroll.is_active,
+                "profile_photo_url": student.profile_photo_url,
             })
 
         return student_list, total_records
