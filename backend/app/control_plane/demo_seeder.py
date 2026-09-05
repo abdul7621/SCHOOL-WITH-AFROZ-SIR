@@ -81,7 +81,19 @@ class DemoSchoolSeeder:
         admin_stmt = select(User).limit(1)
         admin_res = await db.execute(admin_stmt)
         admin_user = admin_res.scalar_one_or_none()
-        admin_id = admin_user.id if admin_user else str(uuid.uuid4())
+        if not admin_user:
+            from app.core.security import get_password_hash
+            admin_user = User(
+                username="school_admin",
+                phone="9876543210",
+                email="admin@sample.com",
+                password_hash=get_password_hash("Admin123!"),
+                user_type="ADMIN",
+                is_active=True,
+            )
+            db.add(admin_user)
+            await db.flush()
+        admin_id = admin_user.id
 
         # 4. Seed Students
         created_students = []
@@ -156,6 +168,8 @@ class DemoSchoolSeeder:
                         class_id=cls_obj.id,
                         section_id=sec.id,
                         attendance_date=att_date,
+                        marked_by_user_id=admin_id,
+                        status="SUBMITTED",
                     )
                     db.add(sess)
                     await db.flush()
@@ -190,9 +204,13 @@ class DemoSchoolSeeder:
             db.add(sched)
             await db.flush()
 
-        mode_stmt = select(PaymentMode).where(PaymentMode.code == "UPI_QR")
+        mode_stmt = select(PaymentMode).limit(1)
         mode_res = await db.execute(mode_stmt)
         upi_mode = mode_res.scalar_one_or_none()
+        if not upi_mode:
+            upi_mode = PaymentMode(code="CASH", name="Cash", is_system=True)
+            db.add(upi_mode)
+            await db.flush()
 
         if tuition_head:
             for idx, st in enumerate(created_students):
@@ -223,10 +241,10 @@ class DemoSchoolSeeder:
                         academic_year_id=academic_year.id,
                         receipt_no=f"RCP-2026-{1000 + idx:04d}",
                         collection_date=today - timedelta(days=idx % 10),
-                        payment_mode_id=upi_mode.id if upi_mode else None,
+                        payment_mode_id=upi_mode.id,
                         total_amount_paid=base_amt,
                         status="CONFIRMED",
-                        reference_no=f"UPI{random.randint(10000000, 99999999)}",
+                        transaction_reference_no=f"UPI{random.randint(10000000, 99999999)}",
                         collected_by_user_id=admin_id,
                     )
                     db.add(receipt)
@@ -255,20 +273,25 @@ class DemoSchoolSeeder:
         ]
         for v_type, c_code, amt, narr in vouchers_data:
             cat = cat_map.get(c_code)
-            if cat:
-                vch = FinanceVoucher(
-                    voucher_no=f"VCH-2026-{random.randint(100, 999)}",
-                    transaction_date=today - timedelta(days=random.randint(1, 10)),
-                    voucher_type=v_type,
-                    category_id=cat.id,
-                    payment_mode_id=upi_mode.id if upi_mode else None,
-                    amount=amt,
-                    party_name="Vendor / Sponsor",
-                    description=narr,
-                    status="POSTED",
-                    created_by_user_id=admin_id,
-                )
-                db.add(vch)
+            if not cat:
+                cat = FinanceCategory(name=c_code.replace("_", " ").title(), category_type=v_type, code=c_code)
+                db.add(cat)
+                await db.flush()
+                cat_map[c_code] = cat
+            vch = FinanceVoucher(
+                voucher_no=f"VCH-2026-{random.randint(100, 999)}",
+                transaction_date=today - timedelta(days=random.randint(1, 10)),
+                voucher_type=v_type,
+                category_id=cat.id,
+                payment_mode_id=upi_mode.id,
+                amount=amt,
+                party_name="Vendor / Sponsor",
+                reference_no=f"REF{random.randint(1000, 9999)}",
+                description=narr,
+                status="POSTED",
+                created_by_user_id=admin_id,
+            )
+            db.add(vch)
 
         # 8. Seed Public Circulars & Admission Inquiries
         notices = [
