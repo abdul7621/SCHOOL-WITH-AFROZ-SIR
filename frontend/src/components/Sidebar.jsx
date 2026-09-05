@@ -14,6 +14,7 @@ import {
   FileText,
   BarChart3,
   Layers,
+  School,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTenant } from '../context/TenantContext';

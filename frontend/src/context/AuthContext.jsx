@@ -13,16 +13,23 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const fetchCurrentUser = async () => {
       const token = localStorage.getItem('token');
+      const savedUserStr = localStorage.getItem('user');
+      const savedUser = savedUserStr ? JSON.parse(savedUserStr) : null;
+
       if (token) {
-        try {
-          const res = await api.get('/auth/me');
-          if (res.data) {
-            setUser(res.data);
-            localStorage.setItem('user', JSON.stringify(res.data));
+        if (savedUser?.isSuperAdmin || savedUser?.role === 'SUPER_ADMIN') {
+          setUser(savedUser);
+        } else {
+          try {
+            const res = await api.get('/auth/me');
+            if (res.data) {
+              setUser(res.data);
+              localStorage.setItem('user', JSON.stringify(res.data));
+            }
+          } catch (e) {
+            console.error('Session validation failed:', e);
+            logout();
           }
-        } catch (e) {
-          console.error('Session validation failed:', e);
-          logout();
         }
       }
       setLoading(false);
