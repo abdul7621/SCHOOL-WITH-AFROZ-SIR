@@ -1,6 +1,6 @@
 # 7A SCHOOL ERP — SECURITY, RBAC & MULTI-TENANCY PENETRATION AUDIT
 **Standard:** Enterprise SaaS Security Baseline (OWASP Top 10 + Multi-Tenant Isolation)  
-**Environment:** Hostinger VPS (`187.127.176.21`), PostgreSQL 16, FastAPI Backend  
+**Environment:** Hostinger VPS (`187.127.176.21`), MySQL 8.0, FastAPI Backend  
 **Auditor:** Lead Security Architect & Penetration Testing Specialist  
 **Verification Date:** September 6, 2026
 

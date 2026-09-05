@@ -107,7 +107,7 @@
 ---
 
 ## Technical Sign-off by Audit Verification Lead
-- **Architecture & Multi-Tenancy:** Verified 100% compliant with PostgreSQL tenant isolation.
+- **Architecture & Multi-Tenancy:** Verified 100% compliant with MySQL tenant database/schema isolation.
 - **Financial Ledger & FIFO Accounting:** Mathematically tested with zero variance across demand, concession, payment, and refund cycles.
 - **Access Control & Parent Portal IDOR:** Hardened and verified against unauthorized cross-ward inspection.
 - **Production Build:** Vite production bundle passes in 3.88s with zero errors on Hostinger Ubuntu VPS.

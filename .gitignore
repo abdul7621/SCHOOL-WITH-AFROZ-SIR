@@ -37,6 +37,7 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+powershell.bat
 
 # Storage & Temporary Dumps
 storage/

@@ -1,6 +1,6 @@
 # 7A SCHOOL ERP — CUSTOMER JOURNEY TEST REPORT (7 USER PERSONAS)
 **Verification Scope:** End-to-End Persona-Driven Business Workflows  
-**Environment:** Hostinger Production VPS (`187.127.176.21`), PostgreSQL 16, Vite React Frontend  
+**Environment:** Hostinger Production VPS (`187.127.176.21`), MySQL 8.0, Vite React Frontend  
 **Auditor:** Antigravity Forensic QA Specialist  
 **Standard:** Every journey traced from initial login to final output generation with data persistence and UI feedback.
 

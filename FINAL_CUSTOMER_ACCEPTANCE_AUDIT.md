@@ -3,7 +3,7 @@
 **Client / Project:** School ERP SaaS Platform (Afroz Sir / 7A Digital Solution)  
 **Verification Date:** September 6, 2026  
 **Auditor:** Lead System Architect & Forensic QA Specialist (Antigravity Core)  
-**Target Environment:** Hostinger VPS (Ubuntu 24.04 LTS, IP: `187.127.176.21`, PostgreSQL 16, Nginx, PM2)
+**Target Environment:** Hostinger VPS (Ubuntu 24.04 LTS, IP: `187.127.176.21`, MySQL 8.0, Nginx, PM2)
 
 ---
 
@@ -64,7 +64,7 @@ To eliminate superficial "checkbox" approvals, every requirement was subjected t
 
 ```
 [Layer A: Database / Schema Layer]
-   │  - PostgreSQL tables, foreign keys, decimal precision, indexes, tenant_id columns.
+   │  - MySQL tables, foreign keys, decimal precision, indexes, tenant_id columns.
    ▼
 [Layer B: Backend Business Logic & API Layer]
    │  - FastAPI routes, Pydantic schemas, FIFO accounting algorithms, RBAC dependencies.

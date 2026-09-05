@@ -10,7 +10,7 @@
 
 The financial subsystem of the 7A School ERP operates as an **uncompromising, audit-grade accounting ledger**. Every monetary transaction is governed by strict mathematical laws:
 
-- **Zero Floating-Point Drift:** All calculations in the backend are performed using Python's arbitrary-precision `decimal.Decimal` and stored in PostgreSQL as `NUMERIC(12, 2)`.
+- **Zero Floating-Point Drift:** All calculations in the backend are performed using Python's arbitrary-precision `decimal.Decimal` and stored in MySQL as `DECIMAL(12, 2)`.
 - **Strict FIFO Settlement:** Overdue debts are mathematically prioritized over current or advance dues.
 - **Double-Entry Reversal Integrity:** No collection record can ever be deleted (`DELETE` queries are strictly forbidden on financial tables). Cancellations append offsetting audit records and restore the exact original demand balances.
 - **Daily Day-Book Parity:** Inflows, outflows, refunds, and petty vouchers reconcile with zero mathematical discrepancy.

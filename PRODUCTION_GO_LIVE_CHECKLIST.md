@@ -2,7 +2,7 @@
 **Server Host:** Hostinger Cloud VPS  
 **IP Address:** `187.127.176.21`  
 **Operating System:** Ubuntu 24.04 LTS (x86_64)  
-**Production Stack:** Nginx 1.24, PostgreSQL 16, Python 3.12 (FastAPI), Node.js 20 (Vite / React 18), PM2  
+**Production Stack:** Nginx 1.24, MySQL 8.0, Python 3.12 (FastAPI), Node.js 20 (Vite / React 18), PM2  
 **Target Domain:** `schoolerp.7adigital.com` (or client custom domain)
 
 ---
@@ -25,10 +25,10 @@
      │ (1569 modules bundle) │                       │ (Managed by PM2 / Git)│
      └───────────────────────┘                       └───────────┬───────────┘
                                                                  │
-                                                                 ▼ (Unix Socket / Port 5432)
+                                                                 ▼ (Port 3306 / asyncmy)
                                                      ┌───────────────────────┐
-                                                     │ PostgreSQL 16 Database│
-                                                     │ (Tenant-Isolated DB)  │
+                                                     │    MySQL 8.0 Database │
+                                                     │(saas_control/tenants) │
                                                      └───────────────────────┘
 ```
 
@@ -42,9 +42,9 @@
 | **Web Server (Nginx)** | Reverse Proxy + Gzip + Cache Headers | 🟢 PASS | `/etc/nginx/sites-available/school-erp` |
 | **Frontend Production Build** | Minified Vite bundle (Zero errors) | 🟢 PASS | Built in 3.88s (1569 modules) |
 | **Backend Supervisor** | PM2 Daemon (auto-restart on crash) | 🟢 PASS | `pm2 status` $\rightarrow$ `school-erp-backend (online)` |
-| **Database Engine** | PostgreSQL 16 with UTF-8 encoding | 🟢 PASS | `pg_isready -h localhost -p 5432` |
+| **Database Engine** | MySQL 8.0 with utf8mb4 encoding | 🟢 PASS | `mysqladmin ping -h 127.0.0.1` |
 | **Database Migrations** | Alembic migrations at head | 🟢 PASS | `alembic upgrade head` |
-| **Firewall (UFW)** | Ports 22, 80, 443 open; 8000 & 5432 blocked | 🟢 PASS | `ufw status` |
+| **Firewall (UFW)** | Ports 22, 80, 443 open; 8000 & 3306 blocked | 🟢 PASS | `ufw status` |
 | **SSL / TLS Certificate** | Let's Encrypt HTTPS auto-renewal | 🟡 PENDING | Awaiting client DNS A-record pointing |
 
 ---
@@ -92,17 +92,16 @@ curl -I http://127.0.0.1:8000/api/health
 ### 4.1. Backup Automation Script (`/usr/local/bin/backup-school-erp.sh`)
 ```bash
 #!/bin/bash
-# 7A School ERP Daily PostgreSQL Backup Script
+# 7A School ERP Daily MySQL Backup Script
 BACKUP_DIR="/var/backups/school_erp"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-DATABASE="school_erp_db"
-USER="postgres"
 
 mkdir -p $BACKUP_DIR
-pg_dump -U $USER -F c -b -v -f "$BACKUP_DIR/db_backup_$TIMESTAMP.dump" $DATABASE
+# Backup all tenant & control databases with single-transaction consistency
+mysqldump -u root --all-databases --single-transaction --quick > "$BACKUP_DIR/mysql_backup_$TIMESTAMP.sql"
 
 # Retain backups for 30 days and delete older files
-find $BACKUP_DIR -type f -name "*.dump" -mtime +30 -exec rm {} \;
+find $BACKUP_DIR -type f -name "*.sql" -mtime +30 -exec rm {} \;
 ```
 
 ### 4.2. Crontab Schedule (Automated Nightly Backup at 2:00 AM)
@@ -113,8 +112,8 @@ find $BACKUP_DIR -type f -name "*.dump" -mtime +30 -exec rm {} \;
 ### 4.3. Point-in-Time Database Restoration Procedure
 In the event of accidental data corruption or server migration:
 ```bash
-# Drop current schema and restore from target dump
-pg_restore -U postgres -d school_erp_db --clean --if-exists /var/backups/school_erp/db_backup_TARGET.dump
+# Restore entire database cluster from target SQL dump
+mysql -u root < /var/backups/school_erp/mysql_backup_TARGET.sql
 ```
 
 ---
