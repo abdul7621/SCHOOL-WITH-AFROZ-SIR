@@ -350,26 +350,6 @@ export const FeeCollection = () => {
     }
   };
 
-  // Reverse Receipt Handler
-  const handleReverseReceipt = async (e) => {
-    e.preventDefault();
-    setReversing(true);
-    try {
-      await api.post(`/fees/receipts/${reverseReceiptNo}/reverse`, {
-        reason: reverseReason,
-      });
-      alert('Receipt successfully reversed and ledger demands restored.');
-      setShowReverseModal(false);
-      setReverseReceiptNo('');
-      setReverseReason('');
-      if (selectedStudent) loadStudentLedger(selectedStudent);
-    } catch (err) {
-      alert('Error reversing receipt: ' + (err.response?.data?.detail || err.message));
-    } finally {
-      setReversing(false);
-    }
-  };
-
   // Issue Fee Refund Handler
   const handleIssueRefund = async (e) => {
     e.preventDefault();
@@ -1339,66 +1319,6 @@ export const FeeCollection = () => {
                 </button>
                 <button type="submit" className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold">
                   Grant Concession
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Reverse Fee Receipt */}
-      {showReverseModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4 text-xs">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                <RotateCcw size={16} className="text-rose-600" />
-                <span>Reverse Fee Receipt</span>
-              </h3>
-              <button onClick={() => setShowReverseModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X size={16} />
-              </button>
-            </div>
-            <form onSubmit={handleReverseReceipt} className="space-y-3">
-              <div>
-                <label className="block text-slate-700 font-semibold mb-1">Receipt Number *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. REC-2026-0001"
-                  value={reverseReceiptNo}
-                  onChange={(e) => setReverseReceiptNo(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold"
-                />
-              </div>
-              <div>
-                <label className="block text-slate-700 font-semibold mb-1">Reason for Reversal *</label>
-                <textarea
-                  required
-                  rows={3}
-                  placeholder="State reason (e.g. Wrong student selected / Cheque dishonoured)..."
-                  value={reverseReason}
-                  onChange={(e) => setReverseReason(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg"
-                />
-              </div>
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-[11px] leading-relaxed">
-                ⚠️ Reversing a receipt will mark it as REVERSED, restore outstanding balances on student ledger demands, and generate an immutable audit log.
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowReverseModal(false)}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-semibold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={reversing}
-                  className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-bold disabled:opacity-50"
-                >
-                  {reversing ? 'Reversing...' : 'Confirm Reversal'}
                 </button>
               </div>
             </form>
