@@ -5,8 +5,8 @@ import { useAuth } from '../context/AuthContext';
 import { useTenant } from '../context/TenantContext';
 
 export const Login = () => {
-  const [username, setUsername] = useState('admin@sample.7aedu.com');
-  const [password, setPassword] = useState('SamplePass123!');
+  const [username, setUsername] = useState('admin@sample.com');
+  const [password, setPassword] = useState('Admin123!');
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -21,8 +21,12 @@ export const Login = () => {
     setLoading(true);
 
     try {
-      await login(username, password, isSuperAdmin);
-      navigate('/');
+      const userData = await login(username, password, isSuperAdmin);
+      if (isSuperAdmin || userData?.isSuperAdmin || userData?.role === 'SUPER_ADMIN') {
+        navigate('/superadmin');
+      } else {
+        navigate('/');
+      }
     } catch (err) {
       setError(err.message || 'Login failed. Check credentials.');
     } finally {
@@ -50,21 +54,21 @@ export const Login = () => {
           <div className="flex bg-slate-950 p-1 rounded-lg mb-6 border border-slate-800">
             <button
               type="button"
-              onClick={() => { setIsSuperAdmin(false); setUsername('admin@sample.7aedu.com'); }}
+              onClick={() => { setIsSuperAdmin(false); setUsername('admin@sample.com'); setPassword('Admin123!'); }}
               className={`flex-1 py-2 text-xs font-semibold rounded-md transition-all ${
                 !isSuperAdmin ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
               }`}
             >
-              School Staff
+              School Principal / Staff
             </button>
             <button
               type="button"
-              onClick={() => { setIsSuperAdmin(true); setUsername('superadmin@7aedu.com'); }}
+              onClick={() => { setIsSuperAdmin(true); setUsername('superadmin@7aedu.com'); setPassword('AdminSecurePassword123!'); }}
               className={`flex-1 py-2 text-xs font-semibold rounded-md transition-all ${
-                isSuperAdmin ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                isSuperAdmin ? 'bg-amber-600 text-white shadow' : 'text-slate-400 hover:text-white'
               }`}
             >
-              Super Admin
+              👑 Platform Super Admin
             </button>
           </div>
 

@@ -22,8 +22,15 @@ export const Sidebar = () => {
   const { user, hasPermission } = useAuth();
   const { settings } = useTenant();
 
-  const navItems = [
-    { to: '/', label: 'Dashboard', icon: LayoutDashboard, show: true },
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN' || user?.isSuperAdmin;
+
+  const superAdminNavItems = [
+    { to: '/superadmin', label: 'Schools / Tenants Directory', icon: School, show: true },
+    { to: '/landing', label: 'SaaS Platform Preview', icon: Globe, show: true },
+  ];
+
+  const schoolNavItems = [
+    { to: '/', label: 'Principal Dashboard', icon: LayoutDashboard, show: true },
     { to: '/students', label: 'Students & 360° Profile', icon: Users, show: hasPermission('students:view') },
     { to: '/academics', label: 'Classes & Sessions', icon: Layers, show: true },
     { to: '/academics/timetable', label: 'Timetable & Syllabus', icon: GraduationCap, show: true },
@@ -36,19 +43,28 @@ export const Sidebar = () => {
     { to: '/reports', label: 'Reports & Analytics', icon: BarChart3, show: hasPermission('fees:view_reports') },
     { to: '/cms', label: 'Website CMS & Notices', icon: Globe, show: true },
     { to: '/parent-portal', label: 'Parent Portal View', icon: Users, show: true },
-    { to: '/superadmin', label: 'Super Admin Control', icon: ShieldAlert, show: user?.role === 'SUPER_ADMIN' || user?.isSuperAdmin },
   ];
+
+  const navItems = isSuperAdmin ? superAdminNavItems : schoolNavItems;
 
   return (
     <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col h-screen fixed left-0 top-0 z-30 border-r border-slate-800">
       {/* Brand Header */}
       <div className="h-16 flex items-center px-6 gap-3 border-b border-slate-800">
-        <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-black text-white text-lg">
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-white text-lg ${
+          isSuperAdmin ? 'bg-amber-600 shadow-amber-600/30' : 'bg-blue-600 shadow-blue-600/30'
+        }`}>
           7A
         </div>
         <div className="overflow-hidden">
-          <div className="font-bold text-white text-sm truncate">{settings.school_name}</div>
-          <div className="text-[11px] text-blue-400 font-medium tracking-wide uppercase">School ERP SaaS</div>
+          <div className="font-bold text-white text-sm truncate">
+            {isSuperAdmin ? '7A Control Plane' : settings.school_name}
+          </div>
+          <div className={`text-[11px] font-medium tracking-wide uppercase ${
+            isSuperAdmin ? 'text-amber-400' : 'text-blue-400'
+          }`}>
+            {isSuperAdmin ? 'Platform Super Admin' : 'School ERP Cockpit'}
+          </div>
         </div>
       </div>
 
@@ -65,7 +81,7 @@ export const Sidebar = () => {
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                     isActive
-                      ? 'bg-blue-600 text-white shadow-sm'
+                      ? isSuperAdmin ? 'bg-amber-600 text-white shadow-sm' : 'bg-blue-600 text-white shadow-sm'
                       : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
                   }`
                 }
@@ -80,12 +96,20 @@ export const Sidebar = () => {
       {/* User Info Footer */}
       <div className="p-4 border-t border-slate-800 bg-slate-950/50">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center font-bold text-white text-xs">
-            {user?.username?.substring(0, 2).toUpperCase() || 'U'}
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-xs ${
+            isSuperAdmin ? 'bg-amber-600' : 'bg-slate-700'
+          }`}>
+            {user?.username?.substring(0, 2).toUpperCase() || (isSuperAdmin ? 'SA' : 'PR')}
           </div>
           <div className="overflow-hidden">
-            <div className="text-xs font-semibold text-white truncate">{user?.username || user?.full_name || 'User'}</div>
-            <div className="text-[10px] text-slate-400 uppercase tracking-wider">{user?.roles?.[0] || user?.role || 'Staff'}</div>
+            <div className="text-xs font-semibold text-white truncate">
+              {user?.username || user?.full_name || (isSuperAdmin ? 'Platform Admin' : 'Principal')}
+            </div>
+            <div className={`text-[10px] uppercase tracking-wider font-bold ${
+              isSuperAdmin ? 'text-amber-400' : 'text-blue-400'
+            }`}>
+              {isSuperAdmin ? '👑 Super Admin' : '🎓 School Principal'}
+            </div>
           </div>
         </div>
       </div>
