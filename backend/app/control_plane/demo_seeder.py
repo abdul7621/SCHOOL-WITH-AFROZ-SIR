@@ -251,8 +251,8 @@ class DemoSchoolSeeder:
                     await db.flush()
 
                     col_item = FeeCollectionItem(
-                        collection_id=receipt.id,
-                        demand_id=demand.id,
+                        fee_collection_id=receipt.id,
+                        student_fee_demand_id=demand.id,
                         allocated_base_amount=base_amt,
                         allocated_fine_amount=Decimal("0.00"),
                         total_allocated_amount=base_amt,
