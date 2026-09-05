@@ -32,6 +32,10 @@ class Tenant(BaseControlModel):
     domains = relationship("TenantDomain", back_populates="tenant", cascade="all, delete-orphan")
     module_toggles = relationship("TenantModuleToggle", back_populates="tenant", cascade="all, delete-orphan")
 
+    @property
+    def db_password(self) -> str:
+        return self.db_password_encrypted
+
 
 class TenantDomain(BaseControlModel):
     __tablename__ = "tenant_domains"

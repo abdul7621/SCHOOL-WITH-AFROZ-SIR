@@ -131,7 +131,7 @@ class TenantDatabaseManager:
                     tenant_slug=tenant.slug,
                     db_name=tenant.db_name,
                     db_user=tenant.db_user or settings.TENANT_MYSQL_ADMIN_USER,
-                    db_pass=tenant.db_password or settings.TENANT_MYSQL_ADMIN_PASSWORD,
+                    db_pass=tenant.db_password_encrypted or settings.TENANT_MYSQL_ADMIN_PASSWORD,
                     db_host=tenant.db_host or settings.TENANT_MYSQL_HOST,
                     db_port=tenant.db_port or settings.TENANT_MYSQL_PORT,
                 )
