@@ -2,6 +2,8 @@
 
 Production-grade, API-first **Multi-Tenant School ERP SaaS Platform** developed by **7A Digital Solution**.
 
+> 📌 **Server & Deployment Handover Documentation**: For live Hostinger VPS infrastructure details (`187.127.176.21`), PM2, Nginx, MySQL databases, credentials, and 1-click deployment operations, see [SERVER_HANDOVER_DOCUMENTATION.md](SERVER_HANDOVER_DOCUMENTATION.md).
+
 ---
 
 ## 🏛️ Architectural Overview
