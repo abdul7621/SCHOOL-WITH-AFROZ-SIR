@@ -12,6 +12,10 @@ echo "Date: $(date -u)"
 echo "Host: $(hostname -f 2>/dev/null || hostname)"
 echo ""
 
+# Extract Database credentials from backend/.env
+DB_PASS=$(grep '^CONTROL_DB_PASSWORD=' /var/www/school-erp/backend/.env 2>/dev/null | head -n 1 | cut -d '=' -f2- | tr -d '"' | tr -d "'")
+DB_USER=$(grep '^CONTROL_DB_USER=' /var/www/school-erp/backend/.env 2>/dev/null | head -n 1 | cut -d '=' -f2- | tr -d '"' | tr -d "'")
+
 # ------------------------------------------------------------------------------
 # 1. ACTUAL OS
 # ------------------------------------------------------------------------------
@@ -82,7 +86,7 @@ echo ""
 echo ">>> [5/20] ACTUAL DATABASE VERSION"
 if command -v mysql &>/dev/null; then
     echo "MySQL CLI Client: $(mysql --version)"
-    echo "MySQL Server Engine: $(mysql -u root -e 'SELECT VERSION(), @@version_comment;' 2>&1 || echo 'Cannot query without credentials')"
+    echo "MySQL Server Engine: $(mysql -u root -p"$DB_PASS" -e 'SELECT VERSION(), @@version_comment;' 2>&1 || mysql -u "$DB_USER" -p"$DB_PASS" -e 'SELECT VERSION();' 2>&1 || echo 'Cannot query without credentials')"
 fi
 if command -v psql &>/dev/null; then
     echo "PostgreSQL Version: $(psql --version 2>&1)"
@@ -177,10 +181,13 @@ echo ""
 # ------------------------------------------------------------------------------
 echo ">>> [12/20] ACTUAL DATABASE CONNECTION (VIA BACKEND)"
 if [ -f /var/www/school-erp/backend/venv/bin/python ]; then
+    cd /var/www/school-erp/backend
     /var/www/school-erp/backend/venv/bin/python - << 'EOF'
 import asyncio
 import sys
+import os
 sys.path.insert(0, '/var/www/school-erp/backend')
+os.chdir('/var/www/school-erp/backend')
 try:
     from app.core.config import settings
     from app.core.database import control_async_engine
@@ -197,6 +204,7 @@ try:
 except Exception as e:
     print(f"🔴 Database Connection FAILED: {e}")
 EOF
+    cd /var/www/school-erp
 else
     echo "Python venv not found to test database connection"
 fi
@@ -214,6 +222,7 @@ if [ -d /var/www/school-erp/backend ]; then
     else
         echo "Alembic executable not found in venv"
     fi
+    cd /var/www/school-erp
 fi
 echo ""
 
@@ -222,7 +231,15 @@ echo ""
 # ------------------------------------------------------------------------------
 echo ">>> [14/20] ACTUAL TENANT DATABASES IN MYSQL"
 if command -v mysql &>/dev/null; then
-    mysql -u root -e "
+    mysql -u root -p"$DB_PASS" -e "
+    SELECT table_schema AS 'Database', 
+           COUNT(*) AS 'Total Tables',
+           ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS 'Size (MB)'
+    FROM information_schema.tables 
+    WHERE table_schema IN ('saas_control_db', 'tenant_sample_db', 'laravel_db')
+       OR table_schema LIKE 'tenant_%'
+    GROUP BY table_schema;
+    " 2>&1 || mysql -u "$DB_USER" -p"$DB_PASS" -e "
     SELECT table_schema AS 'Database', 
            COUNT(*) AS 'Total Tables',
            ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS 'Size (MB)'

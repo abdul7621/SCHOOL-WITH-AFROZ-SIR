@@ -64,7 +64,10 @@ class Settings(BaseSettings):
         return f"mysql+pymysql://{self.CONTROL_DB_USER}:{self.CONTROL_DB_PASSWORD}@{self.CONTROL_DB_HOST}:{self.CONTROL_DB_PORT}/{self.CONTROL_DB_NAME}?charset=utf8mb4"
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"),
+            ".env",
+        ),
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=True,
