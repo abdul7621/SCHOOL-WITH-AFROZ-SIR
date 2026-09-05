@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   User,
@@ -14,9 +14,29 @@ import {
   ShieldCheck,
   Star,
 } from 'lucide-react';
+import api from '../../api/client';
 
 export const Student360Drawer = ({ student, isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState('overview');
+  const [ledger, setLedger] = useState(null);
+  const [loadingLedger, setLoadingLedger] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && student?.id && activeTab === 'fees') {
+      const fetchLedger = async () => {
+        setLoadingLedger(true);
+        try {
+          const res = await api.get(`/fees/ledger/${student.id}`);
+          if (res.data) setLedger(res.data);
+        } catch (err) {
+          console.error('Error loading ledger in drawer:', err);
+        } finally {
+          setLoadingLedger(false);
+        }
+      };
+      fetchLedger();
+    }
+  }, [isOpen, student?.id, activeTab]);
 
   if (!isOpen || !student) return null;
 
@@ -190,32 +210,67 @@ export const Student360Drawer = ({ student, isOpen, onClose }) => {
           {/* TAB 3: Fee Ledger */}
           {activeTab === 'fees' && (
             <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-blue-50 rounded-2xl border border-blue-200">
-                  <div className="text-slate-500 font-semibold text-[10px] uppercase">Total Paid</div>
-                  <div className="text-xl font-black text-blue-900 mt-1">₹13,500</div>
+              {loadingLedger ? (
+                <div className="py-12 text-center text-slate-400 font-bold text-xs animate-pulse">
+                  Loading live statement of account...
                 </div>
-                <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200">
-                  <div className="text-emerald-700 font-semibold text-[10px] uppercase">Pending Balance</div>
-                  <div className="text-xl font-black text-emerald-900 mt-1">₹0.00 (All Clear)</div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-                <div className="p-3.5 bg-slate-50 font-bold border-b border-slate-200">Recent Fee Receipts</div>
-                <div className="divide-y divide-slate-100">
-                  <div className="p-3 flex justify-between items-center">
-                    <div>
-                      <div className="font-mono font-bold text-blue-700">RCP-2026-1042</div>
-                      <div className="text-slate-400 text-[10px]">Quarter 1 Tuition Fee &bull; UPI</div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 bg-blue-50 rounded-2xl border border-blue-200">
+                      <div className="text-slate-500 font-semibold text-[10px] uppercase">Total Demanded / Billed</div>
+                      <div className="text-xl font-black text-blue-900 mt-1">₹{ledger?.total_demanded?.toLocaleString() || '0'}</div>
                     </div>
-                    <div className="text-right">
-                      <div className="font-black text-emerald-600">₹4,500.00</div>
-                      <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">CONFIRMED</span>
+                    <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200">
+                      <div className="text-emerald-700 font-semibold text-[10px] uppercase">Total Paid</div>
+                      <div className="text-xl font-black text-emerald-900 mt-1">₹{ledger?.total_paid?.toLocaleString() || '0'}</div>
                     </div>
                   </div>
-                </div>
-              </div>
+
+                  <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+                    <div>
+                      <div className="text-[10px] uppercase font-bold text-slate-500">Net Outstanding Balance</div>
+                      <div className={`text-xl font-black ${ledger?.net_balance_due > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                        ₹{ledger?.net_balance_due?.toLocaleString() || '0'} {ledger?.net_balance_due <= 0 && '(All Clear)'}
+                      </div>
+                    </div>
+                    <a
+                      href={`/api/v1/documents/fee-card/${student.id}/html`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow"
+                    >
+                      <Printer size={13} /> Print Full Fee Card
+                    </a>
+                  </div>
+
+                  <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                    <div className="p-3.5 bg-slate-50 font-bold border-b border-slate-200 text-xs">Payment Receipts History</div>
+                    <div className="divide-y divide-slate-100">
+                      {ledger?.receipts?.length > 0 ? (
+                        ledger.receipts.map((r) => (
+                          <div key={r.id} className="p-3 flex justify-between items-center text-xs">
+                            <div>
+                              <div className="font-mono font-bold text-blue-700">{r.receipt_no}</div>
+                              <div className="text-slate-400 text-[10px]">{r.collection_date} &bull; {r.payment_mode || 'Cash'}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-black text-emerald-600">₹{r.total_amount_paid?.toLocaleString()}</div>
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                                r.status === 'CONFIRMED' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                              }`}>
+                                {r.status}
+                              </span>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="p-6 text-center text-slate-400 text-xs">No payment receipts recorded yet.</div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -294,6 +349,21 @@ export const Student360Drawer = ({ student, isOpen, onClose }) => {
                   className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold flex items-center gap-1.5 shadow"
                 >
                   <Printer size={13} /> Print ID Card
+                </a>
+              </div>
+
+              <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-slate-900">Student Cumulative Fee Card / Statement of Account</div>
+                  <div className="text-slate-400 text-[10px]">Complete billing ledger with demands, payments, concessions, and outstanding dues</div>
+                </div>
+                <a
+                  href={`/api/v1/documents/fee-card/${student.id}/html`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold flex items-center gap-1.5 shadow"
+                >
+                  <Printer size={13} /> Print Fee Card
                 </a>
               </div>
             </div>

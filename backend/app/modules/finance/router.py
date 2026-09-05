@@ -168,55 +168,105 @@ async def get_day_book(
     db: AsyncSession = Depends(get_tenant_db),
 ):
     """
-    Consolidated Day-Book: Combines student fee collections and financial vouchers
+    Consolidated Day-Book: Combines student fee collections, fee refunds, and financial vouchers
     for the selected date to produce total cash inflow, outflow, and net daily balance.
     """
     target_date = report_date or transaction_date or date.today()
 
+    from app.modules.fees.models import FeeRefund
+    from app.modules.students.models import Student
+
     # 1. Active Fee Collections on this date
     fee_stmt = (
-        select(func.sum(FeeCollection.total_amount_paid))
+        select(FeeCollection)
+        .options(selectinload(FeeCollection.student), selectinload(FeeCollection.payment_mode))
         .where(
             FeeCollection.collection_date == target_date,
             FeeCollection.status == "CONFIRMED",
         )
+        .order_by(FeeCollection.created_at.asc())
     )
     fee_res = await db.execute(fee_stmt)
-    total_fee = fee_res.scalar() or Decimal("0.00")
+    fee_collections = fee_res.scalars().all()
+    total_fee = sum((c.total_amount_paid for c in fee_collections), Decimal("0.00"))
 
-    # 2. Other Incomes on this date
-    inc_stmt = (
-        select(func.sum(FinanceVoucher.amount))
+    # 2. Fee Refunds disbursed on this date
+    refund_stmt = (
+        select(FeeRefund)
+        .options(selectinload(FeeRefund.student), selectinload(FeeRefund.payment_mode))
+        .where(FeeRefund.refund_date == target_date)
+        .order_by(FeeRefund.created_at.asc())
+    )
+    refund_res = await db.execute(refund_stmt)
+    fee_refunds = refund_res.scalars().all()
+    total_refunds = sum((r.refund_amount for r in fee_refunds), Decimal("0.00"))
+
+    # 3. Financial Vouchers on this date
+    vch_stmt = (
+        select(FinanceVoucher)
+        .options(selectinload(FinanceVoucher.category), selectinload(FinanceVoucher.payment_mode))
         .where(
             FinanceVoucher.transaction_date == target_date,
-            FinanceVoucher.voucher_type == "INCOME",
             FinanceVoucher.status == "POSTED",
         )
+        .order_by(FinanceVoucher.created_at.asc())
     )
-    inc_res = await db.execute(inc_stmt)
-    other_income = inc_res.scalar() or Decimal("0.00")
+    vch_res = await db.execute(vch_stmt)
+    vouchers = vch_res.scalars().all()
 
-    # 3. Expenses on this date
-    exp_stmt = (
-        select(func.sum(FinanceVoucher.amount))
-        .where(
-            FinanceVoucher.transaction_date == target_date,
-            FinanceVoucher.voucher_type == "EXPENSE",
-            FinanceVoucher.status == "POSTED",
-        )
-    )
-    exp_res = await db.execute(exp_stmt)
-    total_expenses = exp_res.scalar() or Decimal("0.00")
+    other_income = sum((v.amount for v in vouchers if v.voucher_type == "INCOME"), Decimal("0.00"))
+    total_voucher_expenses = sum((v.amount for v in vouchers if v.voucher_type == "EXPENSE"), Decimal("0.00"))
 
-    net_cashflow = (Decimal(str(total_fee)) + Decimal(str(other_income))) - Decimal(str(total_expenses))
+    total_gross_income = Decimal(str(total_fee)) + Decimal(str(other_income))
+    total_expenses = Decimal(str(total_voucher_expenses)) + Decimal(str(total_refunds))
+    net_cashflow = total_gross_income - total_expenses
+
+    # Combine all items into transaction list for Day-Book table
+    daily_items = []
+    for c in fee_collections:
+        st_name = f"{c.student.first_name} {c.student.last_name or ''}".strip() if c.student else "Student"
+        mode_name = c.payment_mode.name if c.payment_mode else "Cash"
+        daily_items.append({
+            "id": c.id,
+            "voucher_no": c.receipt_no,
+            "voucher_type": "INCOME",
+            "party_name": f"{st_name} (Adm: {c.student.admission_no if c.student else '-'})",
+            "description": f"Fee Collection via {mode_name}",
+            "amount": float(c.total_amount_paid),
+        })
+
+    for r in fee_refunds:
+        st_name = f"{r.student.first_name} {r.student.last_name or ''}".strip() if r.student else "Student"
+        mode_name = r.payment_mode.name if r.payment_mode else "Cash"
+        daily_items.append({
+            "id": r.id,
+            "voucher_no": r.refund_no,
+            "voucher_type": "EXPENSE",
+            "party_name": f"{st_name} (Adm: {r.student.admission_no if r.student else '-'})",
+            "description": f"Fee Refund ({mode_name}): {r.reason}",
+            "amount": float(r.refund_amount),
+        })
+
+    for v in vouchers:
+        daily_items.append({
+            "id": v.id,
+            "voucher_no": v.voucher_no,
+            "voucher_type": v.voucher_type,
+            "party_name": v.party_name or (v.category.name if v.category else "Voucher"),
+            "description": v.description or (f"{v.category.name} expense" if v.category else "Voucher"),
+            "amount": float(v.amount),
+        })
 
     return success_response(
         data={
             "report_date": str(target_date),
             "total_fee_collections": float(total_fee),
+            "total_fee_refunds": float(total_refunds),
             "total_other_income": float(other_income),
-            "total_gross_income": float(total_fee + other_income),
+            "total_other_incomes": float(other_income),
+            "total_gross_income": float(total_gross_income),
             "total_expenses": float(total_expenses),
             "net_daily_cashflow": float(net_cashflow),
+            "vouchers": daily_items,
         }
     )

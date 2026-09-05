@@ -172,6 +172,40 @@ export const DocumentCenter = () => {
             </a>
           </div>
         </div>
+
+        {/* Card 3: Student Cumulative Fee Card */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+          <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+            <CreditCard size={18} className="text-indigo-600" />
+            <h3 className="font-bold text-slate-900 text-sm">Student Cumulative Fee Card (PDF 3 Sec 13)</h3>
+          </div>
+
+          <div className="space-y-4 text-xs">
+            <p className="text-slate-600 leading-relaxed">
+              Generates official statement of account showing demands, installment periods, payment receipts, concessions, late fines, and net outstanding dues balance.
+            </p>
+
+            {selectedStudent ? (
+              <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl space-y-2">
+                <div className="font-bold text-indigo-900">{selectedStudent.full_name}</div>
+                <div className="text-slate-600">Admission No: {selectedStudent.admission_no} | Class: {selectedStudent.class_name}</div>
+                <a
+                  href={`/api/v1/documents/fee-card/${selectedStudent.id}/html?tenant_slug=${localStorage.getItem('tenant_slug') || 'sample'}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full flex items-center justify-center gap-2 mt-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-lg transition-colors shadow"
+                >
+                  <Printer size={14} />
+                  <span>Generate Printable Fee Card</span>
+                </a>
+              </div>
+            ) : (
+              <div className="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-slate-500">
+                Please search and select a student in Card 1 to preview and print their cumulative Fee Card.
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

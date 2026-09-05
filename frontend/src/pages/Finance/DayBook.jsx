@@ -121,10 +121,10 @@ export const DayBook = () => {
         </div>
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
           <div className="text-xs text-slate-500 font-semibold uppercase">Other Incomes</div>
-          <div className="text-xl font-bold text-emerald-600 mt-1">₹{dayBook?.total_other_incomes?.toLocaleString() || 0}</div>
+          <div className="text-xl font-bold text-emerald-600 mt-1">₹{(dayBook?.total_other_income ?? dayBook?.total_other_incomes ?? 0).toLocaleString()}</div>
         </div>
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <div className="text-xs text-slate-500 font-semibold uppercase">Voucher Expenses</div>
+          <div className="text-xs text-slate-500 font-semibold uppercase">Outflows & Refunds</div>
           <div className="text-xl font-bold text-rose-600 mt-1">₹{dayBook?.total_expenses?.toLocaleString() || 0}</div>
         </div>
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
