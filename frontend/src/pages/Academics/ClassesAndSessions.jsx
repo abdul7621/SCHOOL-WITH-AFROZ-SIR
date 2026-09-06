@@ -14,6 +14,9 @@ import {
   Edit2,
   Check,
   X,
+  UserCheck,
+  Users,
+  Copy,
 } from 'lucide-react';
 import api from '../../api/client';
 
@@ -76,13 +79,28 @@ export const ClassesAndSessions = () => {
   const [loadingCurriculum, setLoadingCurriculum] = useState(false);
   const [savingCurriculum, setSavingCurriculum] = useState(false);
 
+  // Class Teacher Assignment State
+  const [teachersList, setTeachersList] = useState([]);
+  const [showTeacherModal, setShowTeacherModal] = useState(false);
+  const [assigningSection, setAssigningSection] = useState(null);
+  const [selectedTeacherId, setSelectedTeacherId] = useState('');
+  const [assigningTeacher, setAssigningTeacher] = useState(false);
+
+  // Copy Curriculum State
+  const [showCopyCurriculumModal, setShowCopyCurriculumModal] = useState(false);
+  const [copySourceClassId, setCopySourceClassId] = useState('');
+  const [copyTargetClassIds, setCopyTargetClassIds] = useState([]);
+  const [copyMode, setCopyMode] = useState('MERGE');
+  const [copyingCurriculum, setCopyingCurriculum] = useState(false);
+
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [clsRes, yrRes, subRes] = await Promise.all([
+      const [clsRes, yrRes, subRes, tchRes] = await Promise.all([
         api.get('/academics/classes'),
         api.get('/academics/years'),
         api.get('/academics/subjects'),
+        api.get('/academics/teachers').catch(() => ({ data: [] })),
       ]);
       if (clsRes.data && clsRes.data.length > 0) {
         setClasses(clsRes.data);
@@ -96,6 +114,9 @@ export const ClassesAndSessions = () => {
       if (subRes.data && subRes.data.length > 0) {
         setSubjects(subRes.data);
         setHomeworkSubjectId((prev) => prev || subRes.data[0].id);
+      }
+      if (tchRes.data) {
+        setTeachersList(tchRes.data);
       }
     } catch (e) {
       console.log('Error loading academic data:', e);
@@ -540,6 +561,134 @@ export const ClassesAndSessions = () => {
     }
   };
 
+  // Class Teacher Assignment Handlers
+  const fetchTeachers = async () => {
+    try {
+      const res = await api.get('/academics/teachers');
+      if (res.data) setTeachersList(res.data);
+    } catch (e) {
+      console.error('Error fetching teachers list:', e);
+    }
+  };
+
+  const handleOpenTeacherModal = (section, classObj) => {
+    setAssigningSection({ ...section, className: classObj.name, class_id: classObj.id });
+    setSelectedTeacherId(section.class_teacher?.teacher_user_id || '');
+    setShowTeacherModal(true);
+    if (teachersList.length === 0) {
+      fetchTeachers();
+    }
+  };
+
+  const handleAssignTeacher = async (e) => {
+    e.preventDefault();
+    if (!assigningSection || !selectedTeacherId) return;
+    setAssigningTeacher(true);
+    try {
+      const currentYear = years.find((y) => y.is_current) || years[0];
+      await api.post('/academics/class-teachers', {
+        academic_year_id: currentYear?.id || null,
+        class_id: assigningSection.class_id,
+        section_id: assigningSection.id,
+        teacher_user_id: selectedTeacherId,
+      });
+      setShowTeacherModal(false);
+      setAssigningSection(null);
+      await fetchAll();
+    } catch (err) {
+      alert('Error assigning class teacher: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setAssigningTeacher(false);
+    }
+  };
+
+  const handleUnassignTeacher = async (section, classObj) => {
+    if (!window.confirm(`Unassign class teacher from ${classObj.name} Section ${section.name}?`)) return;
+    try {
+      await api.delete(`/academics/class-teachers/${classObj.id}/${section.id}`);
+      await fetchAll();
+    } catch (err) {
+      alert('Error unassigning teacher: ' + (err.response?.data?.message || err.message));
+    }
+  };
+
+  // Copy Curriculum Handlers
+  const handleOpenCopyModal = () => {
+    if (!curriculumClassId) return;
+    setCopySourceClassId(curriculumClassId);
+    setCopyTargetClassIds([]);
+    setCopyMode('MERGE');
+    setShowCopyCurriculumModal(true);
+  };
+
+  const handleToggleTargetClass = (clsId) => {
+    setCopyTargetClassIds((prev) =>
+      prev.includes(clsId) ? prev.filter((id) => id !== clsId) : [...prev, clsId]
+    );
+  };
+
+  const handleSelectAllTargetClasses = () => {
+    const otherClasses = classes.filter((c) => c.id !== copySourceClassId).map((c) => c.id);
+    if (copyTargetClassIds.length === otherClasses.length) {
+      setCopyTargetClassIds([]);
+    } else {
+      setCopyTargetClassIds(otherClasses);
+    }
+  };
+
+  const handleCopyCurriculum = async (e) => {
+    e.preventDefault();
+    if (copyTargetClassIds.length === 0) {
+      alert('Please select at least one target class to copy to.');
+      return;
+    }
+    setCopyingCurriculum(true);
+    try {
+      const res = await api.post('/academics/curriculum/copy', {
+        source_class_id: copySourceClassId,
+        target_class_ids: copyTargetClassIds,
+        copy_mode: copyMode,
+      });
+      alert(res.message || 'Curriculum copied successfully!');
+      setShowCopyCurriculumModal(false);
+      await fetchCurriculum(curriculumClassId);
+    } catch (err) {
+      alert('Error copying curriculum: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setCopyingCurriculum(false);
+    }
+  };
+
+  const getOccupancyStyle = (status) => {
+    switch (status) {
+      case 'Over Capacity':
+        return 'bg-rose-100 text-rose-800 border-rose-200';
+      case 'Full':
+        return 'bg-red-50 text-red-700 border-red-200';
+      case 'Nearly Full':
+        return 'bg-amber-50 text-amber-800 border-amber-200';
+      case 'Filling Fast':
+        return 'bg-blue-50 text-blue-700 border-blue-200';
+      default:
+        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    }
+  };
+
+  const getOccupancyBarColor = (status) => {
+    switch (status) {
+      case 'Over Capacity':
+        return 'bg-rose-600';
+      case 'Full':
+        return 'bg-red-500';
+      case 'Nearly Full':
+        return 'bg-amber-500';
+      case 'Filling Fast':
+        return 'bg-blue-500';
+      default:
+        return 'bg-emerald-500';
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -650,29 +799,99 @@ export const ClassesAndSessions = () => {
                       <Plus size={12} /> Add Section
                     </button>
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="space-y-2.5">
                     {c.sections?.map((s) => (
-                      <span
+                      <div
                         key={s.id}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-700 font-bold rounded-lg text-xs"
+                        className="bg-slate-50/80 hover:bg-slate-50 border border-slate-200/80 rounded-xl p-3 space-y-2 transition-colors"
                       >
-                        <span>{s.name.startsWith('Section') ? s.name : `Section ${s.name}`}</span>
-                        <span className="text-[10px] font-normal text-blue-400">({s.capacity} seats)</span>
-                        <button
-                          onClick={() => setEditingSection({ ...s, class_id: c.id })}
-                          className="text-blue-500 hover:text-blue-800 ml-0.5"
-                          title="Edit Section"
-                        >
-                          <Edit2 size={11} />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteSection(c.id, s.id, s.name)}
-                          className="text-rose-400 hover:text-rose-600"
-                          title="Delete Section"
-                        >
-                          <Trash2 size={11} />
-                        </button>
-                      </span>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-xs text-slate-800">
+                              {s.name.startsWith('Section') ? s.name : `Section ${s.name}`}
+                            </span>
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getOccupancyStyle(
+                                s.occupancy_status
+                              )}`}
+                            >
+                              {s.occupancy_status || 'Available'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => setEditingSection({ ...s, class_id: c.id })}
+                              className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-blue-600 transition-colors"
+                              title="Edit Section"
+                            >
+                              <Edit2 size={11} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSection(c.id, s.id, s.name)}
+                              className="p-1 hover:bg-rose-100 rounded text-slate-400 hover:text-rose-600 transition-colors"
+                              title="Delete Section"
+                            >
+                              <Trash2 size={11} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Capacity Telemetry & Progress Bar */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[11px] text-slate-600">
+                            <span>
+                              <strong className="text-slate-900 font-bold">{s.enrolled_count ?? 0}</strong> / {s.capacity} Enrolled
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-semibold">
+                              {s.vacant_seats ?? (s.capacity - (s.enrolled_count || 0))} Vacant
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${getOccupancyBarColor(s.occupancy_status)}`}
+                              style={{ width: `${Math.min(100, s.occupancy_rate || 0)}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Class Teacher Row */}
+                        <div className="pt-1 border-t border-slate-200/60 flex items-center justify-between text-xs">
+                          {s.class_teacher ? (
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <UserCheck size={13} className="text-emerald-600 flex-shrink-0" />
+                              <div className="truncate">
+                                <span className="text-[11px] font-bold text-slate-800 truncate block">
+                                  {s.class_teacher.teacher_name}
+                                </span>
+                                <span className="text-[9px] text-slate-400 uppercase font-semibold">Class Teacher</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1 text-slate-400 text-[11px] italic">
+                              <Users size={12} />
+                              <span>No Teacher Assigned</span>
+                            </div>
+                          )}
+
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <button
+                              onClick={() => handleOpenTeacherModal(s, c)}
+                              className="text-[10px] font-bold px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition-colors"
+                            >
+                              {s.class_teacher ? 'Change' : '+ Assign'}
+                            </button>
+                            {s.class_teacher && (
+                              <button
+                                onClick={() => handleUnassignTeacher(s, c)}
+                                className="text-[10px] font-bold px-1.5 py-0.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                title="Unassign Teacher"
+                              >
+                                <X size={11} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -840,10 +1059,19 @@ export const ClassesAndSessions = () => {
                 </select>
               </div>
 
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-slate-500 font-medium">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="text-xs text-slate-500 font-medium mr-1">
                   Mapped: <strong className="text-blue-600">{mappedSubjectIds.length}</strong> of {subjects.length} subjects
                 </span>
+                <button
+                  type="button"
+                  onClick={handleOpenCopyModal}
+                  disabled={!curriculumClassId || mappedSubjectIds.length === 0}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold shadow-sm transition-colors disabled:opacity-40"
+                  title="Copy mapped curriculum to other classes"
+                >
+                  <Copy size={13} /> Copy to Classes
+                </button>
                 <button
                   onClick={handleSaveCurriculum}
                   disabled={savingCurriculum || !curriculumClassId}
@@ -1619,6 +1847,237 @@ export const ClassesAndSessions = () => {
                   className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow disabled:opacity-50"
                 >
                   {updatingHomework ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 11: ASSIGN CLASS TEACHER */}
+      {showTeacherModal && assigningSection && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                  <UserCheck size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">Assign Class Teacher</h3>
+                  <p className="text-[11px] text-slate-400 font-semibold">
+                    {assigningSection.className} — Section {assigningSection.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowTeacherModal(false);
+                  setAssigningSection(null);
+                }}
+                className="p-1 hover:bg-slate-100 rounded-lg text-slate-400"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAssignTeacher} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1.5">Select Teaching Staff</label>
+                <select
+                  value={selectedTeacherId}
+                  onChange={(e) => setSelectedTeacherId(e.target.value)}
+                  required
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 focus:bg-white focus:border-blue-500 transition-all"
+                >
+                  <option value="">-- Choose a Teacher --</option>
+                  {teachersList.map((t) => (
+                    <option key={t.user_id} value={t.user_id}>
+                      {t.full_name} {t.designation ? `(${t.designation})` : ''} {t.employee_id ? `[${t.employee_id}]` : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-slate-400 mt-1.5">
+                  The assigned teacher is designated in-charge for section operations and daily attendance.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                {assigningSection.class_teacher ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const sec = assigningSection;
+                      setShowTeacherModal(false);
+                      setAssigningSection(null);
+                      handleUnassignTeacher(sec, { id: sec.class_id, name: sec.className });
+                    }}
+                    className="text-rose-600 hover:text-rose-700 font-bold text-xs"
+                  >
+                    Remove Teacher
+                  </button>
+                ) : <div />}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowTeacherModal(false);
+                      setAssigningSection(null);
+                    }}
+                    className="px-4 py-2 text-slate-500 hover:text-slate-800 font-semibold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={assigningTeacher || !selectedTeacherId}
+                    className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow disabled:opacity-50"
+                  >
+                    {assigningTeacher ? 'Assigning...' : 'Confirm Assignment'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 12: COPY CURRICULUM TO OTHER CLASSES */}
+      {showCopyCurriculumModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                  <Copy size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">Copy Curriculum to Other Classes</h3>
+                  <p className="text-[11px] text-slate-400 font-semibold">
+                    Source Class:{' '}
+                    <span className="text-indigo-600 font-bold">
+                      {classes.find((c) => c.id === copySourceClassId)?.name || 'Selected Class'}
+                    </span>{' '}
+                    ({mappedSubjectIds.length} subjects mapped)
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowCopyCurriculumModal(false)}
+                className="p-1 hover:bg-slate-100 rounded-lg text-slate-400"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCopyCurriculum} className="space-y-4 text-xs">
+              {/* Target Classes Selection */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-slate-700 font-bold">Select Target Classes</label>
+                  <button
+                    type="button"
+                    onClick={handleSelectAllTargetClasses}
+                    className="text-[11px] text-indigo-600 hover:text-indigo-700 font-bold"
+                  >
+                    {copyTargetClassIds.length === classes.filter((c) => c.id !== copySourceClassId).length
+                      ? 'Deselect All'
+                      : 'Select All'}
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-xl">
+                  {classes
+                    .filter((c) => c.id !== copySourceClassId)
+                    .map((cls) => {
+                      const isSelected = copyTargetClassIds.includes(cls.id);
+                      return (
+                        <label
+                          key={cls.id}
+                          className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all ${
+                            isSelected
+                              ? 'bg-indigo-50/70 border-indigo-400 text-indigo-900 font-bold'
+                              : 'bg-white border-slate-200 text-slate-700'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleTargetClass(cls.id)}
+                            className="rounded text-indigo-600 focus:ring-0 w-3.5 h-3.5"
+                          />
+                          <span className="truncate">{cls.name}</span>
+                        </label>
+                      );
+                    })}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1">
+                  Selected {copyTargetClassIds.length} target class(es)
+                </div>
+              </div>
+
+              {/* Copy Mode Selection */}
+              <div className="space-y-2">
+                <label className="block text-slate-700 font-bold">Copy Mode</label>
+                <div className="space-y-2">
+                  <label
+                    className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                      copyMode === 'MERGE' ? 'border-indigo-500 bg-indigo-50/40' : 'border-slate-200 bg-white'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="copyMode"
+                      value="MERGE"
+                      checked={copyMode === 'MERGE'}
+                      onChange={() => setCopyMode('MERGE')}
+                      className="mt-0.5 text-indigo-600"
+                    />
+                    <div>
+                      <div className="font-bold text-slate-900">Merge (Safe - Recommended)</div>
+                      <div className="text-[11px] text-slate-500">
+                        Adds missing subjects to target classes without deleting any existing subjects already assigned.
+                      </div>
+                    </div>
+                  </label>
+
+                  <label
+                    className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                      copyMode === 'REPLACE' ? 'border-rose-500 bg-rose-50/40' : 'border-slate-200 bg-white'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="copyMode"
+                      value="REPLACE"
+                      checked={copyMode === 'REPLACE'}
+                      onChange={() => setCopyMode('REPLACE')}
+                      className="mt-0.5 text-rose-600"
+                    />
+                    <div>
+                      <div className="font-bold text-rose-900">Replace (Mirror Exactly)</div>
+                      <div className="text-[11px] text-slate-500">
+                        Wipes out existing subject mappings in target classes and makes them an exact duplicate of this curriculum.
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowCopyCurriculumModal(false)}
+                  className="px-4 py-2 text-slate-500 hover:text-slate-800 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={copyingCurriculum || copyTargetClassIds.length === 0}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow transition-colors disabled:opacity-50"
+                >
+                  {copyingCurriculum ? 'Copying...' : `Copy to ${copyTargetClassIds.length} Classes`}
                 </button>
               </div>
             </form>

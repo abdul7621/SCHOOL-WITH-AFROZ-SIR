@@ -81,6 +81,12 @@ class AssignSubjectsToClassRequest(BaseModel):
     subject_ids: List[str]
 
 
+class CopyCurriculumRequest(BaseModel):
+    source_class_id: str
+    target_class_ids: List[str]
+    copy_mode: str = "MERGE"  # 'MERGE' or 'REPLACE'
+
+
 class ClassTeacherAssignRequest(BaseModel):
     academic_year_id: str
     class_id: str

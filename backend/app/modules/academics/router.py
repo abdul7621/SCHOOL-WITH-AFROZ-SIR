@@ -29,12 +29,16 @@ from app.modules.academics.schemas import (
     SubjectUpdate,
     SubjectResponse,
     AssignSubjectsToClassRequest,
+    CopyCurriculumRequest,
     ClassTeacherAssignRequest,
     HomeworkCreateRequest,
     HomeworkUpdate,
     StudentLeaveSubmitRequest,
     StudentLeaveStatusUpdateRequest,
 )
+from app.modules.students.models import StudentEnrollment
+from app.modules.users_rbac.models import User
+from app.modules.staff.models import StaffProfile
 
 router = APIRouter(prefix="/academics", tags=["Academics & Sessions"])
 
@@ -210,20 +214,93 @@ async def delete_academic_year(year_id: str, db: AsyncSession = Depends(get_tena
 # 2. Classes & Sections
 # ==========================================
 @router.get("/classes")
-async def list_classes(db: AsyncSession = Depends(get_tenant_db)):
-    """Lists all classes with their active sections."""
+async def list_classes(academic_year_id: Optional[str] = None, db: AsyncSession = Depends(get_tenant_db)):
+    """Lists all classes with their active sections, live seat occupancy telemetry, and assigned class teachers."""
     stmt = select(ClassLevel).options(selectinload(ClassLevel.sections)).order_by(ClassLevel.numeric_order.asc())
     result = await db.execute(stmt)
     classes = result.scalars().all()
 
+    # Determine academic year for live occupancy & teacher telemetry
+    curr_yr_id = academic_year_id
+    if not curr_yr_id:
+        curr_yr_stmt = select(AcademicYear.id).where(AcademicYear.is_current == True)
+        curr_yr_res = await db.execute(curr_yr_stmt)
+        curr_yr_id = curr_yr_res.scalar_one_or_none()
+
+    # 1. Active enrollment counts per section
+    enrollment_counts = {}
+    if curr_yr_id:
+        enr_stmt = (
+            select(StudentEnrollment.section_id, func.count(StudentEnrollment.id))
+            .where(
+                StudentEnrollment.academic_year_id == curr_yr_id,
+                StudentEnrollment.is_active == True,
+            )
+            .group_by(StudentEnrollment.section_id)
+        )
+        enr_res = await db.execute(enr_stmt)
+        for sec_id, count in enr_res.all():
+            enrollment_counts[sec_id] = count
+
+    # 2. Assigned class teachers per section
+    teacher_map = {}
+    if curr_yr_id:
+        tch_stmt = (
+            select(ClassTeacher, User, StaffProfile)
+            .join(User, ClassTeacher.teacher_user_id == User.id)
+            .outerjoin(StaffProfile, StaffProfile.user_id == User.id)
+            .where(ClassTeacher.academic_year_id == curr_yr_id)
+        )
+        tch_res = await db.execute(tch_stmt)
+        for ct, u_obj, sp_obj in tch_res.all():
+            full_name = f"{sp_obj.first_name} {sp_obj.last_name or ''}".strip() if sp_obj else u_obj.username
+            teacher_map[ct.section_id] = {
+                "id": ct.id,
+                "teacher_user_id": ct.teacher_user_id,
+                "teacher_name": full_name,
+                "employee_id": sp_obj.employee_id if sp_obj else None,
+                "academic_year_id": ct.academic_year_id,
+            }
+
     class_list = []
     for c in classes:
+        sec_list = []
+        for s in c.sections:
+            cap = s.capacity or 45
+            enrolled = enrollment_counts.get(s.id, 0)
+            vacant = max(0, cap - enrolled)
+            occ_rate = round((enrolled / cap) * 100, 1) if cap > 0 else 0.0
+
+            if enrolled == 0:
+                occ_status = "Available"
+            elif enrolled > cap:
+                occ_status = "Over Capacity"
+            elif enrolled == cap:
+                occ_status = "Full"
+            elif enrolled >= int(cap * 0.85):
+                occ_status = "Nearly Full"
+            elif enrolled >= int(cap * 0.5):
+                occ_status = "Filling Fast"
+            else:
+                occ_status = "Available"
+
+            sec_list.append({
+                "id": s.id,
+                "name": s.name,
+                "capacity": cap,
+                "enrolled_count": enrolled,
+                "vacant_seats": vacant,
+                "occupancy_rate": occ_rate,
+                "occupancy_status": occ_status,
+                "class_teacher": teacher_map.get(s.id, None),
+            })
+
         class_list.append({
             "id": c.id,
             "name": c.name,
             "numeric_order": c.numeric_order,
             "description": c.description,
-            "sections": [{"id": s.id, "name": s.name, "capacity": s.capacity} for s in c.sections],
+            "sections": sec_list,
         })
 
     return success_response(data=class_list)
@@ -616,14 +693,129 @@ async def unassign_subject_from_class(class_id: str, subject_id: str, db: AsyncS
     return success_response(message="Subject removed from class curriculum")
 
 
+@router.post("/curriculum/copy", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def copy_curriculum(req: CopyCurriculumRequest, db: AsyncSession = Depends(get_tenant_db)):
+    """Copies all mapped subjects from a source class to one or more target classes."""
+    if not req.target_class_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Please select at least one target class.")
+
+    # 1. Verify source class exists
+    src_res = await db.execute(select(ClassLevel).where(ClassLevel.id == req.source_class_id))
+    src = src_res.scalar_one_or_none()
+    if not src:
+        raise ResourceNotFoundException("ClassLevel", req.source_class_id)
+
+    # 2. Fetch source subjects
+    src_map_res = await db.execute(select(ClassSubject).where(ClassSubject.class_id == req.source_class_id))
+    src_subjects = src_map_res.scalars().all()
+    if not src_subjects:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Source class '{src.name}' has no subjects mapped in its curriculum to copy."
+        )
+
+    mode = (req.copy_mode or "MERGE").strip().upper()
+    valid_targets = [tid for tid in req.target_class_ids if tid != req.source_class_id]
+    if not valid_targets:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot copy curriculum to the source class itself.")
+
+    total_cloned = 0
+    for tid in valid_targets:
+        t_res = await db.execute(select(ClassLevel).where(ClassLevel.id == tid))
+        t_class = t_res.scalar_one_or_none()
+        if not t_class:
+            continue
+
+        if mode == "REPLACE":
+            # Wipe existing mappings in target class
+            await db.execute(delete(ClassSubject).where(ClassSubject.class_id == tid))
+            for cs in src_subjects:
+                db.add(ClassSubject(class_id=tid, subject_id=cs.subject_id, is_mandatory=cs.is_mandatory))
+                total_cloned += 1
+        else:  # MERGE (Default)
+            existing_res = await db.execute(select(ClassSubject.subject_id).where(ClassSubject.class_id == tid))
+            existing_sub_ids = set(existing_res.scalars().all())
+            for cs in src_subjects:
+                if cs.subject_id not in existing_sub_ids:
+                    db.add(ClassSubject(class_id=tid, subject_id=cs.subject_id, is_mandatory=cs.is_mandatory))
+                    total_cloned += 1
+
+    await db.commit()
+    return success_response(
+        data={
+            "source_class_id": req.source_class_id,
+            "source_class_name": src.name,
+            "target_classes_count": len(valid_targets),
+            "mode": mode,
+            "cloned_subjects_count": total_cloned,
+        },
+        message=f"Curriculum from '{src.name}' successfully copied to {len(valid_targets)} class(es) ({mode} mode)."
+    )
+
+
 # ==========================================
 # 4. Class Teacher Assignment
 # ==========================================
+@router.get("/teachers")
+async def list_teachers(db: AsyncSession = Depends(get_tenant_db)):
+    """Lists all active teaching/staff members for class teacher and subject assignments."""
+    stmt = (
+        select(StaffProfile)
+        .options(
+            selectinload(StaffProfile.user),
+            selectinload(StaffProfile.designation),
+            selectinload(StaffProfile.department),
+        )
+        .where(StaffProfile.is_active == True)
+        .order_by(StaffProfile.first_name.asc())
+    )
+    result = await db.execute(stmt)
+    staff_list = result.scalars().all()
+
+    teachers = [
+        {
+            "id": s.id,
+            "user_id": s.user_id,
+            "employee_id": s.employee_id,
+            "full_name": f"{s.first_name} {s.last_name or ''}".strip(),
+            "designation": s.designation.title if s.designation else None,
+            "department": s.department.name if s.department else None,
+        }
+        for s in staff_list
+    ]
+
+    # Graceful fallback: if no staff_profiles created yet, fallback to active users
+    if not teachers:
+        user_stmt = select(User).where(User.is_active == True).order_by(User.username.asc())
+        user_res = await db.execute(user_stmt)
+        users = user_res.scalars().all()
+        teachers = [
+            {
+                "id": u.id,
+                "user_id": u.id,
+                "employee_id": "SYS",
+                "full_name": u.username.replace("_", " ").title(),
+                "designation": "Staff Member",
+                "department": "Academics",
+            }
+            for u in users
+        ]
+
+    return success_response(data=teachers)
+
+
 @router.post("/class-teachers", dependencies=[Depends(RequirePermission("academics:manage"))])
 async def assign_class_teacher(req: ClassTeacherAssignRequest, db: AsyncSession = Depends(get_tenant_db)):
     """Assigns a staff member as the Class Teacher for a class-section in an academic year."""
+    ay_id = req.academic_year_id
+    if not ay_id:
+        active_yr_res = await db.execute(select(AcademicYear.id).where(AcademicYear.is_current == True))
+        ay_id = active_yr_res.scalar_one_or_none()
+        if not ay_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No active academic year found.")
+
     stmt = select(ClassTeacher).where(
-        ClassTeacher.academic_year_id == req.academic_year_id,
+        ClassTeacher.academic_year_id == ay_id,
         ClassTeacher.class_id == req.class_id,
         ClassTeacher.section_id == req.section_id,
     )
@@ -634,7 +826,7 @@ async def assign_class_teacher(req: ClassTeacherAssignRequest, db: AsyncSession 
         mapping.teacher_user_id = req.teacher_user_id
     else:
         mapping = ClassTeacher(
-            academic_year_id=req.academic_year_id,
+            academic_year_id=ay_id,
             class_id=req.class_id,
             section_id=req.section_id,
             teacher_user_id=req.teacher_user_id,
@@ -643,6 +835,36 @@ async def assign_class_teacher(req: ClassTeacherAssignRequest, db: AsyncSession 
 
     await db.commit()
     return success_response(message="Class teacher assigned successfully")
+
+
+@router.delete("/class-teachers/{class_id}/{section_id}", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def unassign_class_teacher(
+    class_id: str,
+    section_id: str,
+    academic_year_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_tenant_db)
+):
+    """Removes the assigned class teacher for a class and section in the current or specified academic year."""
+    ay_id = academic_year_id
+    if not ay_id:
+        active_yr_res = await db.execute(select(AcademicYear.id).where(AcademicYear.is_current == True))
+        ay_id = active_yr_res.scalar_one_or_none()
+        if not ay_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No active academic year found.")
+
+    stmt = select(ClassTeacher).where(
+        ClassTeacher.academic_year_id == ay_id,
+        ClassTeacher.class_id == class_id,
+        ClassTeacher.section_id == section_id,
+    )
+    result = await db.execute(stmt)
+    ct = result.scalar_one_or_none()
+    if not ct:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No class teacher assigned for this section.")
+
+    await db.delete(ct)
+    await db.commit()
+    return success_response(message="Class teacher unassigned successfully")
 
 
 # ==========================================
