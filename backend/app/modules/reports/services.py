@@ -301,13 +301,18 @@ class ReportsService:
         total_students = (await db.execute(st_count_stmt)).scalar() or 0
 
         # 2. Today's Attendance
-        att_marked_stmt = select(func.count(StudentDailyAttendance.id)).where(StudentDailyAttendance.attendance_date == today)
+        att_marked_stmt = (
+            select(func.count(StudentDailyAttendance.id))
+            .join(AttendanceSession, StudentDailyAttendance.session_id == AttendanceSession.id)
+            .where(AttendanceSession.attendance_date == today)
+        )
         total_marked = (await db.execute(att_marked_stmt)).scalar() or 0
 
         present_stmt = (
             select(func.count(StudentDailyAttendance.id))
-            .join(LookupValue, StudentDailyAttendance.status_id == LookupValue.id)
-            .where(StudentDailyAttendance.attendance_date == today, LookupValue.code == "PRESENT")
+            .join(AttendanceSession, StudentDailyAttendance.session_id == AttendanceSession.id)
+            .join(LookupValue, StudentDailyAttendance.attendance_status_id == LookupValue.id)
+            .where(AttendanceSession.attendance_date == today, LookupValue.code == "PRESENT")
         )
         total_present = (await db.execute(present_stmt)).scalar() or 0
         total_absent = max(0, total_marked - total_present)
