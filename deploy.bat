@@ -29,7 +29,7 @@ if errorlevel 1 (
 
 echo.
 echo [2/2] Connecting to VPS (187.127.176.21) and running deployment...
-ssh -o ServerAliveInterval=60 root@187.127.176.21 "cd /var/www/school-erp; git pull origin main; chmod +x deploy.sh; bash deploy.sh"
+ssh -o ServerAliveInterval=60 root@187.127.176.21 "cd /var/www/school-erp; git checkout -- .; git pull origin main; chmod +x deploy.sh; bash deploy.sh"
 
 echo.
 echo =========================================
