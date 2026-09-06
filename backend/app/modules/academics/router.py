@@ -31,6 +31,7 @@ from app.modules.academics.schemas import (
     AssignSubjectsToClassRequest,
     ClassTeacherAssignRequest,
     HomeworkCreateRequest,
+    HomeworkUpdate,
     StudentLeaveSubmitRequest,
     StudentLeaveStatusUpdateRequest,
 )
@@ -625,7 +626,21 @@ async def create_class_homework(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Permission denied: Requires Teacher or Admin role to assign homework.",
         )
-    from app.modules.academics.models import ClassHomework
+    from app.modules.academics.models import ClassHomework, ClassSubject
+
+    # Curriculum Restriction: verify subject is mapped to this class if class curriculum is configured
+    curriculum_count = await db.execute(
+        select(func.count()).select_from(ClassSubject).where(ClassSubject.class_id == req.class_id)
+    )
+    if (curriculum_count.scalar_one() or 0) > 0:
+        is_mapped = await db.execute(
+            select(ClassSubject).where(ClassSubject.class_id == req.class_id, ClassSubject.subject_id == req.subject_id)
+        )
+        if not is_mapped.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The selected subject is not in this class's curriculum mapping.",
+            )
 
     hw = ClassHomework(
         academic_year_id=req.academic_year_id,
@@ -666,6 +681,7 @@ async def list_class_homework(
                 "id": r.id,
                 "title": r.title,
                 "description": r.description,
+                "subject_id": r.subject_id,
                 "subject_name": r.subject.name if r.subject else "General",
                 "assigned_date": str(r.assigned_date),
                 "due_date": str(r.due_date),
@@ -675,6 +691,90 @@ async def list_class_homework(
             for r in records
         ]
     )
+
+
+@router.put("/homework/{homework_id}")
+async def update_class_homework(
+    homework_id: str,
+    req: HomeworkUpdate,
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Updates an existing homework assignment."""
+    if not (
+        "ADMIN" in current_user.roles
+        or "TEACHER" in current_user.roles
+        or "academics:manage" in current_user.permissions
+        or "attendance:mark" in current_user.permissions
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied: Requires Teacher or Admin role.",
+        )
+    from app.modules.academics.models import ClassHomework, ClassSubject
+
+    stmt = select(ClassHomework).where(ClassHomework.id == homework_id)
+    result = await db.execute(stmt)
+    hw = result.scalar_one_or_none()
+    if not hw:
+        raise ResourceNotFoundException("ClassHomework", homework_id)
+
+    if req.title is not None and req.title.strip():
+        hw.title = req.title.strip()
+    if req.description is not None:
+        hw.description = req.description.strip()
+    if req.due_date is not None:
+        hw.due_date = req.due_date
+    if req.subject_id is not None:
+        curriculum_count = await db.execute(
+            select(func.count()).select_from(ClassSubject).where(ClassSubject.class_id == hw.class_id)
+        )
+        if (curriculum_count.scalar_one() or 0) > 0:
+            is_mapped = await db.execute(
+                select(ClassSubject).where(ClassSubject.class_id == hw.class_id, ClassSubject.subject_id == req.subject_id)
+            )
+            if not is_mapped.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="The selected subject is not in this class's curriculum mapping.",
+                )
+        hw.subject_id = req.subject_id
+    if req.attachment_url is not None:
+        hw.attachment_url = req.attachment_url
+
+    await db.commit()
+    await db.refresh(hw)
+    return success_response(data={"id": hw.id}, message="Homework updated successfully.")
+
+
+@router.delete("/homework/{homework_id}")
+async def delete_class_homework(
+    homework_id: str,
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Deletes an existing homework assignment."""
+    if not (
+        "ADMIN" in current_user.roles
+        or "TEACHER" in current_user.roles
+        or "academics:manage" in current_user.permissions
+        or "attendance:mark" in current_user.permissions
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied: Requires Teacher or Admin role.",
+        )
+    from app.modules.academics.models import ClassHomework
+
+    stmt = select(ClassHomework).where(ClassHomework.id == homework_id)
+    result = await db.execute(stmt)
+    hw = result.scalar_one_or_none()
+    if not hw:
+        raise ResourceNotFoundException("ClassHomework", homework_id)
+
+    await db.delete(hw)
+    await db.commit()
+    return success_response(data={"id": homework_id}, message="Homework deleted successfully.")
 
 
 # ==========================================

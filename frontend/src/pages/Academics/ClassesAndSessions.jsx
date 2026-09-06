@@ -38,6 +38,9 @@ export const ClassesAndSessions = () => {
   const [loadingHomework, setLoadingHomework] = useState(false);
   const [submittingHomework, setSubmittingHomework] = useState(false);
   const [showHomeworkModal, setShowHomeworkModal] = useState(false);
+  const [classMappedSubjects, setClassMappedSubjects] = useState([]);
+  const [editingHomework, setEditingHomework] = useState(null);
+  const [updatingHomework, setUpdatingHomework] = useState(false);
 
   // Class Modal & Edit State
   const [showClassModal, setShowClassModal] = useState(false);
@@ -126,6 +129,65 @@ export const ClassesAndSessions = () => {
       fetchHomework(homeworkClassId, homeworkSectionId);
     }
   }, [activeTab, homeworkClassId, homeworkSectionId]);
+
+  const fetchHomeworkMappedSubjects = async (classId) => {
+    if (!classId) return;
+    try {
+      const res = await api.get(`/academics/classes/${classId}/subjects`);
+      const mapped = res.data || [];
+      setClassMappedSubjects(mapped);
+      if (mapped.length > 0) {
+        setHomeworkSubjectId((prev) => {
+          const exists = mapped.some((m) => (m.subject_id || m.id) === prev);
+          return exists ? prev : (mapped[0].subject_id || mapped[0].id);
+        });
+      } else {
+        setHomeworkSubjectId('');
+      }
+    } catch (e) {
+      console.error('Error fetching class mapped subjects:', e);
+      setClassMappedSubjects([]);
+      setHomeworkSubjectId('');
+    }
+  };
+
+  useEffect(() => {
+    if (homeworkClassId) {
+      fetchHomeworkMappedSubjects(homeworkClassId);
+    }
+  }, [homeworkClassId]);
+
+  const handleUpdateHomework = async (e) => {
+    e.preventDefault();
+    if (!editingHomework) return;
+    setUpdatingHomework(true);
+    try {
+      await api.put(`/academics/homework/${editingHomework.id}`, {
+        title: editingHomework.title.trim(),
+        description: editingHomework.description.trim(),
+        due_date: editingHomework.due_date,
+        subject_id: editingHomework.subject_id,
+      });
+      setEditingHomework(null);
+      fetchHomework(homeworkClassId, homeworkSectionId);
+      alert('Homework updated successfully!');
+    } catch (err) {
+      alert('Error updating homework: ' + err.message);
+    } finally {
+      setUpdatingHomework(false);
+    }
+  };
+
+  const handleDeleteHomework = async (hwId, hwTitle) => {
+    if (!window.confirm(`Are you sure you want to delete homework "${hwTitle}"? This action cannot be undone.`)) return;
+    try {
+      await api.delete(`/academics/homework/${hwId}`);
+      fetchHomework(homeworkClassId, homeworkSectionId);
+      alert(`Homework "${hwTitle}" deleted successfully.`);
+    } catch (err) {
+      alert('Error deleting homework: ' + err.message);
+    }
+  };
 
   const handleAssignHomework = async (e) => {
     e.preventDefault();
@@ -869,13 +931,29 @@ export const ClassesAndSessions = () => {
                       <p className="text-slate-600 text-xs whitespace-pre-wrap">{hw.description}</p>
                     </div>
 
-                    <div className="flex items-center gap-4 text-[11px] text-slate-500 self-end md:self-auto shrink-0">
+                    <div className="flex items-center gap-3 text-[11px] text-slate-500 self-end md:self-auto shrink-0">
                       <div>
                         <span className="font-semibold text-slate-400">Assigned: </span>
                         {hw.assigned_date ? new Date(hw.assigned_date).toLocaleDateString() : 'N/A'}
                       </div>
                       <div className="bg-amber-50 text-amber-800 px-2.5 py-1 rounded-lg font-bold border border-amber-200">
                         Due: {hw.due_date ? new Date(hw.due_date).toLocaleDateString() : 'N/A'}
+                      </div>
+                      <div className="flex items-center gap-1 border-l border-slate-200 pl-2">
+                        <button
+                          onClick={() => setEditingHomework({ ...hw })}
+                          className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-blue-600 transition-colors"
+                          title="Edit Homework"
+                        >
+                          <Edit2 size={13} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteHomework(hw.id, hw.title)}
+                          className="p-1 hover:bg-rose-50 rounded text-slate-400 hover:text-rose-600 transition-colors"
+                          title="Delete Homework"
+                        >
+                          <Trash2 size={13} />
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1073,18 +1151,24 @@ export const ClassesAndSessions = () => {
             <form onSubmit={handleAssignHomework} className="space-y-3 text-xs">
               <div>
                 <label className="block text-slate-700 font-semibold mb-1">Subject</label>
-                <select
-                  value={homeworkSubjectId}
-                  onChange={(e) => setHomeworkSubjectId(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800"
-                >
-                  {subjects.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.code})
-                    </option>
-                  ))}
-                </select>
+                {classMappedSubjects.length === 0 ? (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs">
+                    ⚠️ No subjects are mapped to this class yet. Please configure <strong>Curriculum Mapping</strong> first before assigning homework.
+                  </div>
+                ) : (
+                  <select
+                    value={homeworkSubjectId}
+                    onChange={(e) => setHomeworkSubjectId(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800"
+                  >
+                    {classMappedSubjects.map((s) => (
+                      <option key={s.subject_id || s.id} value={s.subject_id || s.id}>
+                        {s.subject_name || s.name} ({s.subject_code || s.code})
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div>
@@ -1132,7 +1216,7 @@ export const ClassesAndSessions = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={submittingHomework}
+                  disabled={submittingHomework || classMappedSubjects.length === 0}
                   className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow disabled:opacity-50"
                 >
                   {submittingHomework ? 'Publishing...' : 'Publish Homework'}
@@ -1403,6 +1487,85 @@ export const ClassesAndSessions = () => {
                   className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow"
                 >
                   Save Subject
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 10: EDIT HOMEWORK */}
+      {editingHomework && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+              <Edit2 size={16} className="text-blue-600" />
+              Edit Homework Assignment
+            </h3>
+            <form onSubmit={handleUpdateHomework} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Subject</label>
+                <select
+                  value={editingHomework.subject_id}
+                  onChange={(e) => setEditingHomework({ ...editingHomework, subject_id: e.target.value })}
+                  required
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800"
+                >
+                  {classMappedSubjects.map((s) => (
+                    <option key={s.subject_id || s.id} value={s.subject_id || s.id}>
+                      {s.subject_name || s.name} ({s.subject_code || s.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Title / Topic</label>
+                <input
+                  type="text"
+                  required
+                  value={editingHomework.title}
+                  onChange={(e) => setEditingHomework({ ...editingHomework, title: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Description / Instructions</label>
+                <textarea
+                  rows={3}
+                  required
+                  value={editingHomework.description}
+                  onChange={(e) => setEditingHomework({ ...editingHomework, description: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Submission Due Date</label>
+                <input
+                  type="date"
+                  required
+                  value={editingHomework.due_date ? editingHomework.due_date.split('T')[0] : ''}
+                  onChange={(e) => setEditingHomework({ ...editingHomework, due_date: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingHomework(null)}
+                  className="px-4 py-2 text-slate-500 hover:text-slate-800 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={updatingHomework}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow disabled:opacity-50"
+                >
+                  {updatingHomework ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </form>

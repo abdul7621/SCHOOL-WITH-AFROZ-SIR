@@ -99,6 +99,14 @@ class HomeworkCreateRequest(BaseModel):
     attachment_url: Optional[str] = None
 
 
+class HomeworkUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    due_date: Optional[date] = None
+    subject_id: Optional[str] = None
+    attachment_url: Optional[str] = None
+
+
 class StudentLeaveSubmitRequest(BaseModel):
     student_id: str
     from_date: date
