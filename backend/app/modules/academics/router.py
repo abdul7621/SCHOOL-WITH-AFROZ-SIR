@@ -1,4 +1,5 @@
 from typing import List, Optional
+from datetime import time
 from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy import select, update, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,8 @@ from app.modules.academics.models import (
     Subject,
     ClassSubject,
     ClassTeacher,
+    TimetablePeriod,
+    TimetableSlot,
 )
 from app.modules.academics.schemas import (
     AcademicYearCreate,
@@ -35,6 +38,10 @@ from app.modules.academics.schemas import (
     HomeworkUpdate,
     StudentLeaveSubmitRequest,
     StudentLeaveStatusUpdateRequest,
+    PeriodCreate,
+    PeriodUpdate,
+    TimetableSlotAssignRequest,
+    TimetableSlotCopyRequest,
 )
 from app.modules.students.models import StudentEnrollment
 from app.modules.users_rbac.models import User
@@ -1157,4 +1164,513 @@ async def update_student_leave_status(
     await db.commit()
     await db.refresh(leave)
     return success_response(data={"leave_id": leave.id, "status": leave.status}, message=f"Leave request marked as {leave.status}")
+
+
+# ==========================================
+# 7. Timetable & Scheduling Engine
+# ==========================================
+
+@router.get("/timetable/periods")
+async def list_timetable_periods(db: AsyncSession = Depends(get_tenant_db)):
+    """Lists all configured school timetable periods/bell timings ordered by sort_order."""
+    stmt = select(TimetablePeriod).order_by(TimetablePeriod.sort_order.asc(), TimetablePeriod.start_time.asc())
+    result = await db.execute(stmt)
+    periods = result.scalars().all()
+    return success_response(
+        data=[
+            {
+                "id": p.id,
+                "period_number": p.period_number,
+                "name": p.name,
+                "start_time": str(p.start_time),
+                "end_time": str(p.end_time),
+                "is_break": p.is_break,
+                "sort_order": p.sort_order,
+            }
+            for p in periods
+        ]
+    )
+
+
+@router.post("/timetable/periods/apply-template", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def apply_standard_period_template(db: AsyncSession = Depends(get_tenant_db)):
+    """Admin Action: Seeds the standard 6-period + recess daily school schedule."""
+    existing = await db.execute(select(TimetablePeriod))
+    if existing.scalars().first():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Periods already exist in bell schedule. You can add or edit individual periods instead of overwriting."
+        )
+
+    template = [
+        TimetablePeriod(period_number=1, name="Period 1", start_time=time(8, 30), end_time=time(9, 15), is_break=False, sort_order=1),
+        TimetablePeriod(period_number=2, name="Period 2", start_time=time(9, 15), end_time=time(10, 0), is_break=False, sort_order=2),
+        TimetablePeriod(period_number=3, name="Recess / Break", start_time=time(10, 0), end_time=time(10, 20), is_break=True, sort_order=3),
+        TimetablePeriod(period_number=4, name="Period 3", start_time=time(10, 20), end_time=time(11, 5), is_break=False, sort_order=4),
+        TimetablePeriod(period_number=5, name="Period 4", start_time=time(11, 5), end_time=time(11, 50), is_break=False, sort_order=5),
+        TimetablePeriod(period_number=6, name="Period 5", start_time=time(11, 50), end_time=time(12, 35), is_break=False, sort_order=6),
+        TimetablePeriod(period_number=7, name="Period 6", start_time=time(12, 35), end_time=time(13, 20), is_break=False, sort_order=7),
+    ]
+    for p in template:
+        db.add(p)
+
+    await db.commit()
+    return success_response(message="Standard 6-period bell schedule template applied successfully.")
+
+
+@router.post("/timetable/periods", dependencies=[Depends(RequirePermission("academics:manage"))], status_code=status.HTTP_201_CREATED)
+async def create_timetable_period(req: PeriodCreate, db: AsyncSession = Depends(get_tenant_db)):
+    """Admin Action: Adds a custom period or break to the bell schedule."""
+    if req.end_time <= req.start_time:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Period end time must be after start time.")
+
+    # Duplicate period number check
+    dup = await db.execute(select(TimetablePeriod).where(TimetablePeriod.period_number == req.period_number))
+    if dup.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Period #{req.period_number} already exists in bell schedule.")
+
+    period = TimetablePeriod(
+        period_number=req.period_number,
+        name=req.name.strip(),
+        start_time=req.start_time,
+        end_time=req.end_time,
+        is_break=req.is_break,
+        sort_order=req.sort_order or req.period_number,
+    )
+    db.add(period)
+    await db.commit()
+    await db.refresh(period)
+
+    return success_response(
+        data={"id": period.id, "period_number": period.period_number, "name": period.name},
+        message=f"Period '{period.name}' created successfully"
+    )
+
+
+@router.put("/timetable/periods/{period_id}", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def update_timetable_period(period_id: str, req: PeriodUpdate, db: AsyncSession = Depends(get_tenant_db)):
+    """Admin Action: Updates period name, timings, or break status."""
+    stmt = select(TimetablePeriod).where(TimetablePeriod.id == period_id)
+    res = await db.execute(stmt)
+    period = res.scalar_one_or_none()
+    if not period:
+        raise ResourceNotFoundException("TimetablePeriod", period_id)
+
+    new_start = req.start_time or period.start_time
+    new_end = req.end_time or period.end_time
+    if new_end <= new_start:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Period end time must be after start time.")
+
+    if req.period_number is not None and req.period_number != period.period_number:
+        dup = await db.execute(
+            select(TimetablePeriod).where(TimetablePeriod.period_number == req.period_number, TimetablePeriod.id != period_id)
+        )
+        if dup.scalar_one_or_none():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Period #{req.period_number} already exists.")
+        period.period_number = req.period_number
+
+    if req.name:
+        period.name = req.name.strip()
+    if req.start_time:
+        period.start_time = req.start_time
+    if req.end_time:
+        period.end_time = req.end_time
+    if req.is_break is not None:
+        period.is_break = req.is_break
+    if req.sort_order is not None:
+        period.sort_order = req.sort_order
+
+    await db.commit()
+    await db.refresh(period)
+    return success_response(
+        data={"id": period.id, "period_number": period.period_number, "name": period.name},
+        message=f"Period '{period.name}' updated successfully"
+    )
+
+
+@router.delete("/timetable/periods/{period_id}", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def delete_timetable_period(period_id: str, db: AsyncSession = Depends(get_tenant_db)):
+    """Admin Action: Deletes a period from the bell schedule (checks dependencies)."""
+    stmt = select(TimetablePeriod).where(TimetablePeriod.id == period_id)
+    res = await db.execute(stmt)
+    period = res.scalar_one_or_none()
+    if not period:
+        raise ResourceNotFoundException("TimetablePeriod", period_id)
+
+    # Check if timetable slots are using this period
+    rules = [
+        DependencyRule(TimetableSlot, TimetableSlot.period_id, "Timetable Scheduled Slots")
+    ]
+    await check_dependencies(db, period_id, f"Period '{period.name}'", rules)
+
+    p_name = period.name
+    await db.delete(period)
+    await db.commit()
+    return success_response(message=f"Period '{p_name}' deleted successfully")
+
+
+@router.get("/timetable/classes/{class_id}/sections/{section_id}")
+async def get_section_timetable(
+    class_id: str,
+    section_id: str,
+    academic_year_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Retrieves the full weekly schedule matrix for a specific class and section."""
+    ay_id = academic_year_id
+    if not ay_id:
+        curr_yr = await db.execute(select(AcademicYear.id).where(AcademicYear.is_current == True))
+        ay_id = curr_yr.scalar_one_or_none()
+
+    # 1. Fetch all periods
+    p_stmt = select(TimetablePeriod).order_by(TimetablePeriod.sort_order.asc(), TimetablePeriod.start_time.asc())
+    p_res = await db.execute(p_stmt)
+    periods = p_res.scalars().all()
+
+    # 2. Fetch all slots for this class-section
+    s_stmt = (
+        select(TimetableSlot, Subject, User, StaffProfile)
+        .join(Subject, TimetableSlot.subject_id == Subject.id)
+        .join(User, TimetableSlot.teacher_user_id == User.id)
+        .outerjoin(StaffProfile, StaffProfile.user_id == User.id)
+        .where(
+            TimetableSlot.class_id == class_id,
+            TimetableSlot.section_id == section_id,
+            TimetableSlot.academic_year_id == ay_id,
+        )
+    )
+    s_res = await db.execute(s_stmt)
+    slot_rows = s_res.all()
+
+    slots_data = []
+    for ts, sub, usr, stf in slot_rows:
+        t_name = f"{stf.first_name} {stf.last_name or ''}".strip() if stf else usr.username
+        slots_data.append({
+            "id": ts.id,
+            "day_of_week": ts.day_of_week,
+            "period_id": ts.period_id,
+            "subject_id": ts.subject_id,
+            "subject_name": sub.name,
+            "subject_code": sub.code,
+            "teacher_user_id": ts.teacher_user_id,
+            "teacher_name": t_name,
+            "room_number": ts.room_number,
+        })
+
+    # 3. Fetch mapped subjects for this class curriculum
+    m_stmt = (
+        select(ClassSubject, Subject)
+        .join(Subject, ClassSubject.subject_id == Subject.id)
+        .where(ClassSubject.class_id == class_id)
+        .order_by(Subject.name.asc())
+    )
+    m_res = await db.execute(m_stmt)
+    mapped_subjects = [
+        {"id": sub.id, "name": sub.name, "code": sub.code, "subject_type": sub.subject_type}
+        for cs, sub in m_res.all()
+    ]
+
+    return success_response(
+        data={
+            "academic_year_id": ay_id,
+            "class_id": class_id,
+            "section_id": section_id,
+            "periods": [
+                {
+                    "id": p.id,
+                    "period_number": p.period_number,
+                    "name": p.name,
+                    "start_time": str(p.start_time),
+                    "end_time": str(p.end_time),
+                    "is_break": p.is_break,
+                    "sort_order": p.sort_order,
+                }
+                for p in periods
+            ],
+            "slots": slots_data,
+            "mapped_subjects": mapped_subjects,
+        }
+    )
+
+
+@router.post("/timetable/slots", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def assign_timetable_slot(req: TimetableSlotAssignRequest, db: AsyncSession = Depends(get_tenant_db)):
+    """
+    Assigns or updates a single timetable slot.
+    Enforces:
+    1. Curriculum restriction: Subject must be mapped in Class Curriculum.
+    2. Teacher double-booking guard: Teacher cannot be in 2 classes at same period & day.
+    """
+    ay_id = req.academic_year_id
+    if not ay_id:
+        curr_yr = await db.execute(select(AcademicYear.id).where(AcademicYear.is_current == True))
+        ay_id = curr_yr.scalar_one_or_none()
+        if not ay_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No active academic year found.")
+
+    day_clean = req.day_of_week.strip().upper()
+
+    # Rule 1: Validate curriculum mapping
+    curr_chk = await db.execute(
+        select(ClassSubject).where(ClassSubject.class_id == req.class_id, ClassSubject.subject_id == req.subject_id)
+    )
+    if not curr_chk.scalar_one_or_none():
+        sub_obj = (await db.execute(select(Subject.name).where(Subject.id == req.subject_id))).scalar_one_or_none()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Curriculum Restriction: Subject '{sub_obj or req.subject_id}' is not mapped to this class. Map it in Curriculum Mapping first."
+        )
+
+    # Rule 2: Teacher Anti-Clash Guard (Double-Booking Prevention)
+    clash_stmt = (
+        select(TimetableSlot, ClassLevel, Section, TimetablePeriod)
+        .join(ClassLevel, TimetableSlot.class_id == ClassLevel.id)
+        .join(Section, TimetableSlot.section_id == Section.id)
+        .join(TimetablePeriod, TimetableSlot.period_id == TimetablePeriod.id)
+        .where(
+            TimetableSlot.academic_year_id == ay_id,
+            TimetableSlot.teacher_user_id == req.teacher_user_id,
+            TimetableSlot.day_of_week == day_clean,
+            TimetableSlot.period_id == req.period_id,
+            ~((TimetableSlot.class_id == req.class_id) & (TimetableSlot.section_id == req.section_id))
+        )
+    )
+    clash_res = await db.execute(clash_stmt)
+    clash = clash_res.first()
+    if clash:
+        clash_slot, clash_cls, clash_sec, clash_per = clash
+        sp_res = await db.execute(select(StaffProfile).where(StaffProfile.user_id == req.teacher_user_id))
+        sp = sp_res.scalar_one_or_none()
+        t_name = f"{sp.first_name} {sp.last_name or ''}".strip() if sp else "The selected teacher"
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Teacher Conflict: {t_name} is already assigned to {clash_cls.name} (Section {clash_sec.name}) during {clash_per.name} on {day_clean.title()}."
+        )
+
+    # Rule 3: Upsert slot for this section, day, period
+    stmt = select(TimetableSlot).where(
+        TimetableSlot.academic_year_id == ay_id,
+        TimetableSlot.class_id == req.class_id,
+        TimetableSlot.section_id == req.section_id,
+        TimetableSlot.day_of_week == day_clean,
+        TimetableSlot.period_id == req.period_id,
+    )
+    slot_res = await db.execute(stmt)
+    slot = slot_res.scalar_one_or_none()
+
+    if slot:
+        slot.subject_id = req.subject_id
+        slot.teacher_user_id = req.teacher_user_id
+        slot.room_number = req.room_number.strip() if req.room_number else None
+    else:
+        slot = TimetableSlot(
+            academic_year_id=ay_id,
+            class_id=req.class_id,
+            section_id=req.section_id,
+            day_of_week=day_clean,
+            period_id=req.period_id,
+            subject_id=req.subject_id,
+            teacher_user_id=req.teacher_user_id,
+            room_number=req.room_number.strip() if req.room_number else None,
+        )
+        db.add(slot)
+
+    await db.commit()
+    await db.refresh(slot)
+    return success_response(data={"slot_id": slot.id}, message="Timetable slot saved successfully.")
+
+
+@router.delete("/timetable/slots/{slot_id}", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def clear_timetable_slot(slot_id: str, db: AsyncSession = Depends(get_tenant_db)):
+    """Clears a scheduled slot back to a Free Period."""
+    stmt = select(TimetableSlot).where(TimetableSlot.id == slot_id)
+    res = await db.execute(stmt)
+    slot = res.scalar_one_or_none()
+    if not slot:
+        raise ResourceNotFoundException("TimetableSlot", slot_id)
+
+    await db.delete(slot)
+    await db.commit()
+    return success_response(message="Timetable slot cleared successfully (Free Period)")
+
+
+@router.post("/timetable/copy", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def copy_section_timetable(req: TimetableSlotCopyRequest, db: AsyncSession = Depends(get_tenant_db)):
+    """
+    Copies full weekly schedule from one section to another.
+    Validates teacher clashes before applying to avoid corrupting schedules.
+    """
+    ay_id = req.academic_year_id
+    if not ay_id:
+        curr_yr = await db.execute(select(AcademicYear.id).where(AcademicYear.is_current == True))
+        ay_id = curr_yr.scalar_one_or_none()
+
+    if req.source_class_id == req.target_class_id and req.source_section_id == req.target_section_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Source and target section cannot be identical.")
+
+    # 1. Fetch source slots
+    src_res = await db.execute(
+        select(TimetableSlot).where(
+            TimetableSlot.academic_year_id == ay_id,
+            TimetableSlot.class_id == req.source_class_id,
+            TimetableSlot.section_id == req.source_section_id,
+        )
+    )
+    src_slots = src_res.scalars().all()
+    if not src_slots:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Source section has no scheduled timetable slots to copy.")
+
+    # 2. Check if target has slots
+    tgt_res = await db.execute(
+        select(TimetableSlot).where(
+            TimetableSlot.academic_year_id == ay_id,
+            TimetableSlot.class_id == req.target_class_id,
+            TimetableSlot.section_id == req.target_section_id,
+        )
+    )
+    tgt_slots = tgt_res.scalars().all()
+    if tgt_slots and not req.overwrite:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target section already has scheduled slots. Select overwrite to replace.")
+
+    # 3. Teacher Clash Pre-Check
+    for s in src_slots:
+        clash_stmt = select(TimetableSlot, ClassLevel, Section, TimetablePeriod).join(
+            ClassLevel, TimetableSlot.class_id == ClassLevel.id
+        ).join(Section, TimetableSlot.section_id == Section.id).join(
+            TimetablePeriod, TimetableSlot.period_id == TimetablePeriod.id
+        ).where(
+            TimetableSlot.academic_year_id == ay_id,
+            TimetableSlot.teacher_user_id == s.teacher_user_id,
+            TimetableSlot.day_of_week == s.day_of_week,
+            TimetableSlot.period_id == s.period_id,
+            ~((TimetableSlot.class_id == req.target_class_id) & (TimetableSlot.section_id == req.target_section_id))
+        )
+        clash = (await db.execute(clash_stmt)).first()
+        if clash:
+            c_slot, c_cls, c_sec, c_per = clash
+            sp = (await db.execute(select(StaffProfile).where(StaffProfile.user_id == s.teacher_user_id))).scalar_one_or_none()
+            t_name = f"{sp.first_name} {sp.last_name or ''}".strip() if sp else "A teacher"
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Copy Blocked: {t_name} is already assigned to {c_cls.name}-{c_sec.name} during {c_per.name} on {s.day_of_week.title()}."
+            )
+
+    # 4. Clear target slots if overwrite
+    if tgt_slots:
+        await db.execute(
+            delete(TimetableSlot).where(
+                TimetableSlot.academic_year_id == ay_id,
+                TimetableSlot.class_id == req.target_class_id,
+                TimetableSlot.section_id == req.target_section_id,
+            )
+        )
+
+    # 5. Insert cloned slots
+    for s in src_slots:
+        cloned = TimetableSlot(
+            academic_year_id=ay_id,
+            class_id=req.target_class_id,
+            section_id=req.target_section_id,
+            day_of_week=s.day_of_week,
+            period_id=s.period_id,
+            subject_id=s.subject_id,
+            teacher_user_id=s.teacher_user_id,
+            room_number=s.room_number,
+        )
+        db.add(cloned)
+
+    await db.commit()
+    return success_response(
+        data={"copied_slots": len(src_slots)},
+        message=f"Timetable successfully copied ({len(src_slots)} slots duplicated)."
+    )
+
+
+@router.get("/timetable/teachers/{teacher_user_id}")
+async def get_teacher_schedule(
+    teacher_user_id: str,
+    academic_year_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """
+    Teacher Schedule View & Free Period Radar.
+    Returns the weekly teaching schedule for an individual teacher,
+    and identifies all unoccupied/free periods across the week.
+    """
+    ay_id = academic_year_id
+    if not ay_id:
+        curr_yr = await db.execute(select(AcademicYear.id).where(AcademicYear.is_current == True))
+        ay_id = curr_yr.scalar_one_or_none()
+
+    # 1. Fetch periods
+    p_stmt = select(TimetablePeriod).order_by(TimetablePeriod.sort_order.asc(), TimetablePeriod.start_time.asc())
+    periods = (await db.execute(p_stmt)).scalars().all()
+
+    # 2. Fetch teacher's scheduled slots
+    s_stmt = (
+        select(TimetableSlot, ClassLevel, Section, Subject)
+        .join(ClassLevel, TimetableSlot.class_id == ClassLevel.id)
+        .join(Section, TimetableSlot.section_id == Section.id)
+        .join(Subject, TimetableSlot.subject_id == Subject.id)
+        .where(
+            TimetableSlot.academic_year_id == ay_id,
+            TimetableSlot.teacher_user_id == teacher_user_id,
+        )
+    )
+    s_res = await db.execute(s_stmt)
+    slots = []
+    busy_map = set()  # (day, period_id)
+    for ts, cls, sec, sub in s_res.all():
+        slots.append({
+            "id": ts.id,
+            "day_of_week": ts.day_of_week,
+            "period_id": ts.period_id,
+            "class_name": cls.name,
+            "section_name": sec.name,
+            "subject_name": sub.name,
+            "subject_code": sub.code,
+            "room_number": ts.room_number,
+        })
+        busy_map.add((ts.day_of_week, ts.period_id))
+
+    # 3. Calculate free periods radar across working days
+    days = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
+    teaching_periods = [p for p in periods if not p.is_break]
+    free_periods = []
+    for d in days:
+        for p in teaching_periods:
+            if (d, p.id) not in busy_map:
+                free_periods.append({
+                    "day_of_week": d,
+                    "period_id": p.id,
+                    "period_name": p.name,
+                    "time": f"{p.start_time} - {p.end_time}",
+                })
+
+    # Teacher profile info
+    sp = (await db.execute(select(StaffProfile).where(StaffProfile.user_id == teacher_user_id))).scalar_one_or_none()
+    teacher_name = f"{sp.first_name} {sp.last_name or ''}".strip() if sp else "Teacher"
+
+    return success_response(
+        data={
+            "teacher_user_id": teacher_user_id,
+            "teacher_name": teacher_name,
+            "total_assigned_periods": len(slots),
+            "total_free_periods": len(free_periods),
+            "periods": [
+                {
+                    "id": p.id,
+                    "period_number": p.period_number,
+                    "name": p.name,
+                    "start_time": str(p.start_time),
+                    "end_time": str(p.end_time),
+                    "is_break": p.is_break,
+                }
+                for p in periods
+            ],
+            "slots": slots,
+            "free_periods": free_periods,
+        }
+    )
+
 

@@ -1,5 +1,5 @@
 from typing import List, Optional
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pydantic import BaseModel, Field
 
 
@@ -147,4 +147,43 @@ class SubjectUpdate(BaseModel):
     name: Optional[str] = None
     subject_type: Optional[str] = None
     is_elective: Optional[bool] = None
+
+
+class PeriodCreate(BaseModel):
+    period_number: int
+    name: str
+    start_time: time
+    end_time: time
+    is_break: bool = False
+    sort_order: Optional[int] = 1
+
+
+class PeriodUpdate(BaseModel):
+    period_number: Optional[int] = None
+    name: Optional[str] = None
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
+    is_break: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+class TimetableSlotAssignRequest(BaseModel):
+    class_id: str
+    section_id: str
+    day_of_week: str  # 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'
+    period_id: str
+    subject_id: str
+    teacher_user_id: str
+    room_number: Optional[str] = None
+    academic_year_id: Optional[str] = None
+
+
+class TimetableSlotCopyRequest(BaseModel):
+    source_class_id: str
+    source_section_id: str
+    target_class_id: str
+    target_section_id: str
+    overwrite: bool = True
+    academic_year_id: Optional[str] = None
+
 

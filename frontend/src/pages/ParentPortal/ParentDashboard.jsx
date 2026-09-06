@@ -12,8 +12,32 @@ import {
   Plus,
   X,
   Clock,
+  BookOpen,
+  Printer,
+  Sparkles,
 } from 'lucide-react';
 import api from '../../api/client';
+
+// Helper: Format 24h time to AM/PM
+const formatTime = (timeStr) => {
+  if (!timeStr) return '';
+  const parts = timeStr.split(':');
+  let h = parseInt(parts[0], 10);
+  const m = parts[1] || '00';
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${m} ${ampm}`;
+};
+
+// Helper: Check if current local time is within period start and end
+const isLiveNow = (startTime, endTime) => {
+  if (!startTime || !endTime) return false;
+  const now = new Date();
+  const currMin = now.getHours() * 60 + now.getMinutes();
+  const [sH, sM] = startTime.split(':').map(Number);
+  const [eH, eM] = endTime.split(':').map(Number);
+  return currMin >= sH * 60 + sM && currMin < eH * 60 + eM;
+};
 
 export const ParentDashboard = () => {
   const [children, setChildren] = useState([]);
@@ -35,6 +59,11 @@ export const ParentDashboard = () => {
   // Homework State
   const [homeworkList, setHomeworkList] = useState([]);
   const [loadingHomework, setLoadingHomework] = useState(false);
+
+  // Timetable & Daily Routine State
+  const [timetableData, setTimetableData] = useState(null);
+  const [loadingTimetable, setLoadingTimetable] = useState(false);
+  const [showWeeklyModal, setShowWeeklyModal] = useState(false);
 
   // 1. Fetch Parent's linked children
   useEffect(() => {
@@ -125,12 +154,34 @@ export const ParentDashboard = () => {
     }
   };
 
+  // 5. Fetch Daily & Weekly Timetable for Selected Child
+  const fetchChildTimetable = async (childId) => {
+    if (!childId || childId === 'st_01') {
+      setTimetableData(null);
+      return;
+    }
+    setLoadingTimetable(true);
+    try {
+      const res = await api.get(`/parent/children/${childId}/timetable`);
+      if (res.data) {
+        setTimetableData(res.data);
+      }
+    } catch (err) {
+      console.error('Error fetching child timetable:', err);
+    } finally {
+      setLoadingTimetable(false);
+    }
+  };
+
   useEffect(() => {
     fetchLeaves();
     if (selectedChild?.class_id && selectedChild?.section_id) {
       fetchHomework(selectedChild.class_id, selectedChild.section_id);
     } else {
       setHomeworkList([]);
+    }
+    if (selectedChildId) {
+      fetchChildTimetable(selectedChildId);
     }
   }, [selectedChildId, selectedChild?.class_id, selectedChild?.section_id]);
 
@@ -252,6 +303,126 @@ export const ParentDashboard = () => {
             {overview?.behavioral_rating ? 'Recent term evaluation' : 'No rating recorded yet'}
           </div>
         </div>
+      </div>
+
+      {/* Daily Class Routine & Timetable Section */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+        <div className="border-b border-slate-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Clock size={16} className="text-blue-600" />
+              <span>Today's Class Routine & Timetable</span>
+              {timetableData?.today_name && (
+                <span className="text-[11px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md">
+                  {timetableData.today_name}
+                </span>
+              )}
+            </h3>
+            <p className="text-xs text-slate-500">
+              Daily period bells and assigned teachers for {selectedChild?.class_name || 'Class'} ({selectedChild?.section_name || 'Section'})
+            </p>
+          </div>
+          <button
+            onClick={() => setShowWeeklyModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors self-start sm:self-auto"
+          >
+            <Calendar size={13} />
+            <span>Full Weekly Routine</span>
+          </button>
+        </div>
+
+        {loadingTimetable ? (
+          <div className="p-6 text-center text-xs text-slate-400">Loading today's schedule...</div>
+        ) : !timetableData || !timetableData.today_routine || timetableData.today_routine.length === 0 ? (
+          <div className="p-6 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+            No class periods scheduled for today ({timetableData?.today_name || 'Sunday / Holiday'}).
+            <div className="mt-1">
+              <button
+                onClick={() => setShowWeeklyModal(true)}
+                className="text-blue-600 font-semibold hover:underline"
+              >
+                Click here to view full weekly timetable
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            {timetableData.today_routine.map((p) => {
+              const live = isLiveNow(p.start_time, p.end_time);
+
+              if (p.is_break) {
+                return (
+                  <div
+                    key={p.period_id}
+                    className="p-3.5 rounded-xl border border-amber-200 bg-amber-50/70 space-y-1.5 flex flex-col justify-between"
+                  >
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-bold text-amber-900 uppercase tracking-wider text-[10px]">
+                        ☕ {p.period_name}
+                      </span>
+                      {live && (
+                        <span className="animate-pulse bg-amber-500 text-white font-bold text-[9px] px-1.5 py-0.2 rounded-full">
+                          LIVE BREAK
+                        </span>
+                      )}
+                    </div>
+                    <div className="font-mono text-xs font-semibold text-amber-800">
+                      {formatTime(p.start_time)} - {formatTime(p.end_time)}
+                    </div>
+                    <div className="text-[11px] text-amber-700 font-medium">Recess & Refreshment Time</div>
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  key={p.period_id}
+                  className={`p-3.5 rounded-xl border transition-all space-y-2 flex flex-col justify-between ${
+                    live
+                      ? 'border-emerald-400 bg-emerald-50/40 shadow-sm ring-1 ring-emerald-400'
+                      : p.subject_name
+                      ? 'border-slate-200 bg-white hover:border-slate-300'
+                      : 'border-dashed border-slate-200 bg-slate-50/60'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      {p.period_name}
+                    </span>
+                    {live ? (
+                      <span className="animate-pulse bg-emerald-600 text-white font-bold text-[9px] px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-white"></span>
+                        LIVE NOW
+                      </span>
+                    ) : (
+                      <span className="font-mono text-[10px] text-slate-500 font-semibold">
+                        {formatTime(p.start_time)} - {formatTime(p.end_time)}
+                      </span>
+                    )}
+                  </div>
+
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-xs">
+                      {p.subject_name || <span className="text-slate-400 font-normal italic">Free Period</span>}
+                    </h4>
+                    {p.teacher_name && (
+                      <div className="text-[11px] text-slate-600 flex items-center gap-1 mt-0.5 font-medium">
+                        <User size={11} className="text-slate-400" />
+                        <span>{p.teacher_name}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {p.room_number && (
+                    <div className="pt-1 border-t border-slate-100 text-[10px] text-slate-400">
+                      Room: <strong className="text-slate-600">{p.room_number}</strong>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Daily Homework & Tasks Section */}
@@ -435,6 +606,104 @@ export const ParentDashboard = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Full Weekly Schedule */}
+      {showWeeklyModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-2xl space-y-4 text-xs max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                  <Calendar size={16} className="text-blue-600" />
+                  <span>Weekly Timetable — {selectedChild?.student_name}</span>
+                </h3>
+                <p className="text-slate-500 text-[11px]">
+                  {selectedChild?.class_name} - {selectedChild?.section_name} | Session {timetableData?.academic_year_name || 'Current'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold flex items-center gap-1"
+                >
+                  <Printer size={13} /> Print
+                </button>
+                <button onClick={() => setShowWeeklyModal(false)} className="text-slate-400 hover:text-slate-600">
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Weekly Routine Matrix */}
+            <div className="overflow-x-auto border border-slate-200 rounded-xl">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px]">
+                    <th className="py-2.5 px-3">Period / Time</th>
+                    {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((d) => (
+                      <th key={d} className="py-2.5 px-3">
+                        {d}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {(timetableData?.today_routine?.length
+                    ? timetableData.today_routine
+                    : timetableData?.weekly_routine?.Monday || []
+                  ).map((p) => (
+                    <tr key={p.period_id} className={p.is_break ? 'bg-amber-50/40' : 'hover:bg-slate-50/60'}>
+                      <td className="py-2.5 px-3 font-mono text-[11px] font-bold text-slate-700 whitespace-nowrap bg-slate-50/40">
+                        <div>{p.period_name}</div>
+                        <div className="text-[10px] text-slate-400 font-normal">
+                          {formatTime(p.start_time)}
+                        </div>
+                      </td>
+                      {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((d) => {
+                        const daySlots = timetableData?.weekly_routine?.[d] || [];
+                        const slot = daySlots.find((s) => s.period_id === p.period_id);
+
+                        if (p.is_break) {
+                          return (
+                            <td key={d} className="py-2 px-2 text-center text-amber-800 font-bold text-[10px]">
+                              Recess
+                            </td>
+                          );
+                        }
+
+                        return (
+                          <td key={d} className="py-2 px-2 align-top">
+                            {slot && slot.subject_name ? (
+                              <div className="p-1.5 rounded-lg bg-blue-50 border border-blue-100 text-[10px]">
+                                <div className="font-bold text-blue-900 truncate">{slot.subject_name}</div>
+                                {slot.teacher_name && (
+                                  <div className="text-slate-500 truncate text-[9px] mt-0.5">{slot.teacher_name}</div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-slate-300 text-[10px]">-</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setShowWeeklyModal(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

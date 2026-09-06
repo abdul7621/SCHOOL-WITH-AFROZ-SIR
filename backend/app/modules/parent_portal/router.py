@@ -89,3 +89,18 @@ async def get_child_term_report_card(
         db=db,
     )
     return success_response(data=report)
+
+
+@router.get("/children/{student_id}/timetable")
+async def get_child_timetable(
+    student_id: str,
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Parent Action: View today's routine and full weekly timetable for the student."""
+    data = await ParentPortalService.get_child_timetable(
+        parent_user_id=current_user.id,
+        student_id=student_id,
+        db=db,
+    )
+    return success_response(data=data)

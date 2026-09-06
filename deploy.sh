@@ -103,6 +103,7 @@ if alembic upgrade head; then
 else
     echo -e "${YELLOW}⚠️ Alembic upgrade returned non-zero. Check migration logs if unexpected.${NC}"
 fi
+python scripts/migrate_timetable_tables.py || true
 echo ""
 
 # 4. Reload FastAPI Backend under PM2 & Verify Health

@@ -333,6 +333,45 @@ class TenantProvisioningService:
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
                 """)
 
+                # Timetable & Scheduling Engine
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS timetable_periods (
+                    id VARCHAR(36) PRIMARY KEY,
+                    period_number INT NOT NULL,
+                    name VARCHAR(100) NOT NULL,
+                    start_time TIME NOT NULL,
+                    end_time TIME NOT NULL,
+                    is_break BOOLEAN DEFAULT FALSE,
+                    sort_order INT DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """)
+
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS timetable_slots (
+                    id VARCHAR(36) PRIMARY KEY,
+                    academic_year_id VARCHAR(36) NOT NULL,
+                    class_id VARCHAR(36) NOT NULL,
+                    section_id VARCHAR(36) NOT NULL,
+                    day_of_week VARCHAR(15) NOT NULL,
+                    period_id VARCHAR(36) NOT NULL,
+                    subject_id VARCHAR(36) NOT NULL,
+                    teacher_user_id VARCHAR(36) NOT NULL,
+                    room_number VARCHAR(50),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (academic_year_id) REFERENCES academic_years(id) ON DELETE CASCADE,
+                    FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE,
+                    FOREIGN KEY (section_id) REFERENCES sections(id) ON DELETE CASCADE,
+                    FOREIGN KEY (period_id) REFERENCES timetable_periods(id) ON DELETE CASCADE,
+                    FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE,
+                    FOREIGN KEY (teacher_user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    UNIQUE KEY uk_class_sec_day_period (academic_year_id, class_id, section_id, day_of_week, period_id),
+                    INDEX idx_teacher_schedule (academic_year_id, teacher_user_id, day_of_week, period_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """)
+
                 # Staff Directory
                 cursor.execute("""
                 CREATE TABLE IF NOT EXISTS departments (
