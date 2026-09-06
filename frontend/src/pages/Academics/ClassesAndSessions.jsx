@@ -47,6 +47,7 @@ export const ClassesAndSessions = () => {
   const [newClassName, setNewClassName] = useState('');
   const [newClassOrder, setNewClassOrder] = useState(1);
   const [newSections, setNewSections] = useState('A, B');
+  const [newClassDesc, setNewClassDesc] = useState('');
   const [editingClass, setEditingClass] = useState(null);
 
   // Section Quick Add & Edit State
@@ -226,19 +227,36 @@ export const ClassesAndSessions = () => {
 
   const handleCreateClass = async (e) => {
     e.preventDefault();
+    const cleanName = newClassName.trim();
+    if (!cleanName) {
+      alert('Please enter a valid class name.');
+      return;
+    }
+    if (classes.some((c) => c.name.trim().toLowerCase() === cleanName.toLowerCase())) {
+      alert(`Class '${cleanName}' already exists. Duplicate class names are not allowed.`);
+      return;
+    }
+    const order = parseInt(newClassOrder);
+    if (isNaN(order) || order < 0) {
+      alert('Numeric order must be a valid non-negative number.');
+      return;
+    }
     try {
       const sectionsArray = newSections
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean);
       await api.post('/academics/classes', {
-        name: newClassName,
-        numeric_order: parseInt(newClassOrder),
+        name: cleanName,
+        numeric_order: order,
+        description: newClassDesc.trim() || null,
         initial_sections: sectionsArray.length > 0 ? sectionsArray : ['A'],
       });
       setShowClassModal(false);
       setNewClassName('');
+      setNewClassDesc('');
       fetchAll();
+      alert(`Class '${cleanName}' created successfully!`);
     } catch (err) {
       alert('Error creating class: ' + err.message);
     }
@@ -247,11 +265,21 @@ export const ClassesAndSessions = () => {
   const handleUpdateClass = async (e) => {
     e.preventDefault();
     if (!editingClass) return;
+    const cleanName = editingClass.name.trim();
+    if (!cleanName) {
+      alert('Please enter a valid class name.');
+      return;
+    }
+    const order = parseInt(editingClass.numeric_order);
+    if (isNaN(order) || order < 0) {
+      alert('Numeric order must be a valid non-negative number.');
+      return;
+    }
     try {
       await api.put(`/academics/classes/${editingClass.id}`, {
-        name: editingClass.name.trim(),
-        numeric_order: parseInt(editingClass.numeric_order),
-        description: editingClass.description,
+        name: cleanName,
+        numeric_order: order,
+        description: editingClass.description ? editingClass.description.trim() : null,
       });
       setEditingClass(null);
       fetchAll();
@@ -279,15 +307,30 @@ export const ClassesAndSessions = () => {
   const handleQuickAddSection = async (e) => {
     e.preventDefault();
     if (!addingSectionClassId) return;
+    const cleanSec = newSectionName.trim().toUpperCase();
+    if (!cleanSec) {
+      alert('Please enter a section name.');
+      return;
+    }
+    const targetClass = classes.find((c) => c.id === addingSectionClassId);
+    if (targetClass?.sections?.some((s) => s.name.trim().toUpperCase() === cleanSec)) {
+      alert(`Section '${cleanSec}' already exists in '${targetClass.name}'. Duplicate section names in the same class are not allowed.`);
+      return;
+    }
+    const cap = parseInt(newSectionCapacity);
+    if (isNaN(cap) || cap < 1) {
+      alert('Seat capacity must be at least 1.');
+      return;
+    }
     try {
       await api.post(`/academics/classes/${addingSectionClassId}/sections`, {
-        name: newSectionName.trim().toUpperCase(),
-        capacity: parseInt(newSectionCapacity),
+        name: cleanSec,
+        capacity: cap,
       });
       setAddingSectionClassId(null);
       setNewSectionName('C');
       fetchAll();
-      alert('Section added successfully!');
+      alert(`Section '${cleanSec}' added successfully!`);
     } catch (err) {
       alert('Error adding section: ' + err.message);
     }
@@ -998,6 +1041,16 @@ export const ClassesAndSessions = () => {
                   value={newSections}
                   onChange={(e) => setNewSections(e.target.value)}
                   placeholder="A, B, C"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Description (Optional)</label>
+                <input
+                  type="text"
+                  value={newClassDesc}
+                  onChange={(e) => setNewClassDesc(e.target.value)}
+                  placeholder="e.g. Primary Section / Commerce Wing"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
                 />
               </div>

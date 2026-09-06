@@ -232,24 +232,42 @@ async def list_classes(db: AsyncSession = Depends(get_tenant_db)):
 @router.post("/classes", dependencies=[Depends(RequirePermission("academics:manage"))], status_code=status.HTTP_201_CREATED)
 async def create_class(req: ClassLevelCreate, db: AsyncSession = Depends(get_tenant_db)):
     """Creates a class and optionally seeds initial sections (e.g. ['A', 'B'])."""
+    clean_name = req.name.strip()
+    if not clean_name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Class name cannot be empty.")
+
+    # Duplicate check by name (case-insensitive)
+    dup = await db.execute(
+        select(ClassLevel).where(func.lower(func.trim(ClassLevel.name)) == clean_name.lower())
+    )
+    if dup.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Class '{clean_name}' already exists.")
+
+    if req.numeric_order is not None and req.numeric_order < 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Numeric order must be a non-negative number.")
+
     class_obj = ClassLevel(
-        name=req.name,
-        numeric_order=req.numeric_order,
-        description=req.description,
+        name=clean_name,
+        numeric_order=req.numeric_order if req.numeric_order is not None else 1,
+        description=req.description.strip() if req.description else None,
     )
     db.add(class_obj)
     await db.flush()
 
     sections_to_add = req.initial_sections or ["A"]
+    seen_sections = set()
     for sec_name in sections_to_add:
-        sec = Section(class_id=class_obj.id, name=sec_name.upper(), capacity=45)
-        db.add(sec)
+        cleaned_sec = sec_name.strip().upper()
+        if cleaned_sec and cleaned_sec not in seen_sections:
+            seen_sections.add(cleaned_sec)
+            sec = Section(class_id=class_obj.id, name=cleaned_sec, capacity=45)
+            db.add(sec)
 
     await db.commit()
     await db.refresh(class_obj)
 
     return success_response(
-        data={"id": class_obj.id, "name": class_obj.name, "sections": sections_to_add},
+        data={"id": class_obj.id, "name": class_obj.name, "sections": list(seen_sections)},
         message=f"Class '{class_obj.name}' created with sections",
     )
 
@@ -264,7 +282,26 @@ async def add_section_to_class(class_id: str, req: SectionCreate, db: AsyncSessi
     if not class_obj:
         raise ResourceNotFoundException("ClassLevel", class_id)
 
-    sec = Section(class_id=class_id, name=req.name.upper(), capacity=req.capacity)
+    clean_sec_name = req.name.strip().upper()
+    if not clean_sec_name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Section name cannot be empty.")
+
+    # Duplicate check in same class
+    dup = await db.execute(
+        select(Section).where(
+            Section.class_id == class_id,
+            func.upper(func.trim(Section.name)) == clean_sec_name,
+        )
+    )
+    if dup.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Section '{clean_sec_name}' already exists in '{class_obj.name}'.",
+        )
+
+    capacity = req.capacity if req.capacity is not None and req.capacity > 0 else 45
+
+    sec = Section(class_id=class_id, name=clean_sec_name, capacity=capacity)
     db.add(sec)
     await db.commit()
     await db.refresh(sec)
@@ -320,13 +357,14 @@ async def delete_class(class_id: str, db: AsyncSession = Depends(get_tenant_db))
         raise ResourceNotFoundException("ClassLevel", class_id)
 
     from app.modules.students.models import StudentEnrollment
-    from app.modules.academics.models import ClassHomework
+    from app.modules.academics.models import ClassHomework, ClassTeacher
     from app.modules.exams.models import ExamSchedule
 
     rules = [
         DependencyRule(StudentEnrollment, StudentEnrollment.class_id, "Student Enrollments"),
         DependencyRule(ClassHomework, ClassHomework.class_id, "Homework Assignments"),
         DependencyRule(ExamSchedule, ExamSchedule.class_id, "Exam Schedules"),
+        DependencyRule(ClassTeacher, ClassTeacher.class_id, "Assigned Class Teachers"),
     ]
     await check_dependencies(db, class_id, f"Class '{class_obj.name}'", rules)
 
@@ -382,11 +420,12 @@ async def delete_section(class_id: str, section_id: str, db: AsyncSession = Depe
         raise ResourceNotFoundException("Section", section_id)
 
     from app.modules.students.models import StudentEnrollment
-    from app.modules.academics.models import ClassHomework
+    from app.modules.academics.models import ClassHomework, ClassTeacher
 
     rules = [
         DependencyRule(StudentEnrollment, StudentEnrollment.section_id, "Student Enrollments"),
         DependencyRule(ClassHomework, ClassHomework.section_id, "Homework Assignments"),
+        DependencyRule(ClassTeacher, ClassTeacher.section_id, "Assigned Class Teachers"),
     ]
     await check_dependencies(db, section_id, f"Section '{sec.name}'", rules)
 
