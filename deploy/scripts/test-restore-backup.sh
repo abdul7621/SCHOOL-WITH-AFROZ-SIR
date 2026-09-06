@@ -44,12 +44,18 @@ $MYSQL_CMD -e "DROP DATABASE IF EXISTS \`$TEST_DB\`; CREATE DATABASE \`$TEST_DB\
 echo "▶ Extracting and mapping tenant_sample_db data into $TEST_DB..."
 TMP_SQL="/tmp/restore_test_$$.sql"
 {
+    echo "SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT;"
+    echo "SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS;"
+    echo "SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION;"
+    echo "SET @OLD_TIME_ZONE=@@TIME_ZONE;"
+    echo "SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS;"
+    echo "SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS;"
+    echo "SET @OLD_SQL_MODE=@@SQL_MODE;"
+    echo "SET @OLD_SQL_NOTES=@@SQL_NOTES;"
     echo "SET FOREIGN_KEY_CHECKS=0;"
     echo "SET UNIQUE_CHECKS=0;"
     echo "SET SQL_MODE='NO_AUTO_VALUE_ON_ZERO';"
-    zcat "$LATEST_BACKUP" | sed -n '/^-- Current Database: `tenant_sample_db`/,$p' | sed "s/\`tenant_sample_db\`/\`$TEST_DB\`/g"
-    echo "SET FOREIGN_KEY_CHECKS=1;"
-    echo "SET UNIQUE_CHECKS=1;"
+    zcat "$LATEST_BACKUP" | sed -n '/^-- Current Database: `tenant_sample_db`/,$p' | sed -e "s/\`tenant_sample_db\`/\`$TEST_DB\`/g" -e 's/SET TIME_ZONE=@OLD_TIME_ZONE/-- SET TIME_ZONE/g'
     echo "COMMIT;"
 } > "$TMP_SQL"
 
