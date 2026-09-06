@@ -38,7 +38,7 @@
 | **12** | **Actual DB Connection** | Async MySQL connection | **🟢 Connection SUCCESS! Alive: 1, Version: 8.0.46** | 🟢 **MATCH** | Connected to `saas_control_db` as `erp_admin` | 🟢 PASS |
 | **13** | **Actual Migration State** | Alembic migrations at head | **Alembic tracking with `MySQLImpl`** | 🟢 **MATCH** | Context impl `MySQLImpl` verified | 🟢 PASS |
 | **14** | **Actual Tenant DBs** | Multi-DB isolation | **`saas_control_db` (5 tables) + `tenant_sample_db` (54 tables)** | 🟢 **MATCH** | 2.97 MB active database verified | 🟢 PASS |
-| **15** | **Actual Backup Config** | Nightly automated dump | **`0 2 * * * mysqldump -u root -pERP_Strong_Pass_2026!...`** | 🟢 **MATCH** | Automated nightly backup active in Crontab | 🟢 PASS |
+| **15** | **Actual Backup Config** | Nightly automated dump | **`0 2 * * * mysqldump -u root -p[PROTECTED]...`** | 🟢 **MATCH** | Automated nightly backup active in Crontab | 🟢 PASS |
 | **16** | **Actual Backup File** | Regular `.sql` dumps | **Backup directory `/var/backups/school_erp` created** | 🟢 **MATCH** | Ready for nightly 2:00 AM cycle | 🟢 PASS |
 | **17** | **Actual Restore Test** | Test database restore | **Syntax & command verified** | 🟢 **MATCH** | Point-in-time restore command verified | 🟢 PASS |
 | **18** | **Actual Domain Routing** | Virtual host routing | **Port 80 (School ERP) & Port 8080 (Laravel)** | 🟢 **MATCH** | Clean port and webroot isolation | 🟢 PASS |

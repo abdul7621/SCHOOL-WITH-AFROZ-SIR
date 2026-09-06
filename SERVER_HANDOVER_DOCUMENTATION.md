@@ -48,7 +48,7 @@ ssh root@187.127.176.21
 ```
 - **Server IP:** `187.127.176.21`
 - **Username:** `root`
-- **Password:** `Abdul@#762Abdul`
+- **Password:** `[SECURE_PRODUCTION_ROOT_KEY_SET_ON_VPS]` (Use SSH Keys or consult secure password manager)
 - **Port:** `22`
 
 ### SSH Key Setup (Optional for passwordless login)
