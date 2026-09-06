@@ -5,15 +5,15 @@ import { useAuth } from '../context/AuthContext';
 import { useTenant } from '../context/TenantContext';
 
 export const Login = () => {
-  const [username, setUsername] = useState('admin@sample.com');
-  const [password, setPassword] = useState('Admin123!');
+  const { login } = useAuth();
+  const { settings, tenantSlug } = useTenant();
+  const navigate = useNavigate();
+
+  const [username, setUsername] = useState(() => (tenantSlug === 'sample' ? 'admin@sample.com' : ''));
+  const [password, setPassword] = useState(() => (tenantSlug === 'sample' ? 'Admin123!' : ''));
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-
-  const { login } = useAuth();
-  const { settings } = useTenant();
-  const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -43,8 +43,13 @@ export const Login = () => {
         <h2 className="text-2xl font-black text-white tracking-tight">
           {isSuperAdmin ? 'Platform Super Admin Portal' : settings.school_name}
         </h2>
-        <p className="text-xs text-slate-400 mt-1 uppercase tracking-wider font-medium">
-          {isSuperAdmin ? '7A Digital Solution — Control Plane' : 'Staff & Faculty ERP Login'}
+        <p className="text-xs text-slate-400 mt-1 uppercase tracking-wider font-medium flex items-center justify-center gap-2">
+          <span>{isSuperAdmin ? '7A Digital Solution — Control Plane' : 'Staff & Faculty ERP Login'}</span>
+          {!isSuperAdmin && (
+            <span className="bg-blue-900/60 text-blue-300 font-mono text-[10px] px-2 py-0.5 rounded-full border border-blue-700/50 lowercase">
+              slug: {tenantSlug}
+            </span>
+          )}
         </p>
       </div>
 

@@ -153,6 +153,7 @@ export const TenantsList = () => {
               <th className="py-3.5 px-4">Dedicated MySQL DB</th>
               <th className="py-3.5 px-4">Admin Contact</th>
               <th className="py-3.5 px-4">Status</th>
+              <th className="py-3.5 px-4 text-center">Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 font-medium">
@@ -175,6 +176,20 @@ export const TenantsList = () => {
                   <span className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
                     {t.status}
                   </span>
+                </td>
+                <td className="py-3.5 px-4 text-center">
+                  <button
+                    onClick={() => {
+                      localStorage.setItem('tenant_slug', t.slug);
+                      localStorage.removeItem('token');
+                      localStorage.removeItem('user');
+                      window.location.href = `/login?tenant=${t.slug}`;
+                    }}
+                    className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-lg text-xs inline-flex items-center gap-1 transition-colors shadow-sm"
+                  >
+                    <span>Login</span>
+                    <ArrowRight size={12} />
+                  </button>
                 </td>
               </tr>
             ))}
@@ -417,8 +432,21 @@ export const TenantsList = () => {
                   </button>
 
                   <button
+                    onClick={() => {
+                      localStorage.setItem('tenant_slug', provisionedSchool.slug);
+                      localStorage.removeItem('token');
+                      localStorage.removeItem('user');
+                      window.location.href = `/login?tenant=${provisionedSchool.slug}`;
+                    }}
+                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow transition-colors"
+                  >
+                    <span>🚀 Launch School</span>
+                    <ArrowRight size={14} />
+                  </button>
+
+                  <button
                     onClick={() => setShowModal(false)}
-                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow transition-colors"
+                    className="flex items-center gap-2 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold px-4 py-2.5 rounded-xl transition-colors"
                   >
                     <span>Done</span>
                   </button>

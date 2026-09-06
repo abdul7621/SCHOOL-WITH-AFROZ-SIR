@@ -4,13 +4,30 @@ import api from '../api/client';
 const TenantContext = createContext(null);
 
 export const TenantProvider = ({ children }) => {
-  const [tenantSlug, setTenantSlug] = useState(() => localStorage.getItem('tenant_slug') || 'sample');
+  const [tenantSlug, setTenantSlug] = useState(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const qTenant = urlParams.get('tenant') || urlParams.get('tenant_slug');
+    if (qTenant) {
+      localStorage.setItem('tenant_slug', qTenant);
+      return qTenant;
+    }
+    return localStorage.getItem('tenant_slug') || 'sample';
+  });
   const [settings, setSettings] = useState({
     school_name: '7A Model School',
     theme_primary_color: '#1E40AF',
     currency_symbol: '₹',
   });
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const qTenant = urlParams.get('tenant') || urlParams.get('tenant_slug');
+    if (qTenant && qTenant !== tenantSlug) {
+      localStorage.setItem('tenant_slug', qTenant);
+      setTenantSlug(qTenant);
+    }
+  }, [window.location.search]);
 
   useEffect(() => {
     const fetchTenantSettings = async () => {
