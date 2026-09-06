@@ -10,6 +10,7 @@ import {
   Clock,
   ShieldCheck,
   FileText,
+  Trash2,
 } from 'lucide-react';
 import api from '../../api/client';
 
@@ -164,9 +165,18 @@ export const ClassesAndSessions = () => {
 
   const handleCreateYear = async (e) => {
     e.preventDefault();
+    const cleanName = newYearName.trim();
+    if (!cleanName) {
+      alert('Please enter a valid session name.');
+      return;
+    }
+    if (years.some((y) => y.name.trim().toLowerCase() === cleanName.toLowerCase())) {
+      alert(`Academic session '${cleanName}' already exists. Duplicate session names are not allowed.`);
+      return;
+    }
     try {
       await api.post('/academics/years', {
-        name: newYearName,
+        name: cleanName,
         start_date: startDate,
         end_date: endDate,
         is_current: false,
@@ -174,7 +184,22 @@ export const ClassesAndSessions = () => {
       setShowYearModal(false);
       fetchAll();
     } catch (err) {
-      alert('Error creating session: ' + err.message);
+      const msg = err.response?.data?.detail || err.response?.data?.message || err.message;
+      alert('Error creating session: ' + msg);
+    }
+  };
+
+  const handleDeleteYear = async (yearId, yearName) => {
+    if (!window.confirm(`Are you sure you want to delete session "${yearName}"? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      await api.delete(`/academics/years/${yearId}`);
+      fetchAll();
+      alert(`Academic session "${yearName}" deleted successfully.`);
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.response?.data?.message || err.message;
+      alert('Error deleting session: ' + msg);
     }
   };
 
@@ -279,7 +304,7 @@ export const ClassesAndSessions = () => {
                   <div className="flex flex-wrap gap-1.5">
                     {c.sections?.map((s) => (
                       <span key={s.id} className="px-2.5 py-1 bg-blue-50 text-blue-700 font-bold rounded-lg text-xs">
-                        Section {s.name} <span className="text-[10px] font-normal text-blue-400">({s.capacity} seats)</span>
+                        {s.name.startsWith('Section') ? s.name : `Section ${s.name}`} <span className="text-[10px] font-normal text-blue-400">({s.capacity} seats)</span>
                       </span>
                     ))}
                   </div>
@@ -331,13 +356,25 @@ export const ClassesAndSessions = () => {
                       )}
                     </td>
                     <td className="py-3 px-4 text-right">
-                      {!y.is_current && (
-                        <button
-                          onClick={() => handleSetCurrentYear(y.id)}
-                          className="px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-lg text-xs transition-colors"
-                        >
-                          Set as Active
-                        </button>
+                      {!y.is_current ? (
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => handleSetCurrentYear(y.id)}
+                            className="px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-lg text-xs transition-colors"
+                          >
+                            Set as Active
+                          </button>
+                          <button
+                            onClick={() => handleDeleteYear(y.id, y.name)}
+                            className="flex items-center gap-1 px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold rounded-lg text-xs transition-colors"
+                            title="Delete inactive session"
+                          >
+                            <Trash2 size={13} />
+                            <span>Delete</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] font-semibold text-emerald-600">Active</span>
                       )}
                     </td>
                   </tr>

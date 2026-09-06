@@ -1,6 +1,6 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, status, HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.core.database import get_tenant_db
@@ -60,13 +60,23 @@ async def list_academic_years(db: AsyncSession = Depends(get_tenant_db)):
 
 @router.post("/years", dependencies=[Depends(RequirePermission("academics:manage"))], status_code=status.HTTP_201_CREATED)
 async def create_academic_year(req: AcademicYearCreate, db: AsyncSession = Depends(get_tenant_db)):
-    """Creates a new academic year session (e.g. 2026-2027)."""
+    """Creates a new academic year session (e.g. 2026-2027). Prevents duplicate session names."""
+    clean_name = req.name.strip()
+    existing = await db.execute(
+        select(AcademicYear).where(func.lower(func.trim(AcademicYear.name)) == clean_name.lower())
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Academic session '{clean_name}' already exists."
+        )
+
     if req.is_current:
         # Mark all other years as not current
         await db.execute(update(AcademicYear).values(is_current=False))
 
     year = AcademicYear(
-        name=req.name,
+        name=clean_name,
         start_date=req.start_date,
         end_date=req.end_date,
         is_current=req.is_current,
@@ -98,6 +108,76 @@ async def set_current_academic_year(year_id: str, db: AsyncSession = Depends(get
     return success_response(
         data={"id": year.id, "name": year.name, "is_current": True},
         message=f"Academic Year '{year.name}' set as active current session",
+    )
+
+
+@router.delete("/years/{year_id}", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def delete_academic_year(year_id: str, db: AsyncSession = Depends(get_tenant_db)):
+    """Safely deletes an inactive academic session if no linked records exist."""
+    stmt = select(AcademicYear).where(AcademicYear.id == year_id)
+    result = await db.execute(stmt)
+    year = result.scalar_one_or_none()
+
+    if not year:
+        raise ResourceNotFoundException("AcademicYear", year_id)
+
+    if year.is_current:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete the active academic session. Set another session as active first before deleting."
+        )
+
+    from app.modules.students.models import StudentEnrollment
+    from app.modules.attendance.models import AttendanceSession
+    from app.modules.academics.models import ClassHomework, ClassTeacher
+    from app.modules.exams.models import ExamTerm
+    from app.modules.fees.models import FeeStructure
+
+    enrollment_count = (await db.execute(select(func.count()).select_from(StudentEnrollment).where(StudentEnrollment.academic_year_id == year_id))).scalar_one()
+    if enrollment_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot delete session '{year.name}' because {enrollment_count} student enrollment(s) are linked to it."
+        )
+
+    attendance_count = (await db.execute(select(func.count()).select_from(AttendanceSession).where(AttendanceSession.academic_year_id == year_id))).scalar_one()
+    if attendance_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot delete session '{year.name}' because attendance records are linked to it."
+        )
+
+    homework_count = (await db.execute(select(func.count()).select_from(ClassHomework).where(ClassHomework.academic_year_id == year_id))).scalar_one()
+    if homework_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot delete session '{year.name}' because homework assignments are linked to it."
+        )
+
+    exam_count = (await db.execute(select(func.count()).select_from(ExamTerm).where(ExamTerm.academic_year_id == year_id))).scalar_one()
+    if exam_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot delete session '{year.name}' because exam terms are linked to it."
+        )
+
+    fee_count = (await db.execute(select(func.count()).select_from(FeeStructure).where(FeeStructure.academic_year_id == year_id))).scalar_one()
+    if fee_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot delete session '{year.name}' because fee structures are linked to it."
+        )
+
+    # Clean up empty class teacher mappings if any exist
+    await db.execute(delete(ClassTeacher).where(ClassTeacher.academic_year_id == year_id))
+
+    year_name = year.name
+    await db.delete(year)
+    await db.commit()
+
+    return success_response(
+        data={"id": year_id, "name": year_name},
+        message=f"Academic session '{year_name}' deleted successfully",
     )
 
 
