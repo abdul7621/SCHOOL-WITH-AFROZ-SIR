@@ -25,23 +25,24 @@ log "======================================================="
 log "▶ STARTING AUTOMATED DATABASE BACKUP"
 
 # 1. Determine credentials safely
-DUMP_AUTH=""
+DB_USER=$(grep -E '^CONTROL_DB_USER=' /var/www/school-erp/backend/.env 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+DB_PASS=$(grep -E '^CONTROL_DB_PASSWORD=' /var/www/school-erp/backend/.env 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+export MYSQL_PWD="$DB_PASS"
+
+# Determine working connection method
 if [ -f "$CNF_FILE" ]; then
-    DUMP_AUTH="--defaults-extra-file=$CNF_FILE"
-elif [ -f "/var/www/school-erp/backend/.env" ]; then
-    # Read password safely into local variable (never logged or exposed in cron)
-    DB_USER=$(grep -E '^CONTROL_DB_USER=' /var/www/school-erp/backend/.env | head -n1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
-    DB_PASS=$(grep -E '^CONTROL_DB_PASSWORD=' /var/www/school-erp/backend/.env | head -n1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
-    export MYSQL_PWD="$DB_PASS"
-    DUMP_AUTH="-u $DB_USER"
+    DUMP_AUTH="--defaults-extra-file=$CNF_FILE --databases saas_control_db tenant_sample_db"
+elif mysqldump -u root --single-transaction --quick --databases saas_control_db tenant_sample_db > /dev/null 2>&1; then
+    DUMP_AUTH="-u root --databases saas_control_db tenant_sample_db"
+elif [ -n "$DB_USER" ] && mysqldump -h 127.0.0.1 -u "$DB_USER" --single-transaction --quick --databases saas_control_db tenant_sample_db > /dev/null 2>&1; then
+    DUMP_AUTH="-h 127.0.0.1 -u $DB_USER --databases saas_control_db tenant_sample_db"
 else
-    log "❌ ERROR: No credentials found in $CNF_FILE or backend/.env!"
-    exit 1
+    DUMP_AUTH="-u root --databases saas_control_db tenant_sample_db"
 fi
 
 # 2. Execute mysqldump with single-transaction consistency
-log "Backing up all MySQL databases (saas_control_db, tenant_sample_db)..."
-if mysqldump $DUMP_AUTH --single-transaction --quick --routines --triggers --all-databases 2>> "$LOG_FILE" | gzip > "$BACKUP_FILE"; then
+log "Backing up MySQL databases with auth: $DUMP_AUTH..."
+if mysqldump $DUMP_AUTH --single-transaction --quick 2>> "$LOG_FILE" | gzip > "$BACKUP_FILE"; then
     unset MYSQL_PWD
     log "✅ mysqldump completed successfully."
 else

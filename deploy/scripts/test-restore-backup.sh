@@ -27,9 +27,18 @@ DB_USER=$(grep -E '^CONTROL_DB_USER=' /var/www/school-erp/backend/.env | head -n
 DB_PASS=$(grep -E '^CONTROL_DB_PASSWORD=' /var/www/school-erp/backend/.env | head -n1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
 export MYSQL_PWD="$DB_PASS"
 
+# Determine working connection command
+if mysql -u root -e "SELECT 1;" >/dev/null 2>&1; then
+    MYSQL_CMD="mysql -u root"
+elif [ -n "$DB_USER" ] && mysql -h 127.0.0.1 -u "$DB_USER" -e "SELECT 1;" >/dev/null 2>&1; then
+    MYSQL_CMD="mysql -h 127.0.0.1 -u $DB_USER"
+else
+    MYSQL_CMD="mysql -u root"
+fi
+
 # 3. Create clean temporary test database
 echo "▶ Creating isolated temporary database: $TEST_DB..."
-mysql -u "$DB_USER" -e "DROP DATABASE IF EXISTS \`$TEST_DB\`; CREATE DATABASE \`$TEST_DB\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+$MYSQL_CMD -e "DROP DATABASE IF EXISTS \`$TEST_DB\`; CREATE DATABASE \`$TEST_DB\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 
 # 4. Extract tenant_sample_db data and redirect to test_restore_tenant_db
 echo "▶ Extracting and mapping tenant_sample_db data into $TEST_DB..."
@@ -37,24 +46,22 @@ TMP_SQL="/tmp/restore_test_$$.sql"
 zcat "$LATEST_BACKUP" | sed -n '/^-- Current Database: `tenant_sample_db`/,/^-- Current Database:/p' | sed "s/\`tenant_sample_db\`/\`$TEST_DB\`/g" > "$TMP_SQL"
 
 echo "▶ Executing restore into $TEST_DB..."
-mysql -u "$DB_USER" "$TEST_DB" < "$TMP_SQL"
+$MYSQL_CMD "$TEST_DB" < "$TMP_SQL"
 rm -f "$TMP_SQL"
-unset MYSQL_PWD
 
 echo "=========================================================================="
 echo "          📊 RESTORATION EVIDENCE & INTEGRITY AUDIT                       "
 echo "=========================================================================="
 
-export MYSQL_PWD="$DB_PASS"
 # 5. Verify Table Count in restored DB
-TABLE_COUNT=$(mysql -u "$DB_USER" -sse "SELECT count(*) FROM information_schema.tables WHERE table_schema='$TEST_DB';")
-echo "  Total Tables Restored in $TEST_DB: $TABLE_COUNT (Expected: 54)"
+TABLE_COUNT=$($MYSQL_CMD -sse "SELECT count(*) FROM information_schema.tables WHERE table_schema='$TEST_DB';")
+echo "  Total Tables Restored in $TEST_DB: $TABLE_COUNT (Expected: ~54)"
 
 # 6. Verify Representative Data Rows
-STUDENTS_COUNT=$(mysql -u "$DB_USER" -sse "SELECT count(*) FROM \`$TEST_DB\`.students;" 2>/dev/null || echo "0")
-USERS_COUNT=$(mysql -u "$DB_USER" -sse "SELECT count(*) FROM \`$TEST_DB\`.users;" 2>/dev/null || echo "0")
-FEE_HEADS_COUNT=$(mysql -u "$DB_USER" -sse "SELECT count(*) FROM \`$TEST_DB\`.fee_heads;" 2>/dev/null || echo "0")
-CLASSES_COUNT=$(mysql -u "$DB_USER" -sse "SELECT count(*) FROM \`$TEST_DB\`.classes;" 2>/dev/null || echo "0")
+STUDENTS_COUNT=$($MYSQL_CMD -sse "SELECT count(*) FROM \`$TEST_DB\`.students;" 2>/dev/null || echo "0")
+USERS_COUNT=$($MYSQL_CMD -sse "SELECT count(*) FROM \`$TEST_DB\`.users;" 2>/dev/null || echo "0")
+FEE_HEADS_COUNT=$($MYSQL_CMD -sse "SELECT count(*) FROM \`$TEST_DB\`.fee_heads;" 2>/dev/null || echo "0")
+CLASSES_COUNT=$($MYSQL_CMD -sse "SELECT count(*) FROM \`$TEST_DB\`.classes;" 2>/dev/null || echo "0")
 
 echo "  Restored Students Count   : $STUDENTS_COUNT"
 echo "  Restored Users Count      : $USERS_COUNT"
@@ -63,7 +70,7 @@ echo "  Restored Classes Count    : $CLASSES_COUNT"
 
 # 7. Safety cleanup
 echo "▶ Cleaning up temporary test database..."
-mysql -u "$DB_USER" -e "DROP DATABASE IF EXISTS \`$TEST_DB\`;"
+$MYSQL_CMD -e "DROP DATABASE IF EXISTS \`$TEST_DB\`;"
 unset MYSQL_PWD
 
 if [ "$TABLE_COUNT" -ge 50 ] && [ "$STUDENTS_COUNT" -gt 0 ]; then
