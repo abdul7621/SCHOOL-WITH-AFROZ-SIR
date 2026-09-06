@@ -16,7 +16,8 @@ param(
     [Parameter(Position=0)]
     [string]$Message = "",
 
-    [switch]$Fast,
+    [switch]$Backup,
+    [switch]$VerifyRestore,
     [switch]$Status,
     [switch]$Logs
 )
@@ -42,8 +43,11 @@ if ($Logs) {
 }
 
 $ServerFlag = ""
-if ($Fast) {
-    $ServerFlag = "--fast"
+if ($Backup) {
+    $ServerFlag = "--backup"
+}
+if ($VerifyRestore) {
+    $ServerFlag = "$ServerFlag --verify-restore"
 }
 
 # Step 1: Check Local Git Status

@@ -25,19 +25,18 @@ if /i "%~1"=="--logs" (
 
 if /i "%~1"=="--help" (
     echo USAGE:
-    echo   .\deploy.bat                         Deploy changes with auto timestamp commit
+    echo   .\deploy.bat                         Fast routine deploy (Backend + Frontend + Health)
     echo   .\deploy.bat "Your commit message"   Deploy with custom commit message
-    echo   .\deploy.bat --fast                  Fast deploy (skips post-deploy backup/restore test)
-    echo   .\deploy.bat --fast "Commit message" Fast deploy with custom commit message
-    echo   .\deploy.bat --status                Check VPS health and PM2 status
+    echo   .\deploy.bat --backup                Deploy AND create an immediate DB snapshot backup
+    echo   .\deploy.bat --status                Check live VPS health and PM2 status
     echo   .\deploy.bat --logs                  View recent backend logs on VPS
     echo   .\deploy.bat --help                  Show this help screen
     exit /b 0
 )
 
 set "COMMIT_MSG="
-if /i "%~1"=="--fast" (
-    set "SERVER_FLAG=--fast"
+if /i "%~1"=="--backup" (
+    set "SERVER_FLAG=--backup"
     if not "%~2"=="" (
         set "COMMIT_MSG=%~2"
     )

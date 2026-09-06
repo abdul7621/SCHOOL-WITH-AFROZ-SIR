@@ -28,11 +28,17 @@ echo ""
 # Error handler trap
 trap 'echo -e "\n${RED}❌ DEPLOYMENT FAILED at line $LINENO! Check logs above for details.${NC}"; exit 1' ERR
 
-MODE="full"
+RUN_BACKUP=false
+RUN_RESTORE=false
+MODE="routine"
+
 for arg in "$@"; do
     case $arg in
-        --fast)
-            MODE="fast"
+        --backup)
+            RUN_BACKUP=true
+            ;;
+        --verify-restore)
+            RUN_RESTORE=true
             ;;
         --status)
             MODE="status"
@@ -152,8 +158,8 @@ echo -e "  - Frontend HTTP Status : ${BOLD}$FE_HTTP${NC}"
 echo -e "  - API Proxy HTTP Status: ${BOLD}$API_HTTP${NC}"
 echo ""
 
-# 6. Hardening, Backup & Restore Verification
-echo -e "${BOLD}[6/6] 🛡️ Production Hardening & Safety Routine...${NC}"
+# 6. Safety Checks & Optional Backup/Restore
+echo -e "${BOLD}[6/6] 🛡️ System Health & Safety Checks...${NC}"
 cd /var/www/school-erp
 if [ -f deploy/scripts/backup-school-erp.sh ]; then
     cp deploy/scripts/backup-school-erp.sh /usr/local/bin/backup-school-erp.sh
@@ -164,17 +170,15 @@ if [ -f deploy/scripts/test-restore-backup.sh ]; then
     chmod +x /usr/local/bin/test-restore-backup.sh
 fi
 
-# Ensure crontab is configured
-(crontab -l 2>/dev/null | grep -v 'mysqldump' | grep -v 'backup-school-erp.sh'; echo "0 2 * * * /usr/local/bin/backup-school-erp.sh >> /var/log/school_erp_backup.log 2>&1") | crontab -
-echo -e "${GREEN}✔ Nightly backup crontab verified.${NC}"
-
-if [ "$MODE" = "fast" ]; then
-    echo -e "${YELLOW}⚡ FAST DEPLOY: Skipping post-deploy backup and restore test.${NC}"
-else
-    echo "Running post-deployment snapshot backup..."
+if [ "$RUN_BACKUP" = true ]; then
+    echo "📦 Manual snapshot requested: Running backup..."
     /usr/local/bin/backup-school-erp.sh
+else
+    echo -e "${GREEN}✔ Routine deploy: Automated nightly backup scheduled at 02:00 AM UTC.${NC}"
+fi
 
-    echo "Running isolated database restore verification..."
+if [ "$RUN_RESTORE" = true ]; then
+    echo "🧪 Manual restore test requested: Verifying backup in isolated database..."
     /usr/local/bin/test-restore-backup.sh
 fi
 
