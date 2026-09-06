@@ -392,15 +392,25 @@ export const ClassesAndSessions = () => {
     try {
       const res = await api.get(`/academics/classes/${classId}/subjects`);
       if (res.data) {
-        const ids = res.data.map((s) => s.id);
+        // Extract subject_id from junction object, or fallback to id
+        const ids = res.data.map((s) => s.subject_id || s.id);
         setMappedSubjectIds(ids);
+      } else {
+        setMappedSubjectIds([]);
       }
     } catch (e) {
       console.error('Error fetching curriculum:', e);
+      setMappedSubjectIds([]);
     } finally {
       setLoadingCurriculum(false);
     }
   };
+
+  useEffect(() => {
+    if (activeTab === 'curriculum' && curriculumClassId) {
+      fetchCurriculum(curriculumClassId);
+    }
+  }, [activeTab, curriculumClassId]);
 
   const toggleSubjectMapping = (subId) => {
     setMappedSubjectIds((prev) =>
@@ -415,6 +425,8 @@ export const ClassesAndSessions = () => {
       await api.post(`/academics/classes/${curriculumClassId}/subjects`, {
         subject_ids: mappedSubjectIds,
       });
+      // Re-fetch directly from DB to verify and display confirmed persisted state
+      await fetchCurriculum(curriculumClassId);
       alert('Curriculum mapping saved successfully!');
     } catch (err) {
       alert('Error saving curriculum: ' + err.message);
@@ -461,13 +473,7 @@ export const ClassesAndSessions = () => {
             Subjects Directory ({subjects.length})
           </button>
           <button
-            onClick={() => {
-              setActiveTab('curriculum');
-              if (!curriculumClassId && classes.length > 0) {
-                setCurriculumClassId(classes[0].id);
-                fetchCurriculum(classes[0].id);
-              }
-            }}
+            onClick={() => setActiveTab('curriculum')}
             className={`px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
               activeTab === 'curriculum' ? 'bg-white text-blue-700 shadow font-bold' : 'text-slate-600'
             }`}

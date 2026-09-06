@@ -536,14 +536,30 @@ async def assign_subjects_to_class(
     req: AssignSubjectsToClassRequest,
     db: AsyncSession = Depends(get_tenant_db),
 ):
-    """Assigns multiple subjects to a class curriculum."""
-    for sub_id in req.subject_ids:
-        existing = await db.execute(select(ClassSubject).where(ClassSubject.class_id == class_id, ClassSubject.subject_id == sub_id))
-        if not existing.scalar_one_or_none():
+    """Synchronizes subjects mapped to a class curriculum."""
+    # 1. Fetch current mappings for this class
+    stmt = select(ClassSubject).where(ClassSubject.class_id == class_id)
+    result = await db.execute(stmt)
+    current_mappings = result.scalars().all()
+    current_map = {cs.subject_id: cs for cs in current_mappings}
+
+    target_ids = set(req.subject_ids or [])
+
+    # 2. Delete unselected mappings
+    for sub_id, cs_obj in current_map.items():
+        if sub_id not in target_ids:
+            await db.delete(cs_obj)
+
+    # 3. Add newly selected mappings
+    for sub_id in target_ids:
+        if sub_id not in current_map:
             db.add(ClassSubject(class_id=class_id, subject_id=sub_id, is_mandatory=True))
 
     await db.commit()
-    return success_response(message="Subjects mapped to class curriculum successfully")
+    return success_response(
+        data={"class_id": class_id, "mapped_count": len(target_ids)},
+        message="Class curriculum mapped and synchronized successfully"
+    )
 
 
 @router.delete("/classes/{class_id}/subjects/{subject_id}", dependencies=[Depends(RequirePermission("academics:manage"))])
