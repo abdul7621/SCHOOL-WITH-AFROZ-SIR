@@ -32,6 +32,10 @@ export const ParentDashboard = () => {
     reason: '',
   });
 
+  // Homework State
+  const [homeworkList, setHomeworkList] = useState([]);
+  const [loadingHomework, setLoadingHomework] = useState(false);
+
   // 1. Fetch Parent's linked children
   useEffect(() => {
     const fetchChildren = async () => {
@@ -66,6 +70,8 @@ export const ParentDashboard = () => {
     fetchChildren();
   }, []);
 
+  const selectedChild = children.find((c) => c.student_id === selectedChildId) || children[0];
+
   // 2. Fetch Overview for Selected Child
   useEffect(() => {
     if (!selectedChildId || selectedChildId === 'st_01') return;
@@ -98,9 +104,35 @@ export const ParentDashboard = () => {
     }
   };
 
+  // 4. Fetch Homework for Selected Child's class & section
+  const fetchHomework = async (cId, sId) => {
+    if (!cId || !sId) {
+      setHomeworkList([]);
+      return;
+    }
+    setLoadingHomework(true);
+    try {
+      const res = await api.get('/academics/homework', {
+        params: { class_id: cId, section_id: sId },
+      });
+      if (res.data) {
+        setHomeworkList(res.data);
+      }
+    } catch (err) {
+      console.error('Error fetching child homework:', err);
+    } finally {
+      setLoadingHomework(false);
+    }
+  };
+
   useEffect(() => {
     fetchLeaves();
-  }, [selectedChildId]);
+    if (selectedChild?.class_id && selectedChild?.section_id) {
+      fetchHomework(selectedChild.class_id, selectedChild.section_id);
+    } else {
+      setHomeworkList([]);
+    }
+  }, [selectedChildId, selectedChild?.class_id, selectedChild?.section_id]);
 
   const handleApplyLeave = async (e) => {
     e.preventDefault();
@@ -128,8 +160,6 @@ export const ParentDashboard = () => {
       setSubmittingLeave(false);
     }
   };
-
-  const selectedChild = children.find((c) => c.student_id === selectedChildId) || children[0];
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -201,7 +231,7 @@ export const ParentDashboard = () => {
           </div>
           <div className="text-xs font-semibold text-slate-500 uppercase">Monthly Attendance</div>
           <div className="text-xl font-bold text-slate-900">
-            {overview?.attendance?.attendance_percentage !== undefined ? `${overview.attendance.attendance_percentage}%` : '96.5%'}
+            {overview?.attendance?.attendance_percentage !== undefined ? `${overview.attendance.attendance_percentage}%` : 'N/A'}
           </div>
           <div className="text-[11px] text-slate-500">
             {overview?.attendance?.present_days !== undefined
@@ -215,9 +245,61 @@ export const ParentDashboard = () => {
             <Award size={20} />
           </div>
           <div className="text-xs font-semibold text-slate-500 uppercase">Behavioral Rating</div>
-          <div className="text-xl font-bold text-amber-500">★★★★★</div>
-          <div className="text-[11px] text-slate-500">Excellent Leadership & Discipline</div>
+          <div className="text-xl font-bold text-amber-500">
+            {overview?.behavioral_rating || 'N/A'}
+          </div>
+          <div className="text-[11px] text-slate-500">
+            {overview?.behavioral_rating ? 'Recent term evaluation' : 'No rating recorded yet'}
+          </div>
         </div>
+      </div>
+
+      {/* Daily Homework & Tasks Section */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+        <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <FileText size={16} className="text-blue-600" />
+              <span>Daily Homework & Classwork</span>
+            </h3>
+            <p className="text-xs text-slate-500">
+              Tasks assigned by teachers for {selectedChild?.class_name || 'class'} - {selectedChild?.section_name || 'section'}
+            </p>
+          </div>
+          <span className="text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-lg font-semibold">
+            {homeworkList.length} Active {homeworkList.length === 1 ? 'Task' : 'Tasks'}
+          </span>
+        </div>
+
+        {loadingHomework ? (
+          <div className="p-6 text-center text-xs text-slate-400">Loading homework assignments...</div>
+        ) : homeworkList.length === 0 ? (
+          <div className="p-6 text-center text-xs text-slate-400">
+            No homework assigned for this class and section today.
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100 text-xs">
+            {homeworkList.map((hw) => (
+              <div key={hw.id} className="py-3.5 first:pt-0 last:pb-0 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold text-[10px]">
+                      {hw.subject_name}
+                    </span>
+                    <h4 className="font-bold text-slate-900">{hw.title}</h4>
+                  </div>
+                  <p className="text-slate-600 whitespace-pre-wrap">{hw.description}</p>
+                </div>
+                <div className="flex items-center gap-3 text-[11px] self-end md:self-auto shrink-0">
+                  <span className="text-slate-400">Assigned by: <strong className="text-slate-600">{hw.assigned_by}</strong></span>
+                  <div className="bg-amber-50 text-amber-800 px-2.5 py-1 rounded-lg font-bold border border-amber-200">
+                    Due: {hw.due_date ? new Date(hw.due_date).toLocaleDateString() : 'N/A'}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Leave Application Section */}

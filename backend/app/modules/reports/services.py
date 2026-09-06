@@ -293,13 +293,8 @@ class ReportsService:
         Computes real-time live operational metrics for role-tailored dashboards.
         Timezone-aware and zero-data empty-state safe.
         """
-        try:
-            from zoneinfo import ZoneInfo
-            from datetime import datetime
-            tz = ZoneInfo("Asia/Kolkata")
-            today = datetime.now(tz).date()
-        except Exception:
-            today = date.today()
+        from app.shared.timezone_utils import get_school_today
+        today = await get_school_today(db)
 
         # 1. Total Active Students
         st_count_stmt = select(func.count(StudentEnrollment.id)).where(StudentEnrollment.is_active == True)

@@ -57,7 +57,9 @@ class ParentPortalService:
                 "admission_no": st.admission_no,
                 "student_name": f"{st.first_name} {st.last_name or ''}".strip(),
                 "profile_photo_url": st.profile_photo_url,
+                "class_id": cls_lvl.id,
                 "class_name": cls_lvl.name,
+                "section_id": sec.id,
                 "section_name": sec.name,
                 "roll_no": enroll.roll_no,
                 "academic_year_id": enroll.academic_year_id,
@@ -70,7 +72,8 @@ class ParentPortalService:
         student = await cls._verify_parent_access(parent_user_id, student_id, db)
 
         # 1. Today's attendance
-        today = date.today()
+        from app.shared.timezone_utils import get_school_today
+        today = await get_school_today(db)
         att_stmt = (
             select(LookupValue.code, LookupValue.label)
             .join(StudentDailyAttendance, StudentDailyAttendance.attendance_status_id == LookupValue.id)
@@ -83,6 +86,24 @@ class ParentPortalService:
         att_res = await db.execute(att_stmt)
         att_row = att_res.first()
         today_attendance = att_row[1] if att_row else "Not Marked Yet"
+
+        # Monthly attendance calculation
+        month_att_stmt = (
+            select(LookupValue.code, func.count(StudentDailyAttendance.id))
+            .join(LookupValue, StudentDailyAttendance.attendance_status_id == LookupValue.id)
+            .join(AttendanceSession, StudentDailyAttendance.session_id == AttendanceSession.id)
+            .where(
+                StudentDailyAttendance.student_id == student_id,
+                func.month(AttendanceSession.attendance_date) == today.month,
+                func.year(AttendanceSession.attendance_date) == today.year,
+            )
+            .group_by(LookupValue.code)
+        )
+        m_res = await db.execute(month_att_stmt)
+        m_counts = dict(m_res.all())
+        p_days = m_counts.get("PRESENT", 0)
+        tot_days = sum(m_counts.values())
+        att_pct = round((p_days / tot_days * 100), 1) if tot_days > 0 else None
 
         # 2. Fee Dues
         fee_stmt = (
@@ -114,6 +135,16 @@ class ParentPortalService:
             "today_attendance": today_attendance,
             "pending_fee_amount": total_due_amt,
             "pending_invoices_count": due_count or 0,
+            "fees": {
+                "outstanding_balance": total_due_amt,
+                "pending_invoices_count": due_count or 0,
+            },
+            "attendance": {
+                "today": today_attendance,
+                "present_days": p_days,
+                "total_days": tot_days,
+                "attendance_percentage": att_pct,
+            },
             "recent_behavioral_ratings": [
                 {
                     "criteria_name": crit.name,

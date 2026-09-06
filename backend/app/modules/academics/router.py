@@ -257,13 +257,23 @@ async def assign_class_teacher(req: ClassTeacherAssignRequest, db: AsyncSession 
 # ==========================================
 # 5. Class Homework & Assignments (Proposal Section 4 & 14)
 # ==========================================
-@router.post("/homework", dependencies=[Depends(RequirePermission("academics:manage"))])
+@router.post("/homework")
 async def create_class_homework(
     req: HomeworkCreateRequest,
     current_user: CurrentTenantUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
 ):
     """Teacher Action: Assigns daily homework / classwork to a class-section."""
+    if not (
+        "ADMIN" in current_user.roles
+        or "TEACHER" in current_user.roles
+        or "academics:manage" in current_user.permissions
+        or "attendance:mark" in current_user.permissions
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied: Requires Teacher or Admin role to assign homework.",
+        )
     from app.modules.academics.models import ClassHomework
 
     hw = ClassHomework(
@@ -340,19 +350,52 @@ async def submit_student_leave_request(
     return success_response(data={"leave_id": leave.id}, message="Leave request submitted successfully.")
 
 
-@router.get("/leaves", dependencies=[Depends(RequirePermission("attendance:view"))])
+@router.get("/leaves")
 async def list_student_leave_requests(
-    student_id: str = None,
-    status: str = None,
+    student_id: Optional[str] = None,
+    status: Optional[str] = None,
+    current_user: CurrentTenantUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
 ):
-    """Staff Action: Reviews student leave applications."""
+    """
+    Lists student leave applications.
+    - If user is PARENT: strictly restricted to their own enrolled children (prevents IDOR).
+    - If user is STAFF: permitted to review requests for class management.
+    """
     from app.modules.academics.models import StudentLeaveRequest
+    from app.modules.students.models import Parent, Student
+    from app.core.exceptions import PermissionDeniedException
+
+    is_parent = current_user.user_type == "PARENT" or "PARENT" in current_user.roles
+    is_staff = "ADMIN" in current_user.roles or "TEACHER" in current_user.roles or "attendance:view" in current_user.permissions or "attendance:mark" in current_user.permissions
+
     stmt = select(StudentLeaveRequest).options(selectinload(StudentLeaveRequest.student)).order_by(StudentLeaveRequest.created_at.desc())
-    if student_id:
-        stmt = stmt.where(StudentLeaveRequest.student_id == student_id)
+
+    if is_parent and not is_staff:
+        p_stmt = select(Parent.id).where(Parent.user_id == current_user.id)
+        p_res = await db.execute(p_stmt)
+        parent_id = p_res.scalar_one_or_none()
+        if not parent_id:
+            return success_response(data=[])
+
+        ch_stmt = select(Student.id).where(Student.parent_id == parent_id)
+        ch_res = await db.execute(ch_stmt)
+        allowed_child_ids = ch_res.scalars().all()
+
+        if student_id:
+            if student_id not in allowed_child_ids:
+                raise PermissionDeniedException("You can only view leave applications for your own children.")
+            stmt = stmt.where(StudentLeaveRequest.student_id == student_id)
+        else:
+            stmt = stmt.where(StudentLeaveRequest.student_id.in_(allowed_child_ids))
+    elif is_staff:
+        if student_id:
+            stmt = stmt.where(StudentLeaveRequest.student_id == student_id)
+    else:
+        raise PermissionDeniedException("Insufficient permissions to view leave requests")
+
     if status:
-        stmt = stmt.where(StudentLeaveRequest.status == status)
+        stmt = stmt.where(StudentLeaveRequest.status == status.upper())
 
     res = await db.execute(stmt)
     records = res.scalars().all()
@@ -373,14 +416,21 @@ async def list_student_leave_requests(
     )
 
 
-@router.patch("/leaves/{leave_id}/status", dependencies=[Depends(RequirePermission("attendance:mark"))])
+@router.patch("/leaves/{leave_id}/status")
 async def update_student_leave_status(
     leave_id: str,
     req: StudentLeaveStatusUpdateRequest,
+    current_user: CurrentTenantUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
 ):
     """Teacher/Staff Action: Approves or rejects student leave request."""
     from app.modules.academics.models import StudentLeaveRequest
+    from app.core.exceptions import PermissionDeniedException
+
+    is_staff = "ADMIN" in current_user.roles or "TEACHER" in current_user.roles or "attendance:mark" in current_user.permissions
+    if not is_staff:
+        raise PermissionDeniedException("Only authorized teachers and administrators can review leave requests")
+
     stmt = select(StudentLeaveRequest).where(StudentLeaveRequest.id == leave_id)
     res = await db.execute(stmt)
     leave = res.scalar_one_or_none()

@@ -9,15 +9,31 @@ import {
   AlertCircle,
   Clock,
   ShieldCheck,
+  FileText,
 } from 'lucide-react';
 import api from '../../api/client';
 
 export const ClassesAndSessions = () => {
-  const [activeTab, setActiveTab] = useState('classes'); // 'classes', 'years', 'subjects'
+  const queryTab = new URLSearchParams(window.location.search).get('tab');
+  const [activeTab, setActiveTab] = useState(queryTab || 'classes'); // 'classes', 'years', 'subjects', 'homework'
   const [classes, setClasses] = useState([]);
   const [years, setYears] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // Homework State
+  const [homeworkClassId, setHomeworkClassId] = useState('');
+  const [homeworkSectionId, setHomeworkSectionId] = useState('');
+  const [homeworkSubjectId, setHomeworkSubjectId] = useState('');
+  const [homeworkTitle, setHomeworkTitle] = useState('');
+  const [homeworkDesc, setHomeworkDesc] = useState('');
+  const [homeworkDueDate, setHomeworkDueDate] = useState(
+    new Date(Date.now() + 86400000).toISOString().split('T')[0]
+  );
+  const [homeworkList, setHomeworkList] = useState([]);
+  const [loadingHomework, setLoadingHomework] = useState(false);
+  const [submittingHomework, setSubmittingHomework] = useState(false);
+  const [showHomeworkModal, setShowHomeworkModal] = useState(false);
 
   // Class Modal
   const [showClassModal, setShowClassModal] = useState(false);
@@ -45,9 +61,18 @@ export const ClassesAndSessions = () => {
         api.get('/academics/years'),
         api.get('/academics/subjects'),
       ]);
-      if (clsRes.data) setClasses(clsRes.data);
+      if (clsRes.data && clsRes.data.length > 0) {
+        setClasses(clsRes.data);
+        setHomeworkClassId(clsRes.data[0].id);
+        if (clsRes.data[0].sections?.length > 0) {
+          setHomeworkSectionId(clsRes.data[0].sections[0].id);
+        }
+      }
       if (yrRes.data) setYears(yrRes.data);
-      if (subRes.data) setSubjects(subRes.data);
+      if (subRes.data && subRes.data.length > 0) {
+        setSubjects(subRes.data);
+        setHomeworkSubjectId(subRes.data[0].id);
+      }
     } catch (e) {
       console.log('Error loading academic data:', e);
     } finally {
@@ -58,6 +83,64 @@ export const ClassesAndSessions = () => {
   useEffect(() => {
     fetchAll();
   }, []);
+
+  const fetchHomework = async (cId, sId) => {
+    const classIdToUse = cId || homeworkClassId;
+    const sectionIdToUse = sId || homeworkSectionId;
+    if (!classIdToUse || !sectionIdToUse) return;
+    setLoadingHomework(true);
+    try {
+      const res = await api.get('/academics/homework', {
+        params: { class_id: classIdToUse, section_id: sectionIdToUse },
+      });
+      if (res.data) setHomeworkList(res.data);
+    } catch (e) {
+      console.error('Error fetching homework:', e);
+    } finally {
+      setLoadingHomework(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'homework' && homeworkClassId && homeworkSectionId) {
+      fetchHomework(homeworkClassId, homeworkSectionId);
+    }
+  }, [activeTab, homeworkClassId, homeworkSectionId]);
+
+  const handleAssignHomework = async (e) => {
+    e.preventDefault();
+    if (!homeworkClassId || !homeworkSectionId || !homeworkSubjectId || !homeworkTitle) {
+      alert('Please fill all required homework fields.');
+      return;
+    }
+    const currentYear = years.find((y) => y.is_current) || years[0];
+    if (!currentYear) {
+      alert('No active academic session found. Please create one first.');
+      return;
+    }
+
+    setSubmittingHomework(true);
+    try {
+      await api.post('/academics/homework', {
+        academic_year_id: currentYear.id,
+        class_id: homeworkClassId,
+        section_id: homeworkSectionId,
+        subject_id: homeworkSubjectId,
+        title: homeworkTitle,
+        description: homeworkDesc,
+        due_date: homeworkDueDate,
+      });
+      setShowHomeworkModal(false);
+      setHomeworkTitle('');
+      setHomeworkDesc('');
+      fetchHomework(homeworkClassId, homeworkSectionId);
+      alert('Daily homework assigned successfully!');
+    } catch (err) {
+      alert('Failed to assign homework: ' + err.message);
+    } finally {
+      setSubmittingHomework(false);
+    }
+  };
 
   const handleCreateClass = async (e) => {
     e.preventDefault();
@@ -158,6 +241,15 @@ export const ClassesAndSessions = () => {
             }`}
           >
             Subjects Directory ({subjects.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('homework')}
+            className={`px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+              activeTab === 'homework' ? 'bg-white text-blue-700 shadow font-bold' : 'text-slate-600'
+            }`}
+          >
+            <FileText size={13} />
+            Daily Homework & Tasks
           </button>
         </div>
       </div>
@@ -291,6 +383,101 @@ export const ClassesAndSessions = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: DAILY HOMEWORK & TASKS */}
+      {activeTab === 'homework' && (
+        <div className="space-y-4">
+          {/* Action Bar & Filters */}
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-600">Class:</span>
+                <select
+                  value={homeworkClassId}
+                  onChange={(e) => {
+                    const newClassId = e.target.value;
+                    setHomeworkClassId(newClassId);
+                    const selectedClass = classes.find((c) => c.id === newClassId);
+                    const firstSectionId = selectedClass?.sections?.[0]?.id || '';
+                    setHomeworkSectionId(firstSectionId);
+                    if (firstSectionId) fetchHomework(newClassId, firstSectionId);
+                  }}
+                  className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800"
+                >
+                  {classes.map((cls) => (
+                    <option key={cls.id} value={cls.id}>
+                      {cls.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-600">Section:</span>
+                <select
+                  value={homeworkSectionId}
+                  onChange={(e) => {
+                    const newSectionId = e.target.value;
+                    setHomeworkSectionId(newSectionId);
+                    fetchHomework(homeworkClassId, newSectionId);
+                  }}
+                  className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800"
+                >
+                  {(classes.find((c) => c.id === homeworkClassId)?.sections || []).map((sec) => (
+                    <option key={sec.id} value={sec.id}>
+                      Section {sec.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowHomeworkModal(true)}
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-2 rounded-xl shadow transition-colors"
+            >
+              <Plus size={14} /> Assign New Homework
+            </button>
+          </div>
+
+          {/* Homework List */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden text-xs">
+            {loadingHomework ? (
+              <div className="p-8 text-center text-slate-400">Loading homework assignments...</div>
+            ) : homeworkList.length === 0 ? (
+              <div className="p-8 text-center text-slate-400">
+                No homework assignments recorded for this class and section.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {homeworkList.map((hw) => (
+                  <div key={hw.id} className="p-4 hover:bg-slate-50 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-bold text-[10px]">
+                          {hw.subject_name}
+                        </span>
+                        <h4 className="font-bold text-slate-900 text-sm">{hw.title}</h4>
+                      </div>
+                      <p className="text-slate-600 text-xs whitespace-pre-wrap">{hw.description}</p>
+                    </div>
+
+                    <div className="flex items-center gap-4 text-[11px] text-slate-500 self-end md:self-auto shrink-0">
+                      <div>
+                        <span className="font-semibold text-slate-400">Assigned: </span>
+                        {hw.assigned_date ? new Date(hw.assigned_date).toLocaleDateString() : 'N/A'}
+                      </div>
+                      <div className="bg-amber-50 text-amber-800 px-2.5 py-1 rounded-lg font-bold border border-amber-200">
+                        Due: {hw.due_date ? new Date(hw.due_date).toLocaleDateString() : 'N/A'}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -464,6 +651,87 @@ export const ClassesAndSessions = () => {
                   className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold"
                 >
                   Save Subject
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: ASSIGN HOMEWORK */}
+      {showHomeworkModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+              <FileText size={16} className="text-blue-600" />
+              Assign Daily Homework / Task
+            </h3>
+            <form onSubmit={handleAssignHomework} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Subject</label>
+                <select
+                  value={homeworkSubjectId}
+                  onChange={(e) => setHomeworkSubjectId(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800"
+                >
+                  {subjects.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Title / Topic</label>
+                <input
+                  type="text"
+                  required
+                  value={homeworkTitle}
+                  onChange={(e) => setHomeworkTitle(e.target.value)}
+                  placeholder="e.g. Chapter 4 Exercise 4.2 Q1-Q5"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Description / Instructions</label>
+                <textarea
+                  rows={3}
+                  required
+                  value={homeworkDesc}
+                  onChange={(e) => setHomeworkDesc(e.target.value)}
+                  placeholder="Provide details, reading material, or specific problems to solve..."
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Submission Due Date</label>
+                <input
+                  type="date"
+                  required
+                  value={homeworkDueDate}
+                  onChange={(e) => setHomeworkDueDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowHomeworkModal(false)}
+                  className="px-4 py-2 text-slate-500 hover:text-slate-800 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingHomework}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow disabled:opacity-50"
+                >
+                  {submittingHomework ? 'Publishing...' : 'Publish Homework'}
                 </button>
               </div>
             </form>

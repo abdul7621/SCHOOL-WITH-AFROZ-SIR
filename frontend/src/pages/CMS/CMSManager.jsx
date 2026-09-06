@@ -47,6 +47,7 @@ export const CMSManager = () => {
     contact_phone: '+91 98765 43210',
     contact_email: 'info@school.com',
     contact_address: '123 Education Boulevard, Knowledge City',
+    school_timezone: 'Asia/Kolkata',
   });
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSavedSuccess, setSettingsSavedSuccess] = useState(false);
@@ -428,7 +429,7 @@ export const CMSManager = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-slate-700 font-semibold mb-1">Official Email Address *</label>
                 <input
@@ -448,6 +449,21 @@ export const CMSManager = () => {
                   onChange={(e) => setSchoolSettings({ ...schoolSettings, contact_address: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
                 />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">School Timezone</label>
+                <select
+                  value={schoolSettings.school_timezone || 'Asia/Kolkata'}
+                  onChange={(e) => setSchoolSettings({ ...schoolSettings, school_timezone: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800"
+                >
+                  <option value="Asia/Kolkata">Asia/Kolkata (IST - UTC+5:30)</option>
+                  <option value="Asia/Dubai">Asia/Dubai (GST - UTC+4:00)</option>
+                  <option value="Asia/Karachi">Asia/Karachi (PKT - UTC+5:00)</option>
+                  <option value="Asia/Riyadh">Asia/Riyadh (AST - UTC+3:00)</option>
+                  <option value="UTC">UTC (Universal Coordinated)</option>
+                </select>
               </div>
             </div>
 

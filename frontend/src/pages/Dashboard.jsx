@@ -16,6 +16,8 @@ import {
   ShieldCheck,
   Award,
   RefreshCcw,
+  FileText,
+  ClipboardList,
 } from 'lucide-react';
 import { StatCard } from '../components/StatCard';
 import { useAuth } from '../context/AuthContext';
@@ -27,6 +29,22 @@ export const Dashboard = () => {
   const { settings } = useTenant();
   const [activeRoleView, setActiveRoleView] = useState('PRINCIPAL'); // PRINCIPAL, TEACHER, CASHIER, ADMIN
   const [loading, setLoading] = useState(true);
+
+  const isAdmin =
+    user?.role === 'ADMIN' ||
+    user?.role === 'SUPER_ADMIN' ||
+    user?.roles?.includes('ADMIN') ||
+    user?.roles?.includes('SUPER_ADMIN');
+
+  useEffect(() => {
+    if (!isAdmin && user) {
+      if (user.role === 'TEACHER' || user.roles?.includes('TEACHER')) {
+        setActiveRoleView('TEACHER');
+      } else if (user.role === 'CASHIER' || user.roles?.includes('CASHIER')) {
+        setActiveRoleView('CASHIER');
+      }
+    }
+  }, [user, isAdmin]);
 
   // Live KPI Stats State
   const [stats, setStats] = useState({
@@ -75,50 +93,52 @@ export const Dashboard = () => {
 
   return (
     <div className="space-y-6">
-      {/* Role Preview Switcher Bar */}
-      <div className="bg-slate-900 text-white p-3 sm:p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
-        <div className="flex items-center gap-2">
-          <Sparkles size={16} className="text-amber-400" />
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
-            Interactive Multi-Role View Switcher:
-          </span>
-        </div>
+      {/* Role Preview Switcher Bar (Admins Only) */}
+      {isAdmin && (
+        <div className="bg-slate-900 text-white p-3 sm:p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center gap-2">
+            <Sparkles size={16} className="text-amber-400" />
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
+              Interactive Multi-Role View Switcher:
+            </span>
+          </div>
 
-        <div className="flex bg-slate-800 p-1 rounded-xl text-xs font-bold">
-          <button
-            onClick={() => setActiveRoleView('PRINCIPAL')}
-            className={`px-3 py-1.5 rounded-lg transition-all ${
-              activeRoleView === 'PRINCIPAL' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Principal Cockpit
-          </button>
-          <button
-            onClick={() => setActiveRoleView('TEACHER')}
-            className={`px-3 py-1.5 rounded-lg transition-all ${
-              activeRoleView === 'TEACHER' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Teacher Workspace
-          </button>
-          <button
-            onClick={() => setActiveRoleView('CASHIER')}
-            className={`px-3 py-1.5 rounded-lg transition-all ${
-              activeRoleView === 'CASHIER' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Cashier POS
-          </button>
-          <button
-            onClick={() => setActiveRoleView('ADMIN')}
-            className={`px-3 py-1.5 rounded-lg transition-all ${
-              activeRoleView === 'ADMIN' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Admin Overview
-          </button>
+          <div className="flex bg-slate-800 p-1 rounded-xl text-xs font-bold">
+            <button
+              onClick={() => setActiveRoleView('PRINCIPAL')}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                activeRoleView === 'PRINCIPAL' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Principal Cockpit
+            </button>
+            <button
+              onClick={() => setActiveRoleView('TEACHER')}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                activeRoleView === 'TEACHER' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Teacher Workspace
+            </button>
+            <button
+              onClick={() => setActiveRoleView('CASHIER')}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                activeRoleView === 'CASHIER' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Cashier POS
+            </button>
+            <button
+              onClick={() => setActiveRoleView('ADMIN')}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                activeRoleView === 'ADMIN' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Admin Overview
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* VIEW 1: PRINCIPAL COCKPIT */}
       {activeRoleView === 'PRINCIPAL' && (
@@ -220,6 +240,12 @@ export const Dashboard = () => {
                     📊 Overdue Fee Defaulters List
                   </Link>
                   <Link
+                    to="/attendance?tab=leaves"
+                    className="p-3 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-xl font-bold text-slate-800 transition-colors block text-center"
+                  >
+                    📋 Review Leave Applications
+                  </Link>
+                  <Link
                     to="/documents"
                     className="p-3 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-xl font-bold text-slate-800 transition-colors block text-center"
                   >
@@ -230,12 +256,6 @@ export const Dashboard = () => {
                     className="p-3 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-xl font-bold text-slate-800 transition-colors block text-center"
                   >
                     📅 Class Attendance Summary
-                  </Link>
-                  <Link
-                    to="/development"
-                    className="p-3 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-xl font-bold text-slate-800 transition-colors block text-center"
-                  >
-                    ⭐ 5-Star Behavioral Ratings
                   </Link>
                 </div>
               </div>
@@ -252,23 +272,35 @@ export const Dashboard = () => {
       {activeRoleView === 'TEACHER' && (
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-100 pb-3 gap-3">
               <div>
                 <h3 className="font-bold text-slate-900 text-sm">Teacher Workspace & Daily Routine</h3>
-                <p className="text-xs text-slate-500">Attendance marker, behavioral assessment, and class marks</p>
+                <p className="text-xs text-slate-500">Attendance marker, daily homework, leave reviews, and behavioral assessment</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <Link
                   to="/attendance"
-                  className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-4 py-2 rounded-xl text-xs shadow flex items-center gap-1.5"
+                  className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-3 py-1.5 rounded-xl text-xs shadow flex items-center gap-1.5"
                 >
-                  <CalendarCheck size={14} /> Take Attendance Now
+                  <CalendarCheck size={14} /> Attendance
+                </Link>
+                <Link
+                  to="/academics?tab=homework"
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1.5 rounded-xl text-xs shadow flex items-center gap-1.5"
+                >
+                  <FileText size={14} /> Assign Homework
+                </Link>
+                <Link
+                  to="/attendance?tab=leaves"
+                  className="bg-purple-600 hover:bg-purple-500 text-white font-bold px-3 py-1.5 rounded-xl text-xs shadow flex items-center gap-1.5"
+                >
+                  <ClipboardList size={14} /> Review Leaves
                 </Link>
                 <Link
                   to="/development"
-                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs shadow flex items-center gap-1.5"
+                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs shadow flex items-center gap-1.5"
                 >
-                  <Award size={14} /> Rate Behavior
+                  <Award size={14} /> Behavior
                 </Link>
               </div>
             </div>
