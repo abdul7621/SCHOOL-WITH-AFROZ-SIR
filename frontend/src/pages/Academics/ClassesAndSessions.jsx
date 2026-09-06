@@ -330,6 +330,99 @@ export const ClassesAndSessions = () => {
     }
   };
 
+  const handleCreateSubject = async (e) => {
+    e.preventDefault();
+    if (!subCode.trim() || !subName.trim()) {
+      alert('Please fill in subject code and name.');
+      return;
+    }
+    try {
+      await api.post('/academics/subjects', {
+        code: subCode.trim().toUpperCase(),
+        name: subName.trim(),
+        subject_type: subType,
+      });
+      setShowSubjectModal(false);
+      setSubCode('');
+      setSubName('');
+      fetchAll();
+      alert('Subject created successfully!');
+    } catch (err) {
+      alert('Error creating subject: ' + err.message);
+    }
+  };
+
+  const handleUpdateSubject = async (e) => {
+    e.preventDefault();
+    if (!editingSubject) return;
+    try {
+      await api.put(`/academics/subjects/${editingSubject.id}`, {
+        code: editingSubject.code.trim().toUpperCase(),
+        name: editingSubject.name.trim(),
+        subject_type: editingSubject.subject_type,
+      });
+      setEditingSubject(null);
+      fetchAll();
+      alert('Subject updated successfully!');
+    } catch (err) {
+      alert('Error updating subject: ' + err.message);
+    }
+  };
+
+  const handleDeleteSubject = async (subjectId, subjectName) => {
+    if (!window.confirm(`Are you sure you want to delete subject "${subjectName}"? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      await api.delete(`/academics/subjects/${subjectId}`);
+      fetchAll();
+      alert(`Subject "${subjectName}" deleted successfully.`);
+    } catch (err) {
+      let msg = err.message;
+      if (err.dependencies && err.dependencies.length > 0) {
+        msg += '\n\nLinked Records Preventing Deletion:\n' + err.dependencies.map((d) => `• ${d.resource}: ${d.count}`).join('\n');
+      }
+      alert(msg);
+    }
+  };
+
+  const fetchCurriculum = async (classId) => {
+    if (!classId) return;
+    setLoadingCurriculum(true);
+    try {
+      const res = await api.get(`/academics/classes/${classId}/subjects`);
+      if (res.data) {
+        const ids = res.data.map((s) => s.id);
+        setMappedSubjectIds(ids);
+      }
+    } catch (e) {
+      console.error('Error fetching curriculum:', e);
+    } finally {
+      setLoadingCurriculum(false);
+    }
+  };
+
+  const toggleSubjectMapping = (subId) => {
+    setMappedSubjectIds((prev) =>
+      prev.includes(subId) ? prev.filter((id) => id !== subId) : [...prev, subId]
+    );
+  };
+
+  const handleSaveCurriculum = async () => {
+    if (!curriculumClassId) return;
+    setSavingCurriculum(true);
+    try {
+      await api.post(`/academics/classes/${curriculumClassId}/subjects`, {
+        subject_ids: mappedSubjectIds,
+      });
+      alert('Curriculum mapping saved successfully!');
+    } catch (err) {
+      alert('Error saving curriculum: ' + err.message);
+    } finally {
+      setSavingCurriculum(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
