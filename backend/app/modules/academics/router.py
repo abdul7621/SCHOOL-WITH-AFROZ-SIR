@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.core.database import get_tenant_db
 from app.core.exceptions import ResourceNotFoundException, AppException
-from app.shared.responses import success_response
+from app.shared.responses import success_response, DependencyRule, check_dependencies
 from app.middlewares.auth_middleware import RequirePermission, get_current_user, CurrentTenantUser
 from app.modules.academics.models import (
     AcademicYear,
@@ -17,12 +17,16 @@ from app.modules.academics.models import (
 )
 from app.modules.academics.schemas import (
     AcademicYearCreate,
+    AcademicYearUpdate,
     AcademicYearResponse,
     ClassLevelCreate,
+    ClassLevelUpdate,
     ClassLevelResponse,
     SectionCreate,
+    SectionUpdate,
     SectionResponse,
     SubjectCreate,
+    SubjectUpdate,
     SubjectResponse,
     AssignSubjectsToClassRequest,
     ClassTeacherAssignRequest,
@@ -111,6 +115,52 @@ async def set_current_academic_year(year_id: str, db: AsyncSession = Depends(get
     )
 
 
+@router.put("/years/{year_id}", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def update_academic_year(year_id: str, req: AcademicYearUpdate, db: AsyncSession = Depends(get_tenant_db)):
+    """Updates academic year details (name, start_date, end_date)."""
+    stmt = select(AcademicYear).where(AcademicYear.id == year_id)
+    result = await db.execute(stmt)
+    year = result.scalar_one_or_none()
+    if not year:
+        raise ResourceNotFoundException("AcademicYear", year_id)
+
+    if req.name and req.name.strip():
+        clean_name = req.name.strip()
+        if clean_name.lower() != year.name.lower():
+            dup = await db.execute(
+                select(AcademicYear).where(
+                    func.lower(func.trim(AcademicYear.name)) == clean_name.lower(),
+                    AcademicYear.id != year_id,
+                )
+            )
+            if dup.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Academic session '{clean_name}' already exists."
+                )
+            year.name = clean_name
+
+    new_start = req.start_date or year.start_date
+    new_end = req.end_date or year.end_date
+    if new_end <= new_start:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Session end date must be after the start date."
+        )
+
+    if req.start_date:
+        year.start_date = req.start_date
+    if req.end_date:
+        year.end_date = req.end_date
+
+    await db.commit()
+    await db.refresh(year)
+    return success_response(
+        data={"id": year.id, "name": year.name, "start_date": str(year.start_date), "end_date": str(year.end_date), "is_current": year.is_current},
+        message=f"Academic Year '{year.name}' updated successfully"
+    )
+
+
 @router.delete("/years/{year_id}", dependencies=[Depends(RequirePermission("academics:manage"))])
 async def delete_academic_year(year_id: str, db: AsyncSession = Depends(get_tenant_db)):
     """Safely deletes an inactive academic session if no linked records exist."""
@@ -133,40 +183,14 @@ async def delete_academic_year(year_id: str, db: AsyncSession = Depends(get_tena
     from app.modules.exams.models import ExamTerm
     from app.modules.fees.models import FeeStructure
 
-    enrollment_count = (await db.execute(select(func.count()).select_from(StudentEnrollment).where(StudentEnrollment.academic_year_id == year_id))).scalar_one()
-    if enrollment_count > 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot delete session '{year.name}' because {enrollment_count} student enrollment(s) are linked to it."
-        )
-
-    attendance_count = (await db.execute(select(func.count()).select_from(AttendanceSession).where(AttendanceSession.academic_year_id == year_id))).scalar_one()
-    if attendance_count > 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot delete session '{year.name}' because attendance records are linked to it."
-        )
-
-    homework_count = (await db.execute(select(func.count()).select_from(ClassHomework).where(ClassHomework.academic_year_id == year_id))).scalar_one()
-    if homework_count > 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot delete session '{year.name}' because homework assignments are linked to it."
-        )
-
-    exam_count = (await db.execute(select(func.count()).select_from(ExamTerm).where(ExamTerm.academic_year_id == year_id))).scalar_one()
-    if exam_count > 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot delete session '{year.name}' because exam terms are linked to it."
-        )
-
-    fee_count = (await db.execute(select(func.count()).select_from(FeeStructure).where(FeeStructure.academic_year_id == year_id))).scalar_one()
-    if fee_count > 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot delete session '{year.name}' because fee structures are linked to it."
-        )
+    rules = [
+        DependencyRule(StudentEnrollment, StudentEnrollment.academic_year_id, "Student Enrollments"),
+        DependencyRule(AttendanceSession, AttendanceSession.academic_year_id, "Attendance Sessions"),
+        DependencyRule(ClassHomework, ClassHomework.academic_year_id, "Homework Assignments"),
+        DependencyRule(ExamTerm, ExamTerm.academic_year_id, "Exam Terms"),
+        DependencyRule(FeeStructure, FeeStructure.academic_year_id, "Fee Structures"),
+    ]
+    await check_dependencies(db, year_id, f"Academic Session '{year.name}'", rules)
 
     # Clean up empty class teacher mappings if any exist
     await db.execute(delete(ClassTeacher).where(ClassTeacher.academic_year_id == year_id))
@@ -250,6 +274,127 @@ async def add_section_to_class(class_id: str, req: SectionCreate, db: AsyncSessi
     )
 
 
+@router.put("/classes/{class_id}", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def update_class(class_id: str, req: ClassLevelUpdate, db: AsyncSession = Depends(get_tenant_db)):
+    """Updates class details (name, numeric_order, description)."""
+    stmt = select(ClassLevel).where(ClassLevel.id == class_id)
+    result = await db.execute(stmt)
+    class_obj = result.scalar_one_or_none()
+    if not class_obj:
+        raise ResourceNotFoundException("ClassLevel", class_id)
+
+    if req.name and req.name.strip():
+        clean_name = req.name.strip()
+        if clean_name.lower() != class_obj.name.lower():
+            dup = await db.execute(
+                select(ClassLevel).where(
+                    func.lower(func.trim(ClassLevel.name)) == clean_name.lower(),
+                    ClassLevel.id != class_id,
+                )
+            )
+            if dup.scalar_one_or_none():
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Class '{clean_name}' already exists.")
+            class_obj.name = clean_name
+
+    if req.numeric_order is not None:
+        class_obj.numeric_order = req.numeric_order
+    if req.description is not None:
+        class_obj.description = req.description
+
+    await db.commit()
+    await db.refresh(class_obj)
+    return success_response(
+        data={"id": class_obj.id, "name": class_obj.name, "numeric_order": class_obj.numeric_order, "description": class_obj.description},
+        message=f"Class '{class_obj.name}' updated successfully",
+    )
+
+
+@router.delete("/classes/{class_id}", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def delete_class(class_id: str, db: AsyncSession = Depends(get_tenant_db)):
+    """Safely deletes an empty class if no students, homework, or exams are linked."""
+    stmt = select(ClassLevel).where(ClassLevel.id == class_id)
+    result = await db.execute(stmt)
+    class_obj = result.scalar_one_or_none()
+    if not class_obj:
+        raise ResourceNotFoundException("ClassLevel", class_id)
+
+    from app.modules.students.models import StudentEnrollment
+    from app.modules.academics.models import ClassHomework
+    from app.modules.exams.models import ExamSchedule
+
+    rules = [
+        DependencyRule(StudentEnrollment, StudentEnrollment.class_id, "Student Enrollments"),
+        DependencyRule(ClassHomework, ClassHomework.class_id, "Homework Assignments"),
+        DependencyRule(ExamSchedule, ExamSchedule.class_id, "Exam Schedules"),
+    ]
+    await check_dependencies(db, class_id, f"Class '{class_obj.name}'", rules)
+
+    class_name = class_obj.name
+    await db.delete(class_obj)
+    await db.commit()
+    return success_response(data={"id": class_id, "name": class_name}, message=f"Class '{class_name}' deleted successfully")
+
+
+@router.put("/classes/{class_id}/sections/{section_id}", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def update_section(class_id: str, section_id: str, req: SectionUpdate, db: AsyncSession = Depends(get_tenant_db)):
+    """Updates section name or capacity."""
+    stmt = select(Section).where(Section.id == section_id, Section.class_id == class_id)
+    result = await db.execute(stmt)
+    sec = result.scalar_one_or_none()
+    if not sec:
+        raise ResourceNotFoundException("Section", section_id)
+
+    if req.name and req.name.strip():
+        clean_name = req.name.strip().upper()
+        if clean_name != sec.name:
+            dup = await db.execute(
+                select(Section).where(
+                    Section.class_id == class_id,
+                    func.upper(func.trim(Section.name)) == clean_name,
+                    Section.id != section_id,
+                )
+            )
+            if dup.scalar_one_or_none():
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Section '{clean_name}' already exists in this class.")
+            sec.name = clean_name
+
+    if req.capacity is not None:
+        if req.capacity < 1:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Capacity must be at least 1 seat.")
+        sec.capacity = req.capacity
+
+    await db.commit()
+    await db.refresh(sec)
+    return success_response(
+        data={"id": sec.id, "class_id": sec.class_id, "name": sec.name, "capacity": sec.capacity},
+        message=f"Section '{sec.name}' updated successfully",
+    )
+
+
+@router.delete("/classes/{class_id}/sections/{section_id}", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def delete_section(class_id: str, section_id: str, db: AsyncSession = Depends(get_tenant_db)):
+    """Safely deletes an empty section if no students or homework are linked."""
+    stmt = select(Section).where(Section.id == section_id, Section.class_id == class_id)
+    result = await db.execute(stmt)
+    sec = result.scalar_one_or_none()
+    if not sec:
+        raise ResourceNotFoundException("Section", section_id)
+
+    from app.modules.students.models import StudentEnrollment
+    from app.modules.academics.models import ClassHomework
+
+    rules = [
+        DependencyRule(StudentEnrollment, StudentEnrollment.section_id, "Student Enrollments"),
+        DependencyRule(ClassHomework, ClassHomework.section_id, "Homework Assignments"),
+    ]
+    await check_dependencies(db, section_id, f"Section '{sec.name}'", rules)
+
+    sec_name = sec.name
+    await db.delete(sec)
+    await db.commit()
+    return success_response(data={"id": section_id, "name": sec_name}, message=f"Section '{sec_name}' deleted successfully")
+
+
 # ==========================================
 # 3. Subjects & Class Subject Mapping
 # ==========================================
@@ -275,10 +420,18 @@ async def list_subjects(db: AsyncSession = Depends(get_tenant_db)):
 
 @router.post("/subjects", dependencies=[Depends(RequirePermission("academics:manage"))], status_code=status.HTTP_201_CREATED)
 async def create_subject(req: SubjectCreate, db: AsyncSession = Depends(get_tenant_db)):
-    """Creates a new subject."""
+    """Creates a new subject with duplicate code check."""
+    clean_code = req.code.strip().upper()
+    existing = await db.execute(select(Subject).where(func.upper(func.trim(Subject.code)) == clean_code))
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Subject code '{clean_code}' already exists. Please choose a different subject code.",
+        )
+
     sub = Subject(
-        code=req.code.upper(),
-        name=req.name,
+        code=clean_code,
+        name=req.name.strip(),
         subject_type=req.subject_type,
         is_elective=req.is_elective,
     )
@@ -288,21 +441,123 @@ async def create_subject(req: SubjectCreate, db: AsyncSession = Depends(get_tena
     return success_response(data={"id": sub.id, "code": sub.code, "name": sub.name}, message="Subject created")
 
 
+@router.put("/subjects/{subject_id}", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def update_subject(subject_id: str, req: SubjectUpdate, db: AsyncSession = Depends(get_tenant_db)):
+    """Updates subject details (code, name, type, is_elective)."""
+    stmt = select(Subject).where(Subject.id == subject_id)
+    result = await db.execute(stmt)
+    sub = result.scalar_one_or_none()
+    if not sub:
+        raise ResourceNotFoundException("Subject", subject_id)
+
+    if req.code and req.code.strip():
+        clean_code = req.code.strip().upper()
+        if clean_code != sub.code:
+            dup = await db.execute(
+                select(Subject).where(func.upper(func.trim(Subject.code)) == clean_code, Subject.id != subject_id)
+            )
+            if dup.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Subject code '{clean_code}' already exists. Please choose a different subject code.",
+                )
+            sub.code = clean_code
+
+    if req.name and req.name.strip():
+        sub.name = req.name.strip()
+    if req.subject_type is not None:
+        sub.subject_type = req.subject_type
+    if req.is_elective is not None:
+        sub.is_elective = req.is_elective
+
+    await db.commit()
+    await db.refresh(sub)
+    return success_response(
+        data={"id": sub.id, "code": sub.code, "name": sub.name, "subject_type": sub.subject_type, "is_elective": sub.is_elective},
+        message=f"Subject '{sub.name}' updated successfully",
+    )
+
+
+@router.delete("/subjects/{subject_id}", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def delete_subject(subject_id: str, db: AsyncSession = Depends(get_tenant_db)):
+    """Safely deletes an unused subject if not mapped to classes, homework, or exams."""
+    stmt = select(Subject).where(Subject.id == subject_id)
+    result = await db.execute(stmt)
+    sub = result.scalar_one_or_none()
+    if not sub:
+        raise ResourceNotFoundException("Subject", subject_id)
+
+    from app.modules.academics.models import ClassSubject, ClassHomework
+    from app.modules.exams.models import ExamSchedule
+
+    rules = [
+        DependencyRule(ClassSubject, ClassSubject.subject_id, "Class Curriculum Mappings"),
+        DependencyRule(ClassHomework, ClassHomework.subject_id, "Homework Assignments"),
+        DependencyRule(ExamSchedule, ExamSchedule.subject_id, "Exam Schedules"),
+    ]
+    await check_dependencies(db, subject_id, f"Subject '{sub.name}'", rules)
+
+    sub_name = sub.name
+    await db.delete(sub)
+    await db.commit()
+    return success_response(data={"id": subject_id, "name": sub_name}, message=f"Subject '{sub_name}' deleted successfully")
+
+
+@router.get("/classes/{class_id}/subjects")
+async def get_class_subjects(class_id: str, db: AsyncSession = Depends(get_tenant_db)):
+    """Retrieves all subjects mapped to a class."""
+    stmt = (
+        select(ClassSubject, Subject)
+        .join(Subject, ClassSubject.subject_id == Subject.id)
+        .where(ClassSubject.class_id == class_id)
+        .order_by(Subject.name.asc())
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+    return success_response(
+        data=[
+            {
+                "id": cs.id,
+                "class_id": cs.class_id,
+                "subject_id": sub.id,
+                "subject_code": sub.code,
+                "subject_name": sub.name,
+                "subject_type": sub.subject_type,
+                "is_mandatory": cs.is_mandatory,
+            }
+            for cs, sub in rows
+        ]
+    )
+
+
 @router.post("/classes/{class_id}/subjects", dependencies=[Depends(RequirePermission("academics:manage"))])
 async def assign_subjects_to_class(
     class_id: str,
     req: AssignSubjectsToClassRequest,
     db: AsyncSession = Depends(get_tenant_db),
 ):
-    """Assigns multiple subjects to a class."""
+    """Assigns multiple subjects to a class curriculum."""
     for sub_id in req.subject_ids:
-        # Check if already assigned
         existing = await db.execute(select(ClassSubject).where(ClassSubject.class_id == class_id, ClassSubject.subject_id == sub_id))
         if not existing.scalar_one_or_none():
             db.add(ClassSubject(class_id=class_id, subject_id=sub_id, is_mandatory=True))
 
     await db.commit()
-    return success_response(message=f"Subjects mapped to class successfully")
+    return success_response(message="Subjects mapped to class curriculum successfully")
+
+
+@router.delete("/classes/{class_id}/subjects/{subject_id}", dependencies=[Depends(RequirePermission("academics:manage"))])
+async def unassign_subject_from_class(class_id: str, subject_id: str, db: AsyncSession = Depends(get_tenant_db)):
+    """Removes a subject mapping from a class curriculum."""
+    stmt = select(ClassSubject).where(ClassSubject.class_id == class_id, ClassSubject.subject_id == subject_id)
+    result = await db.execute(stmt)
+    mapping = result.scalar_one_or_none()
+    if not mapping:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subject is not mapped to this class.")
+
+    await db.delete(mapping)
+    await db.commit()
+    return success_response(message="Subject removed from class curriculum")
 
 
 # ==========================================

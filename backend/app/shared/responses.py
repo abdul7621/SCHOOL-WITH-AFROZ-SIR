@@ -61,3 +61,50 @@ def paginated_response(
             "has_prev": page > 1,
         },
     }
+
+
+# ==========================================
+# Reusable Dependency Guard
+# ==========================================
+from dataclasses import dataclass
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import HTTPException, status
+
+
+@dataclass
+class DependencyRule:
+    model: Any
+    column: Any
+    label: str
+
+
+async def check_dependencies(
+    db: AsyncSession,
+    resource_id: str,
+    resource_name: str,
+    rules: List[DependencyRule],
+) -> None:
+    """
+    Checks each dependency rule for active records pointing to resource_id.
+    If any linked records exist, raises a structured HTTPException with exact counts.
+    """
+    dependencies = []
+    for rule in rules:
+        stmt = select(func.count()).select_from(rule.model).where(rule.column == resource_id)
+        result = await db.execute(stmt)
+        count = result.scalar_one() or 0
+        if count > 0:
+            dependencies.append({"resource": rule.label, "count": count})
+
+    if dependencies:
+        total = sum(d["count"] for d in dependencies)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "message": f"Cannot delete {resource_name} because {total} linked record(s) are currently in use.",
+                "error_code": "RECORD_HAS_DEPENDENCIES",
+                "dependencies": dependencies,
+            },
+        )
+

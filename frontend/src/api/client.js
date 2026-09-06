@@ -38,8 +38,46 @@ api.interceptors.response.use(
         window.location.href = '/login';
       }
     }
-    const message = error.response?.data?.message || error.message || 'An unexpected error occurred';
-    return Promise.reject(new Error(message));
+
+    let message = 'An unexpected error occurred. Please try again.';
+    let dependencies = [];
+    let errorCode = 'REQUEST_ERROR';
+
+    if (error.response?.data) {
+      const data = error.response.data;
+      if (typeof data.message === 'string' && data.message.trim()) {
+        message = data.message;
+      } else if (typeof data.detail === 'string' && data.detail.trim()) {
+        message = data.detail;
+      } else if (data.detail && typeof data.detail === 'object') {
+        if (typeof data.detail.message === 'string') {
+          message = data.detail.message;
+        }
+        if (Array.isArray(data.detail.dependencies)) {
+          dependencies = data.detail.dependencies;
+        }
+      } else if (Array.isArray(data.details?.errors)) {
+        message = data.details.errors
+          .map((e) => `${(e.loc || []).filter((l) => l !== 'body').join('.') || 'field'}: ${e.msg || 'Invalid value'}`)
+          .join('; ');
+      }
+
+      if (Array.isArray(data.dependencies)) {
+        dependencies = data.dependencies;
+      }
+      if (data.error_code) {
+        errorCode = data.error_code;
+      }
+    } else if (error.message) {
+      message = error.message;
+    }
+
+    const err = new Error(message);
+    err.dependencies = dependencies;
+    err.errorCode = errorCode;
+    err.statusCode = error.response?.status;
+    err.response = error.response;
+    return Promise.reject(err);
   }
 );
 

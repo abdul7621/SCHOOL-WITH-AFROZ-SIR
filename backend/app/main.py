@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, status, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from app.core.config import settings
 from app.core.logging import logger
 from app.core.redis import get_redis_client, close_redis
@@ -78,32 +79,169 @@ def create_app() -> FastAPI:
                 "message": exc.message,
                 "error_code": exc.error_code,
                 "details": exc.details,
+                "dependencies": getattr(exc, "dependencies", []),
+            },
+        )
+
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Request, exc: HTTPException):
+        message = "An error occurred"
+        error_code = getattr(exc, "error_code", "REQUEST_ERROR")
+        dependencies = []
+        details = None
+
+        if isinstance(exc.detail, dict):
+            message = exc.detail.get("message", message)
+            error_code = exc.detail.get("error_code", error_code)
+            dependencies = exc.detail.get("dependencies", [])
+            details = exc.detail.get("details", None)
+        elif isinstance(exc.detail, str):
+            message = exc.detail
+
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "success": False,
+                "data": None,
+                "message": message,
+                "error_code": error_code,
+                "details": details,
+                "dependencies": dependencies,
             },
         )
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        errors = exc.errors()
+        messages = []
+        for err in errors:
+            loc = [str(l) for l in err.get("loc", []) if l != "body"]
+            field = ".".join(loc) if loc else "field"
+            msg = err.get("msg", "Invalid value")
+            messages.append(f"{field}: {msg}")
+        clean_message = "; ".join(messages) if messages else "Input validation error"
+
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={
                 "success": False,
                 "data": None,
-                "message": "Input validation error",
+                "message": clean_message,
                 "error_code": "VALIDATION_ERROR",
-                "details": {"errors": exc.errors()},
+                "details": {"errors": errors},
+                "dependencies": [],
             },
         )
 
-    @app.exception_handler(Exception)
-    async def unhandled_exception_handler(request: Request, exc: Exception):
-        logger.error(f"Unhandled Server Error: {exc}", exc_info=True)
+    @app.exception_handler(IntegrityError)
+    async def integrity_error_handler(request: Request, exc: IntegrityError):
+        err_str = str(exc.orig or exc)
+        logger.warning(f"Database IntegrityError on {request.method} {request.url.path}: {err_str}")
+
+        # 1. MySQL 1062: Duplicate Entry
+        if "1062" in err_str or "duplicate entry" in err_str.lower():
+            msg = "A record with this value already exists. Please choose a different unique value."
+            if "subjects" in err_str or "code" in err_str:
+                msg = "Subject code already exists. Please choose a different subject code."
+            elif "uk_class_section_name" in err_str or "sections" in err_str:
+                msg = "A section with this name already exists in this class."
+            elif "academic_years" in err_str:
+                msg = "An academic session with this name already exists."
+            elif "admission_no" in err_str:
+                msg = "A student with this admission number is already registered."
+            elif "email" in err_str:
+                msg = "A user with this email address already exists."
+            elif "uk_class_subject" in err_str:
+                msg = "This subject is already assigned to this class."
+            elif "uk_year_class_section_teacher" in err_str:
+                msg = "A class teacher is already assigned to this class section."
+
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content={
+                    "success": False,
+                    "data": None,
+                    "message": msg,
+                    "error_code": "DUPLICATE_RECORD",
+                    "dependencies": [],
+                },
+            )
+
+        # 2. MySQL 1451: Child records exist (Foreign key delete blocked)
+        if "1451" in err_str or "foreign key constraint fails" in err_str.lower():
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={
+                    "success": False,
+                    "data": None,
+                    "message": "Cannot delete or modify this record because active operational records (students, attendance, fees, or classes) are linked to it.",
+                    "error_code": "RECORD_IN_USE",
+                    "dependencies": [],
+                },
+            )
+
+        # 3. MySQL 1452: Parent record not found
+        if "1452" in err_str:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={
+                    "success": False,
+                    "data": None,
+                    "message": "The referenced class, session, or record does not exist or has been removed.",
+                    "error_code": "REFERENCED_RECORD_NOT_FOUND",
+                    "dependencies": [],
+                },
+            )
+
+        # 4. MySQL 1048: Column cannot be null
+        if "1048" in err_str or "cannot be null" in err_str.lower():
+            return JSONResponse(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                content={
+                    "success": False,
+                    "data": None,
+                    "message": "A required field is missing. Please fill all required fields.",
+                    "error_code": "REQUIRED_FIELD_MISSING",
+                    "dependencies": [],
+                },
+            )
+
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "success": False,
+                "data": None,
+                "message": "Database rule violated. Please verify your input.",
+                "error_code": "INTEGRITY_VIOLATION",
+                "dependencies": [],
+            },
+        )
+
+    @app.exception_handler(SQLAlchemyError)
+    async def sqlalchemy_error_handler(request: Request, exc: SQLAlchemyError):
+        logger.error(f"SQLAlchemy Database Error on {request.method} {request.url.path}: {exc}", exc_info=True)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "success": False,
                 "data": None,
-                "message": "An internal server error occurred",
+                "message": "A database operation error occurred. Please try again.",
+                "error_code": "DATABASE_ERROR",
+                "dependencies": [],
+            },
+        )
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception):
+        logger.error(f"Unhandled Server Error on {request.method} {request.url.path}: {exc}", exc_info=True)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "success": False,
+                "data": None,
+                "message": "An unexpected server error occurred. Please try again later.",
                 "error_code": "INTERNAL_SERVER_ERROR",
+                "dependencies": [],
             },
         )
 

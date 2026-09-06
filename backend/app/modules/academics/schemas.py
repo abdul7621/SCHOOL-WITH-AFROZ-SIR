@@ -109,3 +109,28 @@ class StudentLeaveSubmitRequest(BaseModel):
 class StudentLeaveStatusUpdateRequest(BaseModel):
     status: str
     approval_remarks: Optional[str] = None
+
+
+class AcademicYearUpdate(BaseModel):
+    name: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+
+
+class ClassLevelUpdate(BaseModel):
+    name: Optional[str] = None
+    numeric_order: Optional[int] = None
+    description: Optional[str] = None
+
+
+class SectionUpdate(BaseModel):
+    name: Optional[str] = None
+    capacity: Optional[int] = None
+
+
+class SubjectUpdate(BaseModel):
+    code: Optional[str] = None
+    name: Optional[str] = None
+    subject_type: Optional[str] = None
+    is_elective: Optional[bool] = None
+

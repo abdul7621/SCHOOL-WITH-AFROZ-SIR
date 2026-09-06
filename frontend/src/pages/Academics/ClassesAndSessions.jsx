@@ -11,6 +11,9 @@ import {
   ShieldCheck,
   FileText,
   Trash2,
+  Edit2,
+  Check,
+  X,
 } from 'lucide-react';
 import api from '../../api/client';
 
@@ -36,23 +39,38 @@ export const ClassesAndSessions = () => {
   const [submittingHomework, setSubmittingHomework] = useState(false);
   const [showHomeworkModal, setShowHomeworkModal] = useState(false);
 
-  // Class Modal
+  // Class Modal & Edit State
   const [showClassModal, setShowClassModal] = useState(false);
   const [newClassName, setNewClassName] = useState('');
   const [newClassOrder, setNewClassOrder] = useState(1);
   const [newSections, setNewSections] = useState('A, B');
+  const [editingClass, setEditingClass] = useState(null);
 
-  // Year Modal
+  // Section Quick Add & Edit State
+  const [addingSectionClassId, setAddingSectionClassId] = useState(null);
+  const [newSectionName, setNewSectionName] = useState('C');
+  const [newSectionCapacity, setNewSectionCapacity] = useState(45);
+  const [editingSection, setEditingSection] = useState(null);
+
+  // Year Modal & Edit State
   const [showYearModal, setShowYearModal] = useState(false);
   const [newYearName, setNewYearName] = useState('2026-2027');
   const [startDate, setStartDate] = useState('2026-04-01');
   const [endDate, setEndDate] = useState('2027-03-31');
+  const [editingYear, setEditingYear] = useState(null);
 
-  // Subject Modal
+  // Subject Modal & Edit State
   const [showSubjectModal, setShowSubjectModal] = useState(false);
   const [subCode, setSubCode] = useState('');
   const [subName, setSubName] = useState('');
   const [subType, setSubType] = useState('THEORY');
+  const [editingSubject, setEditingSubject] = useState(null);
+
+  // Curriculum Mapping State
+  const [curriculumClassId, setCurriculumClassId] = useState('');
+  const [mappedSubjectIds, setMappedSubjectIds] = useState([]);
+  const [loadingCurriculum, setLoadingCurriculum] = useState(false);
+  const [savingCurriculum, setSavingCurriculum] = useState(false);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -64,15 +82,16 @@ export const ClassesAndSessions = () => {
       ]);
       if (clsRes.data && clsRes.data.length > 0) {
         setClasses(clsRes.data);
-        setHomeworkClassId(clsRes.data[0].id);
+        setHomeworkClassId((prev) => prev || clsRes.data[0].id);
+        setCurriculumClassId((prev) => prev || clsRes.data[0].id);
         if (clsRes.data[0].sections?.length > 0) {
-          setHomeworkSectionId(clsRes.data[0].sections[0].id);
+          setHomeworkSectionId((prev) => prev || clsRes.data[0].sections[0].id);
         }
       }
       if (yrRes.data) setYears(yrRes.data);
       if (subRes.data && subRes.data.length > 0) {
         setSubjects(subRes.data);
-        setHomeworkSubjectId(subRes.data[0].id);
+        setHomeworkSubjectId((prev) => prev || subRes.data[0].id);
       }
     } catch (e) {
       console.log('Error loading academic data:', e);
@@ -163,6 +182,86 @@ export const ClassesAndSessions = () => {
     }
   };
 
+  const handleUpdateClass = async (e) => {
+    e.preventDefault();
+    if (!editingClass) return;
+    try {
+      await api.put(`/academics/classes/${editingClass.id}`, {
+        name: editingClass.name.trim(),
+        numeric_order: parseInt(editingClass.numeric_order),
+        description: editingClass.description,
+      });
+      setEditingClass(null);
+      fetchAll();
+      alert('Class updated successfully!');
+    } catch (err) {
+      alert('Error updating class: ' + err.message);
+    }
+  };
+
+  const handleDeleteClass = async (classId, className) => {
+    if (!window.confirm(`Are you sure you want to delete "${className}"? This action cannot be undone.`)) return;
+    try {
+      await api.delete(`/academics/classes/${classId}`);
+      fetchAll();
+      alert(`Class "${className}" deleted successfully.`);
+    } catch (err) {
+      let msg = err.message;
+      if (err.dependencies && err.dependencies.length > 0) {
+        msg += '\n\nLinked Records Preventing Deletion:\n' + err.dependencies.map((d) => `• ${d.resource}: ${d.count}`).join('\n');
+      }
+      alert(msg);
+    }
+  };
+
+  const handleQuickAddSection = async (e) => {
+    e.preventDefault();
+    if (!addingSectionClassId) return;
+    try {
+      await api.post(`/academics/classes/${addingSectionClassId}/sections`, {
+        name: newSectionName.trim().toUpperCase(),
+        capacity: parseInt(newSectionCapacity),
+      });
+      setAddingSectionClassId(null);
+      setNewSectionName('C');
+      fetchAll();
+      alert('Section added successfully!');
+    } catch (err) {
+      alert('Error adding section: ' + err.message);
+    }
+  };
+
+  const handleUpdateSection = async (e) => {
+    e.preventDefault();
+    if (!editingSection) return;
+    try {
+      await api.put(`/academics/classes/${editingSection.class_id}/sections/${editingSection.id}`, {
+        name: editingSection.name.trim().toUpperCase(),
+        capacity: parseInt(editingSection.capacity),
+      });
+      setEditingSection(null);
+      fetchAll();
+      alert('Section updated successfully!');
+    } catch (err) {
+      alert('Error updating section: ' + err.message);
+    }
+  };
+
+  const handleDeleteSection = async (classId, sectionId, sectionName) => {
+    if (!window.confirm(`Are you sure you want to delete Section "${sectionName}"?`)) return;
+    try {
+      await api.delete(`/academics/classes/${classId}/sections/${sectionId}`);
+      fetchAll();
+      alert(`Section "${sectionName}" deleted successfully.`);
+    } catch (err) {
+      let msg = err.message;
+      if (err.dependencies && err.dependencies.length > 0) {
+        msg += '\n\nLinked Records Preventing Deletion:\n' + err.dependencies.map((d) => `• ${d.resource}: ${d.count}`).join('\n');
+      }
+      alert(msg);
+    }
+  };
+
   const handleCreateYear = async (e) => {
     e.preventDefault();
     const cleanName = newYearName.trim();
@@ -184,8 +283,24 @@ export const ClassesAndSessions = () => {
       setShowYearModal(false);
       fetchAll();
     } catch (err) {
-      const msg = err.response?.data?.detail || err.response?.data?.message || err.message;
-      alert('Error creating session: ' + msg);
+      alert('Error creating session: ' + err.message);
+    }
+  };
+
+  const handleUpdateYear = async (e) => {
+    e.preventDefault();
+    if (!editingYear) return;
+    try {
+      await api.put(`/academics/years/${editingYear.id}`, {
+        name: editingYear.name.trim(),
+        start_date: editingYear.start_date,
+        end_date: editingYear.end_date,
+      });
+      setEditingYear(null);
+      fetchAll();
+      alert('Academic session updated successfully!');
+    } catch (err) {
+      alert('Error updating session: ' + err.message);
     }
   };
 
@@ -198,8 +313,11 @@ export const ClassesAndSessions = () => {
       fetchAll();
       alert(`Academic session "${yearName}" deleted successfully.`);
     } catch (err) {
-      const msg = err.response?.data?.detail || err.response?.data?.message || err.message;
-      alert('Error deleting session: ' + msg);
+      let msg = err.message;
+      if (err.dependencies && err.dependencies.length > 0) {
+        msg += '\n\nLinked Records Preventing Deletion:\n' + err.dependencies.map((d) => `• ${d.resource}: ${d.count}`).join('\n');
+      }
+      alert(msg);
     }
   };
 
@@ -209,24 +327,6 @@ export const ClassesAndSessions = () => {
       fetchAll();
     } catch (err) {
       alert('Error switching session: ' + err.message);
-    }
-  };
-
-  const handleCreateSubject = async (e) => {
-    e.preventDefault();
-    try {
-      await api.post('/academics/subjects', {
-        code: subCode.toUpperCase(),
-        name: subName,
-        subject_type: subType,
-        is_elective: false,
-      });
-      setShowSubjectModal(false);
-      setSubCode('');
-      setSubName('');
-      fetchAll();
-    } catch (err) {
-      alert('Error creating subject: ' + err.message);
     }
   };
 
@@ -242,7 +342,7 @@ export const ClassesAndSessions = () => {
           <p className="text-xs text-slate-500">Configure academic sessions, class levels, sections, and subjects</p>
         </div>
 
-        <div className="flex bg-slate-200 p-1 rounded-xl text-xs font-semibold">
+        <div className="flex flex-wrap bg-slate-200 p-1 rounded-xl text-xs font-semibold gap-1">
           <button
             onClick={() => setActiveTab('classes')}
             className={`px-3.5 py-1.5 rounded-lg transition-all ${
@@ -266,6 +366,21 @@ export const ClassesAndSessions = () => {
             }`}
           >
             Subjects Directory ({subjects.length})
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab('curriculum');
+              if (!curriculumClassId && classes.length > 0) {
+                setCurriculumClassId(classes[0].id);
+                fetchCurriculum(classes[0].id);
+              }
+            }}
+            className={`px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+              activeTab === 'curriculum' ? 'bg-white text-blue-700 shadow font-bold' : 'text-slate-600'
+            }`}
+          >
+            <BookOpen size={13} />
+            Curriculum Mapping
           </button>
           <button
             onClick={() => setActiveTab('homework')}
@@ -295,16 +410,64 @@ export const ClassesAndSessions = () => {
             {classes.map((c) => (
               <div key={c.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                  <div className="font-bold text-slate-900 text-sm">{c.name}</div>
-                  <span className="text-[10px] font-mono text-slate-400 font-bold">Order: #{c.numeric_order}</span>
+                  <div>
+                    <div className="font-bold text-slate-900 text-sm">{c.name}</div>
+                    <span className="text-[10px] font-mono text-slate-400 font-bold">Order: #{c.numeric_order}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setEditingClass({ ...c })}
+                      className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-blue-600 transition-colors"
+                      title="Edit Class"
+                    >
+                      <Edit2 size={13} />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteClass(c.id, c.name)}
+                      className="p-1.5 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-colors"
+                      title="Delete Class"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
                 </div>
 
                 <div>
-                  <div className="text-[11px] font-semibold text-slate-400 mb-1.5 uppercase">Active Sections</div>
+                  <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400 mb-1.5 uppercase">
+                    <span>Active Sections</span>
+                    <button
+                      onClick={() => {
+                        setAddingSectionClassId(c.id);
+                        setNewSectionName('C');
+                        setNewSectionCapacity(45);
+                      }}
+                      className="flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-700 font-bold"
+                    >
+                      <Plus size={12} /> Add Section
+                    </button>
+                  </div>
                   <div className="flex flex-wrap gap-1.5">
                     {c.sections?.map((s) => (
-                      <span key={s.id} className="px-2.5 py-1 bg-blue-50 text-blue-700 font-bold rounded-lg text-xs">
-                        {s.name.startsWith('Section') ? s.name : `Section ${s.name}`} <span className="text-[10px] font-normal text-blue-400">({s.capacity} seats)</span>
+                      <span
+                        key={s.id}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-700 font-bold rounded-lg text-xs"
+                      >
+                        <span>{s.name.startsWith('Section') ? s.name : `Section ${s.name}`}</span>
+                        <span className="text-[10px] font-normal text-blue-400">({s.capacity} seats)</span>
+                        <button
+                          onClick={() => setEditingSection({ ...s, class_id: c.id })}
+                          className="text-blue-500 hover:text-blue-800 ml-0.5"
+                          title="Edit Section"
+                        >
+                          <Edit2 size={11} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSection(c.id, s.id, s.name)}
+                          className="text-rose-400 hover:text-rose-600"
+                          title="Delete Section"
+                        >
+                          <Trash2 size={11} />
+                        </button>
                       </span>
                     ))}
                   </div>
@@ -356,26 +519,32 @@ export const ClassesAndSessions = () => {
                       )}
                     </td>
                     <td className="py-3 px-4 text-right">
-                      {!y.is_current ? (
-                        <div className="flex items-center justify-end gap-2">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {!y.is_current && (
                           <button
                             onClick={() => handleSetCurrentYear(y.id)}
-                            className="px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-lg text-xs transition-colors"
+                            className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-lg text-xs transition-colors"
                           >
                             Set as Active
                           </button>
+                        )}
+                        <button
+                          onClick={() => setEditingYear({ ...y })}
+                          className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-blue-600 transition-colors"
+                          title="Edit Session"
+                        >
+                          <Edit2 size={13} />
+                        </button>
+                        {!y.is_current && (
                           <button
                             onClick={() => handleDeleteYear(y.id, y.name)}
-                            className="flex items-center gap-1 px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold rounded-lg text-xs transition-colors"
-                            title="Delete inactive session"
+                            className="p-1 hover:bg-rose-50 rounded text-slate-400 hover:text-rose-600 transition-colors"
+                            title="Delete Session"
                           >
                             <Trash2 size={13} />
-                            <span>Delete</span>
                           </button>
-                        </div>
-                      ) : (
-                        <span className="text-[11px] font-semibold text-emerald-600">Active</span>
-                      )}
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -404,6 +573,7 @@ export const ClassesAndSessions = () => {
                   <th className="py-3 px-4">Subject Code</th>
                   <th className="py-3 px-4">Subject Name</th>
                   <th className="py-3 px-4">Type</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
@@ -416,10 +586,108 @@ export const ClassesAndSessions = () => {
                         {s.subject_type || 'THEORY'}
                       </span>
                     </td>
+                    <td className="py-3 px-4 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => setEditingSubject({ ...s })}
+                          className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-blue-600 transition-colors"
+                          title="Edit Subject"
+                        >
+                          <Edit2 size={13} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSubject(s.id, s.name)}
+                          className="p-1 hover:bg-rose-50 rounded text-slate-400 hover:text-rose-600 transition-colors"
+                          title="Delete Subject"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: CURRICULUM MAPPING */}
+      {activeTab === 'curriculum' && (
+        <div className="space-y-4">
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-bold text-slate-700">Select Class:</span>
+                <select
+                  value={curriculumClassId}
+                  onChange={(e) => {
+                    const cid = e.target.value;
+                    setCurriculumClassId(cid);
+                    fetchCurriculum(cid);
+                  }}
+                  className="px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                >
+                  {classes.map((cls) => (
+                    <option key={cls.id} value={cls.id}>
+                      {cls.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-500 font-medium">
+                  Mapped: <strong className="text-blue-600">{mappedSubjectIds.length}</strong> of {subjects.length} subjects
+                </span>
+                <button
+                  onClick={handleSaveCurriculum}
+                  disabled={savingCurriculum || !curriculumClassId}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow transition-colors disabled:opacity-50"
+                >
+                  <Check size={14} /> {savingCurriculum ? 'Saving...' : 'Save Curriculum'}
+                </button>
+              </div>
+            </div>
+
+            {loadingCurriculum ? (
+              <div className="py-8 text-center text-xs text-slate-400">Loading curriculum mapping...</div>
+            ) : subjects.length === 0 ? (
+              <div className="py-8 text-center text-xs text-slate-400">No subjects created yet in Subjects Directory.</div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {subjects.map((sub) => {
+                  const isAssigned = mappedSubjectIds.includes(sub.id);
+                  return (
+                    <div
+                      key={sub.id}
+                      onClick={() => toggleSubjectMapping(sub.id)}
+                      className={`cursor-pointer p-3.5 rounded-xl border transition-all flex items-center justify-between ${
+                        isAssigned
+                          ? 'border-blue-500 bg-blue-50/50 shadow-sm'
+                          : 'border-slate-200 bg-white hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={isAssigned}
+                          onChange={() => {}}
+                          className="rounded text-blue-600 focus:ring-0 w-4 h-4 cursor-pointer"
+                        />
+                        <div>
+                          <div className="font-bold text-xs text-slate-900">{sub.name}</div>
+                          <div className="font-mono text-[10px] text-slate-400">{sub.code}</div>
+                        </div>
+                      </div>
+                      <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-600">
+                        {sub.subject_type || 'THEORY'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -769,6 +1037,273 @@ export const ClassesAndSessions = () => {
                   className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow disabled:opacity-50"
                 >
                   {submittingHomework ? 'Publishing...' : 'Publish Homework'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: EDIT CLASS */}
+      {editingClass && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <h3 className="font-bold text-slate-900 text-sm">Edit Class</h3>
+            <form onSubmit={handleUpdateClass} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Class Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editingClass.name}
+                  onChange={(e) => setEditingClass({ ...editingClass, name: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Numeric Order (for sorting)</label>
+                <input
+                  type="number"
+                  required
+                  value={editingClass.numeric_order}
+                  onChange={(e) => setEditingClass({ ...editingClass, numeric_order: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Description (Optional)</label>
+                <input
+                  type="text"
+                  value={editingClass.description || ''}
+                  onChange={(e) => setEditingClass({ ...editingClass, description: e.target.value })}
+                  placeholder="e.g. Senior Secondary"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingClass(null)}
+                  className="px-4 py-2 text-slate-500 hover:text-slate-800 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 6: QUICK ADD SECTION */}
+      {addingSectionClassId && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl">
+            <h3 className="font-bold text-slate-900 text-sm">Add New Section</h3>
+            <form onSubmit={handleQuickAddSection} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Section Name</label>
+                <input
+                  type="text"
+                  required
+                  value={newSectionName}
+                  onChange={(e) => setNewSectionName(e.target.value)}
+                  placeholder="e.g. C, Rose, Yellow"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold uppercase"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Seat Capacity</label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  value={newSectionCapacity}
+                  onChange={(e) => setNewSectionCapacity(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setAddingSectionClassId(null)}
+                  className="px-4 py-2 text-slate-500 hover:text-slate-800 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow"
+                >
+                  Add Section
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 7: EDIT SECTION */}
+      {editingSection && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl">
+            <h3 className="font-bold text-slate-900 text-sm">Edit Section</h3>
+            <form onSubmit={handleUpdateSection} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Section Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editingSection.name}
+                  onChange={(e) => setEditingSection({ ...editingSection, name: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold uppercase"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Seat Capacity</label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  value={editingSection.capacity}
+                  onChange={(e) => setEditingSection({ ...editingSection, capacity: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingSection(null)}
+                  className="px-4 py-2 text-slate-500 hover:text-slate-800 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow"
+                >
+                  Save Section
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 8: EDIT ACADEMIC YEAR */}
+      {editingYear && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <h3 className="font-bold text-slate-900 text-sm">Edit Academic Session</h3>
+            <form onSubmit={handleUpdateYear} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Session Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editingYear.name}
+                  onChange={(e) => setEditingYear({ ...editingYear, name: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">Start Date</label>
+                  <input
+                    type="date"
+                    required
+                    value={editingYear.start_date}
+                    onChange={(e) => setEditingYear({ ...editingYear, start_date: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">End Date</label>
+                  <input
+                    type="date"
+                    required
+                    value={editingYear.end_date}
+                    onChange={(e) => setEditingYear({ ...editingYear, end_date: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingYear(null)}
+                  className="px-4 py-2 text-slate-500 hover:text-slate-800 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 9: EDIT SUBJECT */}
+      {editingSubject && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <h3 className="font-bold text-slate-900 text-sm">Edit Subject</h3>
+            <form onSubmit={handleUpdateSubject} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Subject Code</label>
+                <input
+                  type="text"
+                  required
+                  value={editingSubject.code}
+                  onChange={(e) => setEditingSubject({ ...editingSubject, code: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono uppercase"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Subject Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editingSubject.name}
+                  onChange={(e) => setEditingSubject({ ...editingSubject, name: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Subject Type</label>
+                <select
+                  value={editingSubject.subject_type || 'THEORY'}
+                  onChange={(e) => setEditingSubject({ ...editingSubject, subject_type: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold"
+                >
+                  <option value="THEORY">THEORY</option>
+                  <option value="PRACTICAL">PRACTICAL</option>
+                  <option value="BOTH">BOTH (Theory + Practical)</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingSubject(null)}
+                  className="px-4 py-2 text-slate-500 hover:text-slate-800 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow"
+                >
+                  Save Subject
                 </button>
               </div>
             </form>
