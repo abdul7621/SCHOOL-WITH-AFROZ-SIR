@@ -107,8 +107,10 @@ def create_app() -> FastAPI:
             },
         )
 
-    # 4. Health Check Endpoint
+    # 4. Health Check Endpoints
     @app.get("/health", tags=["System Health"])
+    @app.get("/api/health", tags=["System Health"])
+    @app.get(f"{settings.API_V1_PREFIX}/health", tags=["System Health"])
     async def health_check():
         return {
             "status": "healthy",
