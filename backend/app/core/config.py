@@ -8,8 +8,8 @@ class Settings(BaseSettings):
     APP_NAME: str = "7A School ERP SaaS Engine"
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
-    PLATFORM_DOMAIN: str = "7aedu.com"
-    ADMIN_DOMAIN: str = "admin.7aedu.com"
+    PLATFORM_DOMAIN: str = "7adigitalsolution.com"
+    ADMIN_DOMAIN: str = "admin.7adigitalsolution.com"
     API_V1_PREFIX: str = "/api/v1"
 
     # Control Database Configuration

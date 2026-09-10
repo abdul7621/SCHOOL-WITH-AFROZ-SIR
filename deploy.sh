@@ -148,6 +148,15 @@ if [ ! -f "/var/www/school-erp/frontend/dist/index.html" ]; then
 fi
 
 chmod -R 755 /var/www/school-erp/frontend/dist
+
+# Sync Nginx Virtual Host Configuration
+if [ -f /var/www/school-erp/deploy/nginx/7a_school_erp.conf ]; then
+    mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled /var/www/certbot
+    cp /var/www/school-erp/deploy/nginx/7a_school_erp.conf /etc/nginx/sites-available/school-erp.conf
+    ln -sf /etc/nginx/sites-available/school-erp.conf /etc/nginx/sites-enabled/school-erp.conf
+    rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+fi
+
 nginx -t
 systemctl reload nginx
 
