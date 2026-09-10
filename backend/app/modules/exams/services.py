@@ -2,7 +2,7 @@ from decimal import Decimal
 from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from app.core.exceptions import AppException, ResourceNotFoundException
 from app.modules.students.models import Student, StudentEnrollment, Parent
@@ -42,7 +42,7 @@ class ExamService:
                 selectinload(ExamSchedule.exam_term),
                 selectinload(ExamSchedule.class_level),
                 selectinload(ExamSchedule.subject),
-                selectinload(ExamSchedule.grading_scale).selectinload(GradingScale.tiers),
+                selectinload(ExamSchedule.grading_scale).joinedload(GradingScale.tiers),
                 selectinload(ExamSchedule.marks),
             )
             .where(ExamSchedule.id == exam_schedule_id)
@@ -187,7 +187,7 @@ class ExamService:
             select(ExamSchedule)
             .options(
                 selectinload(ExamSchedule.subject),
-                selectinload(ExamSchedule.grading_scale).selectinload(GradingScale.tiers),
+                selectinload(ExamSchedule.grading_scale).joinedload(GradingScale.tiers),
                 selectinload(ExamSchedule.marks),
             )
             .where(

@@ -2,7 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from app.core.database import get_tenant_db
 from app.core.exceptions import ResourceNotFoundException
@@ -95,7 +95,7 @@ async def list_fee_structures(academic_year_id: Optional[str] = Query(None), db:
     """Lists configured class fee structures."""
     stmt = (
         select(FeeStructure)
-        .options(selectinload(FeeStructure.class_level), selectinload(FeeStructure.items).selectinload(FeeStructureItem.fee_head))
+        .options(selectinload(FeeStructure.class_level), selectinload(FeeStructure.items).joinedload(FeeStructureItem.fee_head))
     )
     if academic_year_id:
         stmt = stmt.where(FeeStructure.academic_year_id == academic_year_id)
@@ -383,7 +383,7 @@ async def reverse_fee_receipt(
 @router.get("/ledger/{student_id}", dependencies=[Depends(RequirePermission("fees:view"))])
 async def get_student_fee_ledger(
     student_id: str,
-    academic_year_id: str = Query(..., description="Academic Session ID"),
+    academic_year_id: Optional[str] = Query(None, description="Academic Session ID"),
     db: AsyncSession = Depends(get_tenant_db),
 ):
     """Retrieves full student statement of account / fee ledger with all demands and payments."""

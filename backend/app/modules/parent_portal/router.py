@@ -60,7 +60,7 @@ async def get_child_monthly_attendance(
 @router.get("/children/{student_id}/fees")
 async def get_child_fee_ledger(
     student_id: str,
-    academic_year_id: str = Query(...),
+    academic_year_id: Optional[str] = Query(None),
     current_user: CurrentTenantUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
 ):

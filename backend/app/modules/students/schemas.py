@@ -39,6 +39,17 @@ class StudentAdmissionRequest(BaseModel):
     enrollment_date: Optional[date] = None
 
 
+class ParentUpdateSchema(BaseModel):
+    father_name: Optional[str] = None
+    mother_name: Optional[str] = None
+    primary_phone: Optional[str] = None
+    whatsapp_phone: Optional[str] = None
+    email: Optional[EmailStr] = None
+    address: Optional[str] = None
+    father_occupation: Optional[str] = None
+    mother_occupation: Optional[str] = None
+
+
 class StudentUpdateRequest(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
@@ -51,6 +62,15 @@ class StudentUpdateRequest(BaseModel):
     profile_photo_url: Optional[str] = None
     emergency_contact: Optional[str] = None
     custom_attributes: Optional[Dict[str, Any]] = None
+
+    # Optional Parent updates
+    parent: Optional[ParentUpdateSchema] = None
+
+    # Optional Enrollment updates
+    class_id: Optional[str] = None
+    section_id: Optional[str] = None
+    roll_no: Optional[int] = None
+    academic_year_id: Optional[str] = None
 
 
 class StudentListItemResponse(BaseModel):

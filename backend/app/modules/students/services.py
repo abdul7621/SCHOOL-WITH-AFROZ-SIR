@@ -191,9 +191,6 @@ class StudentService:
                 selectinload(Student.parent),
                 selectinload(Student.status),
                 selectinload(Student.documents),
-                selectinload(Student.enrollments).selectinload(StudentEnrollment.class_level),
-                selectinload(Student.enrollments).selectinload(StudentEnrollment.section),
-                selectinload(Student.enrollments).selectinload(StudentEnrollment.academic_year),
             )
             .where(Student.id == student_id)
         )
@@ -203,14 +200,37 @@ class StudentService:
         if not student:
             raise ResourceNotFoundException("Student", student_id)
 
-        # Active enrollment
-        active_enrollment = next((e for e in student.enrollments if e.is_active), None)
+        # Explicit query for active enrollment
+        enr_stmt = (
+            select(StudentEnrollment, ClassLevel, Section, AcademicYear)
+            .join(ClassLevel, StudentEnrollment.class_id == ClassLevel.id)
+            .join(Section, StudentEnrollment.section_id == Section.id)
+            .join(AcademicYear, StudentEnrollment.academic_year_id == AcademicYear.id)
+            .where(StudentEnrollment.student_id == student.id, StudentEnrollment.is_active == True)
+        )
+        enr_res = await db.execute(enr_stmt)
+        enr_row = enr_res.first()
+
+        current_enrollment = None
+        if enr_row:
+            enroll, cls_lvl, sec, ay = enr_row
+            current_enrollment = {
+                "academic_year_id": ay.id,
+                "academic_year_name": ay.name,
+                "class_id": cls_lvl.id,
+                "class_name": cls_lvl.name,
+                "section_id": sec.id,
+                "section_name": sec.name,
+                "roll_no": enroll.roll_no,
+                "enrollment_date": str(enroll.enrollment_date),
+            }
 
         return {
             "id": student.id,
             "admission_no": student.admission_no,
             "first_name": student.first_name,
             "last_name": student.last_name,
+            "full_name": f"{student.first_name} {student.last_name or ''}".strip(),
             "dob": str(student.dob),
             "gender_id": student.gender_id,
             "blood_group_id": student.blood_group_id,
@@ -232,13 +252,7 @@ class StudentService:
                 "father_occupation": student.parent.father_occupation,
                 "mother_occupation": student.parent.mother_occupation,
             } if student.parent else {},
-            "current_enrollment": {
-                "academic_year_name": active_enrollment.academic_year.name if active_enrollment and active_enrollment.academic_year else None,
-                "class_name": active_enrollment.class_level.name if active_enrollment and active_enrollment.class_level else None,
-                "section_name": active_enrollment.section.name if active_enrollment and active_enrollment.section else None,
-                "roll_no": active_enrollment.roll_no if active_enrollment else None,
-                "enrollment_date": str(active_enrollment.enrollment_date) if active_enrollment else None,
-            } if active_enrollment else None,
+            "current_enrollment": current_enrollment,
             "documents": [
                 {
                     "id": d.id,
@@ -250,6 +264,63 @@ class StudentService:
             ],
             "created_at": student.created_at.isoformat() if student.created_at else None,
         }
+
+    @classmethod
+    async def update_student(cls, student_id: str, req: StudentUpdateRequest, db: AsyncSession) -> Student:
+        """
+        Updates student personal details, parent information, and active enrollment.
+        """
+        stmt = (
+            select(Student)
+            .options(selectinload(Student.parent))
+            .where(Student.id == student_id)
+        )
+        result = await db.execute(stmt)
+        student = result.scalar_one_or_none()
+
+        if not student:
+            raise ResourceNotFoundException("Student", student_id)
+
+        # 1. Update student personal fields
+        student_fields = [
+            "first_name", "last_name", "dob", "gender_id", "blood_group_id",
+            "religion_id", "caste_category_id", "status_id", "profile_photo_url",
+            "emergency_contact", "custom_attributes"
+        ]
+        update_dict = req.model_dump(exclude_unset=True)
+        for field in student_fields:
+            if field in update_dict and update_dict[field] is not None:
+                setattr(student, field, update_dict[field])
+
+        # 2. Update parent details if provided
+        if req.parent and student.parent:
+            parent_dict = req.parent.model_dump(exclude_unset=True)
+            for p_field, p_val in parent_dict.items():
+                if p_val is not None:
+                    setattr(student.parent, p_field, p_val)
+
+        # 3. Update active enrollment if class/section/roll_no provided
+        enrollment_fields = ["class_id", "section_id", "roll_no", "academic_year_id"]
+        if any(f in update_dict for f in enrollment_fields):
+            enr_stmt = select(StudentEnrollment).where(
+                StudentEnrollment.student_id == student.id,
+                StudentEnrollment.is_active == True,
+            )
+            enr_res = await db.execute(enr_stmt)
+            active_enr = enr_res.scalar_one_or_none()
+            if active_enr:
+                if req.class_id:
+                    active_enr.class_id = req.class_id
+                if req.section_id:
+                    active_enr.section_id = req.section_id
+                if req.roll_no is not None:
+                    active_enr.roll_no = req.roll_no
+                if req.academic_year_id:
+                    active_enr.academic_year_id = req.academic_year_id
+
+        await db.commit()
+        await db.refresh(student)
+        return student
 
     @classmethod
     async def promote_students_bulk(cls, req: BulkPromotionRequest, db: AsyncSession) -> int:

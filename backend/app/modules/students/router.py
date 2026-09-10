@@ -75,22 +75,8 @@ async def update_student(
     req: StudentUpdateRequest,
     db: AsyncSession = Depends(get_tenant_db),
 ):
-    """Updates student demographic and custom attributes."""
-    stmt = select(Student).where(Student.id == student_id)
-    result = await db.execute(stmt)
-    student = result.scalar_one_or_none()
-
-    if not student:
-        raise ResourceNotFoundException("Student", student_id)
-
-    update_data = req.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        if value is not None:
-            setattr(student, field, value)
-
-    await db.commit()
-    await db.refresh(student)
-
+    """Updates student demographic, parent details, and active enrollment."""
+    student = await StudentService.update_student(student_id, req, db)
     return success_response(
         data={"id": student.id, "admission_no": student.admission_no},
         message="Student profile updated successfully",

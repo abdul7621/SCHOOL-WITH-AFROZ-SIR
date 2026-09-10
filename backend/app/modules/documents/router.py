@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Response
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from app.core.database import get_tenant_db
 from app.core.exceptions import ResourceNotFoundException
@@ -62,7 +62,7 @@ async def view_fee_receipt_html(
             selectinload(FeeCollection.student),
             selectinload(FeeCollection.payment_mode),
             selectinload(FeeCollection.collected_by),
-            selectinload(FeeCollection.items).selectinload(FeeCollectionItem.demand),
+            selectinload(FeeCollection.items).joinedload(FeeCollectionItem.demand),
         )
         .where(FeeCollection.receipt_no == receipt_no)
     )
@@ -266,7 +266,7 @@ async def view_fee_card_html(
     from app.modules.academics.models import AcademicYear
 
     if not academic_year_id:
-        ay_res = await db.execute(select(AcademicYear).where(AcademicYear.is_active == True))
+        ay_res = await db.execute(select(AcademicYear).where(AcademicYear.is_current == True))
         active_ay = ay_res.scalar_one_or_none()
         if active_ay:
             academic_year_id = active_ay.id

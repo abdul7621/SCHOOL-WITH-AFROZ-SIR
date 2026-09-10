@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy import select, func, update, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from app.core.exceptions import AppException, ResourceNotFoundException, FinancialImmutabilityException
 from app.modules.students.models import Student, StudentEnrollment
@@ -111,7 +111,7 @@ class FeeService:
             # Get class fee structure
             struct_stmt = (
                 select(FeeStructure)
-                .options(selectinload(FeeStructure.items).selectinload(FeeStructureItem.fee_head))
+                .options(selectinload(FeeStructure.items).joinedload(FeeStructureItem.fee_head))
                 .where(
                     FeeStructure.academic_year_id == req.academic_year_id,
                     FeeStructure.class_id == target_class.id,
@@ -291,7 +291,7 @@ class FeeService:
         """
         stmt = (
             select(FeeCollection)
-            .options(selectinload(FeeCollection.items).selectinload(FeeCollectionItem.demand))
+            .options(selectinload(FeeCollection.items).joinedload(FeeCollectionItem.demand))
             .where(FeeCollection.receipt_no == receipt_no)
         )
         res = await db.execute(stmt)
@@ -330,28 +330,50 @@ class FeeService:
     async def get_student_ledger(
         cls,
         student_id: str,
-        academic_year_id: str,
-        db: AsyncSession,
+        academic_year_id: Optional[str] = None,
+        db: AsyncSession = None,
     ) -> Dict[str, Any]:
         """Retrieves comprehensive fee ledger / statement of account for student."""
         # 1. Student details
-        st_stmt = (
-            select(Student, StudentEnrollment, ClassLevel, Section)
-            .join(StudentEnrollment, Student.id == StudentEnrollment.student_id)
+        st_res = await db.execute(select(Student).where(Student.id == student_id))
+        student = st_res.scalar_one_or_none()
+        if not student:
+            raise ResourceNotFoundException("Student", student_id)
+
+        # Query active enrollment
+        enr_stmt = (
+            select(StudentEnrollment, ClassLevel, Section)
             .join(ClassLevel, StudentEnrollment.class_id == ClassLevel.id)
             .join(Section, StudentEnrollment.section_id == Section.id)
             .where(
-                Student.id == student_id,
-                StudentEnrollment.academic_year_id == academic_year_id,
+                StudentEnrollment.student_id == student_id,
                 StudentEnrollment.is_active == True,
             )
         )
-        st_res = await db.execute(st_stmt)
-        st_row = st_res.first()
-        if not st_row:
-            raise ResourceNotFoundException("Student Enrollment", student_id)
+        if academic_year_id:
+            enr_stmt = enr_stmt.where(StudentEnrollment.academic_year_id == academic_year_id)
 
-        student, enroll, cls_lvl, sec = st_row
+        enr_res = await db.execute(enr_stmt)
+        enr_row = enr_res.first()
+
+        cls_name = "-"
+        sec_name = "-"
+        roll_no = None
+        resolved_ay_id = academic_year_id
+
+        if enr_row:
+            enroll, cls_lvl, sec = enr_row
+            cls_name = cls_lvl.name
+            sec_name = sec.name
+            roll_no = enroll.roll_no
+            if not resolved_ay_id:
+                resolved_ay_id = enroll.academic_year_id
+        else:
+            # Fallback to current academic year if needed
+            if not resolved_ay_id:
+                curr_ay = (await db.execute(select(AcademicYear).where(AcademicYear.is_current == True))).scalar_one_or_none()
+                if curr_ay:
+                    resolved_ay_id = curr_ay.id
 
         # 2. Demands
         demands_stmt = (
@@ -360,12 +382,12 @@ class FeeService:
                 selectinload(StudentFeeDemand.fee_head),
                 selectinload(StudentFeeDemand.installment_schedule),
             )
-            .where(
-                StudentFeeDemand.student_id == student_id,
-                StudentFeeDemand.academic_year_id == academic_year_id,
-            )
-            .order_by(StudentFeeDemand.created_at.asc())
+            .where(StudentFeeDemand.student_id == student_id)
         )
+        if resolved_ay_id:
+            demands_stmt = demands_stmt.where(StudentFeeDemand.academic_year_id == resolved_ay_id)
+        demands_stmt = demands_stmt.order_by(StudentFeeDemand.created_at.asc())
+
         demands_res = await db.execute(demands_stmt)
         demands = demands_res.scalars().all()
 
@@ -376,12 +398,12 @@ class FeeService:
                 selectinload(FeeCollection.payment_mode),
                 selectinload(FeeCollection.collected_by),
             )
-            .where(
-                FeeCollection.student_id == student_id,
-                FeeCollection.academic_year_id == academic_year_id,
-            )
-            .order_by(FeeCollection.collection_date.desc(), FeeCollection.created_at.desc())
+            .where(FeeCollection.student_id == student_id)
         )
+        if resolved_ay_id:
+            receipts_stmt = receipts_stmt.where(FeeCollection.academic_year_id == resolved_ay_id)
+        receipts_stmt = receipts_stmt.order_by(FeeCollection.collection_date.desc(), FeeCollection.created_at.desc())
+
         receipts_res = await db.execute(receipts_stmt)
         receipts = receipts_res.scalars().all()
 
@@ -395,14 +417,16 @@ class FeeService:
             "student_id": student.id,
             "admission_no": student.admission_no,
             "student_name": f"{student.first_name} {student.last_name or ''}".strip(),
-            "class_name": cls_lvl.name,
-            "section_name": sec.name,
-            "roll_no": enroll.roll_no,
+            "class_name": cls_name,
+            "section_name": sec_name,
+            "roll_no": roll_no,
+            "academic_year_id": resolved_ay_id,
             "total_demanded": float(total_demanded),
             "total_concession": float(total_concession),
             "total_fine": float(total_fine),
             "total_paid": float(total_paid),
             "net_balance_due": float(net_balance_due),
+            "net_outstanding_balance": float(net_balance_due),
             "demands": [
                 {
                     "id": d.id,
