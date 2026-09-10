@@ -64,32 +64,41 @@ async def refresh_access_token(
         raise InvalidCredentialsException("Refresh token tenant mismatch")
 
     from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
-    from app.modules.users_rbac.models import User, Role
+    from app.modules.users_rbac.models import User, Role, UserRole, Permission, RolePermission
 
-    stmt = (
-        select(User)
-        .options(selectinload(User.roles).selectinload(Role.permissions))
-        .where(User.id == user_id, User.is_active == True)
-    )
+    stmt = select(User).where(User.id == user_id, User.is_active == True)
     res = await db.execute(stmt)
     user = res.scalar_one_or_none()
     if not user:
         raise InvalidCredentialsException("User account not found or inactive")
 
-    roles = [r.name for r in user.roles if r.is_active]
+    role_stmt = (
+        select(Role)
+        .join(UserRole, UserRole.role_id == Role.id)
+        .where(UserRole.user_id == user.id)
+    )
+    role_res = await db.execute(role_stmt)
+    user_roles = role_res.scalars().all()
+    role_codes = [r.code for r in user_roles]
+    role_ids = [r.id for r in user_roles]
+
     permissions_set = set()
-    for r in user.roles:
-        if r.is_active:
-            for p in r.permissions:
-                permissions_set.add(p.code)
+    if role_ids:
+        perm_stmt = (
+            select(Permission.code)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .where(RolePermission.role_id.in_(role_ids))
+        )
+        perm_res = await db.execute(perm_stmt)
+        for p_code in perm_res.scalars().all():
+            permissions_set.add(p_code)
 
     new_access_token = create_access_token(
         subject=user.id,
         claims={
             "tenant_slug": tenant_slug,
             "user_type": user.user_type,
-            "roles": roles,
+            "roles": role_codes,
             "permissions": list(permissions_set),
         },
     )

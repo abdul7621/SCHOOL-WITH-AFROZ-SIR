@@ -319,9 +319,26 @@ export const StaffDirectory = () => {
   };
 
   const copyPasswordToClipboard = () => {
-    navigator.clipboard.writeText(newPassword);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(newPassword);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = newPassword;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        textArea.remove();
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy password:', err);
+    }
   };
 
   const filteredStaff = staffList.filter((s) => {
