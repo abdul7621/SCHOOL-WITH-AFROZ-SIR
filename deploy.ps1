@@ -96,8 +96,8 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host ""
 Write-Host "==========================================================================" -ForegroundColor Cyan
 Write-Host "    >>> DEPLOYMENT FINISHED SUCCESSFULLY! <<<" -ForegroundColor Green
-Write-Host "    Live Domain     : http://school.7adigitalsolution.com" -ForegroundColor White
-Write-Host "    Direct VPS IP   : http://$VPS_IP" -ForegroundColor White
-Write-Host "    API Health      : http://school.7adigitalsolution.com/api/health" -ForegroundColor White
+Write-Host "    Live Domain (HTTPS): https://school.7adigitalsolution.com" -ForegroundColor White
+Write-Host "    Direct VPS IP      : http://$VPS_IP" -ForegroundColor White
+Write-Host "    API Health         : https://school.7adigitalsolution.com/api/health" -ForegroundColor White
 Write-Host "==========================================================================" -ForegroundColor Cyan
 Write-Host ""
