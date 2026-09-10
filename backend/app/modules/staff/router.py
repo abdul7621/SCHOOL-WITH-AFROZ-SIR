@@ -20,6 +20,10 @@ from app.modules.staff.schemas import (
 router = APIRouter(prefix="/staff", tags=["Staff & Teacher Directory"])
 
 
+# =========================================================================
+# 1. Main Staff Listing & Creation
+# =========================================================================
+
 @router.get("", dependencies=[Depends(RequirePermission("users:manage"))])
 async def list_staff(db: AsyncSession = Depends(get_tenant_db)):
     """Lists all staff members with designation, department, and assigned login role."""
@@ -72,59 +76,6 @@ async def list_staff(db: AsyncSession = Depends(get_tenant_db)):
         })
 
     return success_response(data=staff_data)
-
-
-@router.get("/{staff_id}", dependencies=[Depends(RequirePermission("users:manage"))])
-async def get_staff(staff_id: str, db: AsyncSession = Depends(get_tenant_db)):
-    """Retrieves full details for a single staff member."""
-    stmt = (
-        select(StaffProfile, User, Designation, Department)
-        .outerjoin(User, StaffProfile.user_id == User.id)
-        .outerjoin(Designation, StaffProfile.designation_id == Designation.id)
-        .outerjoin(Department, StaffProfile.department_id == Department.id)
-        .where(StaffProfile.id == staff_id)
-    )
-    result = await db.execute(stmt)
-    row = result.first()
-    if not row:
-        raise AppException("Staff member not found", "STAFF_NOT_FOUND", status.HTTP_404_NOT_FOUND)
-
-    s, u, desig, dept = row
-    role_info = None
-    if u:
-        role_stmt = (
-            select(Role.id, Role.name, Role.code)
-            .join(UserRole, UserRole.role_id == Role.id)
-            .where(UserRole.user_id == u.id)
-        )
-        role_res = await db.execute(role_stmt)
-        r = role_res.first()
-        if r:
-            role_info = {"id": r[0], "name": r[1], "code": r[2]}
-
-    return success_response(
-        data={
-            "id": s.id,
-            "user_id": s.user_id,
-            "employee_id": s.employee_id,
-            "first_name": s.first_name,
-            "last_name": s.last_name,
-            "full_name": f"{s.first_name} {s.last_name or ''}".strip(),
-            "email": u.email if u else None,
-            "phone": u.phone if u else None,
-            "designation_id": s.designation_id,
-            "designation": desig.title if desig else None,
-            "department_id": s.department_id,
-            "department": dept.name if dept else None,
-            "role_id": role_info["id"] if role_info else None,
-            "role_name": role_info["name"] if role_info else None,
-            "role_code": role_info["code"] if role_info else None,
-            "qualification": s.qualification,
-            "joining_date": str(s.joining_date),
-            "emergency_contact": s.emergency_contact,
-            "is_active": s.is_active,
-        }
-    )
 
 
 @router.post("", dependencies=[Depends(RequirePermission("users:manage"))], status_code=status.HTTP_201_CREATED)
@@ -187,6 +138,114 @@ async def create_staff(req: StaffCreateRequest, db: AsyncSession = Depends(get_t
     return success_response(
         data={"id": profile.id, "employee_id": profile.employee_id, "user_id": user.id},
         message=f"Staff member '{profile.first_name}' created successfully",
+    )
+
+
+# =========================================================================
+# 2. Static Sub-Routes (MUST BE DEFINED BEFORE /{staff_id} PARAMETER)
+# =========================================================================
+
+@router.get("/departments")
+async def list_departments(db: AsyncSession = Depends(get_tenant_db)):
+    """Lists all school departments."""
+    stmt = select(Department).order_by(Department.name.asc())
+    result = await db.execute(stmt)
+    deps = result.scalars().all()
+    return success_response(data=[{"id": d.id, "name": d.name, "code": d.code} for d in deps])
+
+
+@router.post("/departments", dependencies=[Depends(RequirePermission("users:manage"))])
+async def create_department(req: DepartmentCreate, db: AsyncSession = Depends(get_tenant_db)):
+    """Creates a new department."""
+    dep = Department(name=req.name.strip(), code=req.code.strip().upper())
+    db.add(dep)
+    await db.commit()
+    await db.refresh(dep)
+    return success_response(data={"id": dep.id, "name": dep.name}, message="Department created")
+
+
+@router.get("/designations")
+async def list_designations(db: AsyncSession = Depends(get_tenant_db)):
+    """Lists all school job designations."""
+    stmt = select(Designation).order_by(Designation.title.asc())
+    result = await db.execute(stmt)
+    desigs = result.scalars().all()
+    return success_response(data=[{"id": d.id, "title": d.title, "code": d.code} for d in desigs])
+
+
+@router.post("/designations", dependencies=[Depends(RequirePermission("users:manage"))])
+async def create_designation(req: DesignationCreate, db: AsyncSession = Depends(get_tenant_db)):
+    """Creates a new designation."""
+    desig = Designation(title=req.title.strip(), code=req.code.strip().upper())
+    db.add(desig)
+    await db.commit()
+    await db.refresh(desig)
+    return success_response(data={"id": desig.id, "title": desig.title}, message="Designation created")
+
+
+@router.get("/roles", dependencies=[Depends(RequirePermission("users:manage"))])
+async def list_roles(db: AsyncSession = Depends(get_tenant_db)):
+    """Lists available system roles for staff assignment."""
+    stmt = select(Role).where(Role.code != "PARENT").order_by(Role.name.asc())
+    result = await db.execute(stmt)
+    roles = result.scalars().all()
+    return success_response(data=[{"id": r.id, "name": r.name, "code": r.code} for r in roles])
+
+
+# =========================================================================
+# 3. Dynamic Single Staff Item Operations (/{staff_id})
+# =========================================================================
+
+@router.get("/{staff_id}", dependencies=[Depends(RequirePermission("users:manage"))])
+async def get_staff(staff_id: str, db: AsyncSession = Depends(get_tenant_db)):
+    """Retrieves full details for a single staff member."""
+    stmt = (
+        select(StaffProfile, User, Designation, Department)
+        .outerjoin(User, StaffProfile.user_id == User.id)
+        .outerjoin(Designation, StaffProfile.designation_id == Designation.id)
+        .outerjoin(Department, StaffProfile.department_id == Department.id)
+        .where(StaffProfile.id == staff_id)
+    )
+    result = await db.execute(stmt)
+    row = result.first()
+    if not row:
+        raise AppException("Staff member not found", "STAFF_NOT_FOUND", status.HTTP_404_NOT_FOUND)
+
+    s, u, desig, dept = row
+    role_info = None
+    if u:
+        role_stmt = (
+            select(Role.id, Role.name, Role.code)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(UserRole.user_id == u.id)
+        )
+        role_res = await db.execute(role_stmt)
+        r = role_res.first()
+        if r:
+            role_info = {"id": r[0], "name": r[1], "code": r[2]}
+
+    return success_response(
+        data={
+            "id": s.id,
+            "user_id": s.user_id,
+            "employee_id": s.employee_id,
+            "first_name": s.first_name,
+            "last_name": s.last_name,
+            "full_name": f"{s.first_name} {s.last_name or ''}".strip(),
+            "email": u.email if u else None,
+            "phone": u.phone if u else None,
+            "designation_id": s.designation_id,
+            "designation": desig.title if desig else None,
+            "department_id": s.department_id,
+            "department": dept.name if dept else None,
+            "role_id": role_info["id"] if role_info else None,
+            "role_name": role_info["name"] if role_info else None,
+            "role_code": role_info["code"] if role_info else None,
+            "qualification": s.qualification,
+            "joining_date": str(s.joining_date),
+            "emergency_contact": s.emergency_contact,
+            "is_active": s.is_active,
+        }
     )
 
 
@@ -301,50 +360,3 @@ async def reset_staff_password(
     return success_response(
         message=f"Password for {profile.first_name} has been reset successfully",
     )
-
-
-@router.get("/departments")
-async def list_departments(db: AsyncSession = Depends(get_tenant_db)):
-    """Lists all school departments."""
-    stmt = select(Department).order_by(Department.name.asc())
-    result = await db.execute(stmt)
-    deps = result.scalars().all()
-    return success_response(data=[{"id": d.id, "name": d.name, "code": d.code} for d in deps])
-
-
-@router.post("/departments", dependencies=[Depends(RequirePermission("users:manage"))])
-async def create_department(req: DepartmentCreate, db: AsyncSession = Depends(get_tenant_db)):
-    """Creates a new department."""
-    dep = Department(name=req.name.strip(), code=req.code.strip().upper())
-    db.add(dep)
-    await db.commit()
-    await db.refresh(dep)
-    return success_response(data={"id": dep.id, "name": dep.name}, message="Department created")
-
-
-@router.get("/designations")
-async def list_designations(db: AsyncSession = Depends(get_tenant_db)):
-    """Lists all school job designations."""
-    stmt = select(Designation).order_by(Designation.title.asc())
-    result = await db.execute(stmt)
-    desigs = result.scalars().all()
-    return success_response(data=[{"id": d.id, "title": d.title, "code": d.code} for d in desigs])
-
-
-@router.post("/designations", dependencies=[Depends(RequirePermission("users:manage"))])
-async def create_designation(req: DesignationCreate, db: AsyncSession = Depends(get_tenant_db)):
-    """Creates a new designation."""
-    desig = Designation(title=req.title.strip(), code=req.code.strip().upper())
-    db.add(desig)
-    await db.commit()
-    await db.refresh(desig)
-    return success_response(data={"id": desig.id, "title": desig.title}, message="Designation created")
-
-
-@router.get("/roles", dependencies=[Depends(RequirePermission("users:manage"))])
-async def list_roles(db: AsyncSession = Depends(get_tenant_db)):
-    """Lists available system roles for staff assignment."""
-    stmt = select(Role).where(Role.code != "PARENT").order_by(Role.name.asc())
-    result = await db.execute(stmt)
-    roles = result.scalars().all()
-    return success_response(data=[{"id": r.id, "name": r.name, "code": r.code} for r in roles])
