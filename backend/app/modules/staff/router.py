@@ -2,7 +2,6 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, status
 from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 from app.core.database import get_tenant_db
 from app.core.security import get_password_hash
 from app.core.exceptions import AppException
@@ -25,61 +24,83 @@ router = APIRouter(prefix="/staff", tags=["Staff & Teacher Directory"])
 async def list_staff(db: AsyncSession = Depends(get_tenant_db)):
     """Lists all staff members with designation, department, and assigned login role."""
     stmt = (
-        select(StaffProfile)
-        .options(
-            selectinload(StaffProfile.user).selectinload(User.roles),
-            selectinload(StaffProfile.designation),
-            selectinload(StaffProfile.department),
-        )
+        select(StaffProfile, User, Designation, Department)
+        .outerjoin(User, StaffProfile.user_id == User.id)
+        .outerjoin(Designation, StaffProfile.designation_id == Designation.id)
+        .outerjoin(Department, StaffProfile.department_id == Department.id)
         .order_by(StaffProfile.first_name.asc())
     )
     result = await db.execute(stmt)
-    staff_list = result.scalars().all()
+    rows = result.all()
 
-    return success_response(
-        data=[
-            {
-                "id": s.id,
-                "user_id": s.user_id,
-                "employee_id": s.employee_id,
-                "first_name": s.first_name,
-                "last_name": s.last_name,
-                "full_name": f"{s.first_name} {s.last_name or ''}".strip(),
-                "email": s.user.email if s.user else None,
-                "phone": s.user.phone if s.user else None,
-                "designation_id": s.designation_id,
-                "designation": s.designation.title if s.designation else None,
-                "department_id": s.department_id,
-                "department": s.department.name if s.department else None,
-                "role_id": s.user.roles[0].id if (s.user and s.user.roles) else None,
-                "role_name": s.user.roles[0].name if (s.user and s.user.roles) else None,
-                "role_code": s.user.roles[0].code if (s.user and s.user.roles) else None,
-                "qualification": s.qualification,
-                "joining_date": str(s.joining_date),
-                "emergency_contact": s.emergency_contact,
-                "is_active": s.is_active,
-            }
-            for s in staff_list
-        ]
-    )
+    # Preload user roles in bulk to avoid async lazy loading
+    user_ids = [u.id for _, u, _, _ in rows if u]
+    user_roles_map = {}
+    if user_ids:
+        role_stmt = (
+            select(UserRole.user_id, Role.id, Role.name, Role.code)
+            .join(Role, UserRole.role_id == Role.id)
+            .where(UserRole.user_id.in_(user_ids))
+        )
+        role_res = await db.execute(role_stmt)
+        for uid, rid, rname, rcode in role_res.all():
+            user_roles_map[uid] = {"id": rid, "name": rname, "code": rcode}
+
+    staff_data = []
+    for s, u, desig, dept in rows:
+        role_info = user_roles_map.get(u.id) if u else None
+        staff_data.append({
+            "id": s.id,
+            "user_id": s.user_id,
+            "employee_id": s.employee_id,
+            "first_name": s.first_name,
+            "last_name": s.last_name,
+            "full_name": f"{s.first_name} {s.last_name or ''}".strip(),
+            "email": u.email if u else None,
+            "phone": u.phone if u else None,
+            "designation_id": s.designation_id,
+            "designation": desig.title if desig else None,
+            "department_id": s.department_id,
+            "department": dept.name if dept else None,
+            "role_id": role_info["id"] if role_info else None,
+            "role_name": role_info["name"] if role_info else None,
+            "role_code": role_info["code"] if role_info else None,
+            "qualification": s.qualification,
+            "joining_date": str(s.joining_date),
+            "emergency_contact": s.emergency_contact,
+            "is_active": s.is_active,
+        })
+
+    return success_response(data=staff_data)
 
 
 @router.get("/{staff_id}", dependencies=[Depends(RequirePermission("users:manage"))])
 async def get_staff(staff_id: str, db: AsyncSession = Depends(get_tenant_db)):
     """Retrieves full details for a single staff member."""
     stmt = (
-        select(StaffProfile)
-        .options(
-            selectinload(StaffProfile.user).selectinload(User.roles),
-            selectinload(StaffProfile.designation),
-            selectinload(StaffProfile.department),
-        )
+        select(StaffProfile, User, Designation, Department)
+        .outerjoin(User, StaffProfile.user_id == User.id)
+        .outerjoin(Designation, StaffProfile.designation_id == Designation.id)
+        .outerjoin(Department, StaffProfile.department_id == Department.id)
         .where(StaffProfile.id == staff_id)
     )
     result = await db.execute(stmt)
-    s = result.scalar_one_or_none()
-    if not s:
+    row = result.first()
+    if not row:
         raise AppException("Staff member not found", "STAFF_NOT_FOUND", status.HTTP_404_NOT_FOUND)
+
+    s, u, desig, dept = row
+    role_info = None
+    if u:
+        role_stmt = (
+            select(Role.id, Role.name, Role.code)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(UserRole.user_id == u.id)
+        )
+        role_res = await db.execute(role_stmt)
+        r = role_res.first()
+        if r:
+            role_info = {"id": r[0], "name": r[1], "code": r[2]}
 
     return success_response(
         data={
@@ -89,15 +110,15 @@ async def get_staff(staff_id: str, db: AsyncSession = Depends(get_tenant_db)):
             "first_name": s.first_name,
             "last_name": s.last_name,
             "full_name": f"{s.first_name} {s.last_name or ''}".strip(),
-            "email": s.user.email if s.user else None,
-            "phone": s.user.phone if s.user else None,
+            "email": u.email if u else None,
+            "phone": u.phone if u else None,
             "designation_id": s.designation_id,
-            "designation": s.designation.title if s.designation else None,
+            "designation": desig.title if desig else None,
             "department_id": s.department_id,
-            "department": s.department.name if s.department else None,
-            "role_id": s.user.roles[0].id if (s.user and s.user.roles) else None,
-            "role_name": s.user.roles[0].name if (s.user and s.user.roles) else None,
-            "role_code": s.user.roles[0].code if (s.user and s.user.roles) else None,
+            "department": dept.name if dept else None,
+            "role_id": role_info["id"] if role_info else None,
+            "role_name": role_info["name"] if role_info else None,
+            "role_code": role_info["code"] if role_info else None,
             "qualification": s.qualification,
             "joining_date": str(s.joining_date),
             "emergency_contact": s.emergency_contact,
@@ -176,21 +197,18 @@ async def update_staff(
     db: AsyncSession = Depends(get_tenant_db),
 ):
     """Updates staff member details, user account login information, role, and active status."""
-    stmt = (
-        select(StaffProfile)
-        .options(
-            selectinload(StaffProfile.user).selectinload(User.roles),
-            selectinload(StaffProfile.designation),
-            selectinload(StaffProfile.department),
-        )
-        .where(StaffProfile.id == staff_id)
-    )
+    stmt = select(StaffProfile).where(StaffProfile.id == staff_id)
     result = await db.execute(stmt)
     profile = result.scalar_one_or_none()
     if not profile:
         raise AppException("Staff member not found", "STAFF_NOT_FOUND", status.HTTP_404_NOT_FOUND)
 
-    user = profile.user
+    # Fetch linked user
+    user = None
+    if profile.user_id:
+        u_res = await db.execute(select(User).where(User.id == profile.user_id))
+        user = u_res.scalar_one_or_none()
+
     if user:
         if req.email:
             clean_email = req.email.strip().lower()
@@ -266,17 +284,18 @@ async def reset_staff_password(
     db: AsyncSession = Depends(get_tenant_db),
 ):
     """Directly sets a new password for staff login account."""
-    stmt = (
-        select(StaffProfile)
-        .options(selectinload(StaffProfile.user))
-        .where(StaffProfile.id == staff_id)
-    )
+    stmt = select(StaffProfile).where(StaffProfile.id == staff_id)
     result = await db.execute(stmt)
     profile = result.scalar_one_or_none()
-    if not profile or not profile.user:
-        raise AppException("Staff or user record not found", "STAFF_NOT_FOUND", status.HTTP_404_NOT_FOUND)
+    if not profile or not profile.user_id:
+        raise AppException("Staff record not found", "STAFF_NOT_FOUND", status.HTTP_404_NOT_FOUND)
 
-    profile.user.password_hash = get_password_hash(req.password.strip())
+    u_res = await db.execute(select(User).where(User.id == profile.user_id))
+    user = u_res.scalar_one_or_none()
+    if not user:
+        raise AppException("User login record not found", "USER_NOT_FOUND", status.HTTP_404_NOT_FOUND)
+
+    user.password_hash = get_password_hash(req.password.strip())
     await db.commit()
 
     return success_response(
@@ -329,5 +348,3 @@ async def list_roles(db: AsyncSession = Depends(get_tenant_db)):
     result = await db.execute(stmt)
     roles = result.scalars().all()
     return success_response(data=[{"id": r.id, "name": r.name, "code": r.code} for r in roles])
-
-

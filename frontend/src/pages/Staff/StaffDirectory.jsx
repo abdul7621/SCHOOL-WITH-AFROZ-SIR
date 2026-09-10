@@ -30,6 +30,7 @@ export const StaffDirectory = () => {
   const [designations, setDesignations] = useState([]);
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState('');
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -99,6 +100,7 @@ export const StaffDirectory = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setFetchError('');
     try {
       const [staffRes, deptRes, desigRes, roleRes] = await Promise.all([
         api.get('/staff'),
@@ -112,6 +114,7 @@ export const StaffDirectory = () => {
       if (roleRes.data) setRoles(roleRes.data);
     } catch (err) {
       console.error('Error loading staff directory data:', err);
+      setFetchError(err.message || 'Failed to load staff list from server.');
     } finally {
       setLoading(false);
     }
@@ -420,6 +423,22 @@ export const StaffDirectory = () => {
           </div>
         </div>
       </div>
+
+      {/* Error alert if fetch failed */}
+      {fetchError && (
+        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={16} />
+            <span>{fetchError}</span>
+          </div>
+          <button
+            onClick={loadData}
+            className="px-3 py-1 bg-rose-600 text-white rounded-lg font-semibold hover:bg-rose-500"
+          >
+            Retry Loading
+          </button>
+        </div>
+      )}
 
       {/* Filter & Search Toolbar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
