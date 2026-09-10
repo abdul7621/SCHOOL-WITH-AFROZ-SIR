@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, User, Shield, School, ArrowRight } from 'lucide-react';
+import { Lock, User, Shield, School, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTenant } from '../context/TenantContext';
 
@@ -11,6 +11,7 @@ export const Login = () => {
 
   const [username, setUsername] = useState(() => (tenantSlug === 'sample' ? 'admin@sample.com' : ''));
   const [password, setPassword] = useState(() => (tenantSlug === 'sample' ? 'Admin123!' : ''));
+  const [showPassword, setShowPassword] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -21,14 +22,16 @@ export const Login = () => {
     setLoading(true);
 
     try {
-      const userData = await login(username, password, isSuperAdmin);
+      const cleanUser = username.trim();
+      const cleanPass = password.trim();
+      const userData = await login(cleanUser, cleanPass, isSuperAdmin);
       if (isSuperAdmin || userData?.isSuperAdmin || userData?.role === 'SUPER_ADMIN') {
         navigate('/superadmin');
       } else {
         navigate('/');
       }
     } catch (err) {
-      setError(err.message || 'Login failed. Check credentials.');
+      setError(err.message || 'Invalid credentials or user not found');
     } finally {
       setLoading(false);
     }
@@ -59,7 +62,11 @@ export const Login = () => {
           <div className="flex bg-slate-950 p-1 rounded-lg mb-6 border border-slate-800">
             <button
               type="button"
-              onClick={() => { setIsSuperAdmin(false); setUsername('admin@sample.com'); setPassword('Admin123!'); }}
+              onClick={() => {
+                setIsSuperAdmin(false);
+                setUsername('admin@sample.com');
+                setPassword('Admin123!');
+              }}
               className={`flex-1 py-2 text-xs font-semibold rounded-md transition-all ${
                 !isSuperAdmin ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
               }`}
@@ -68,7 +75,11 @@ export const Login = () => {
             </button>
             <button
               type="button"
-              onClick={() => { setIsSuperAdmin(true); setUsername('superadmin@7aedu.com'); setPassword('AdminSecurePassword123!'); }}
+              onClick={() => {
+                setIsSuperAdmin(true);
+                setUsername('superadmin@7aedu.com');
+                setPassword('AdminSecurePassword123!');
+              }}
               className={`flex-1 py-2 text-xs font-semibold rounded-md transition-all ${
                 isSuperAdmin ? 'bg-amber-600 text-white shadow' : 'text-slate-400 hover:text-white'
               }`}
@@ -78,15 +89,15 @@ export const Login = () => {
           </div>
 
           {error && (
-            <div className="mb-4 bg-red-500/10 border border-red-500/30 text-red-400 text-xs px-3 py-2.5 rounded-lg">
-              {error}
+            <div className="mb-4 bg-red-500/10 border border-red-500/30 text-red-400 text-xs px-3 py-2.5 rounded-lg flex items-center gap-2">
+              <span>{error}</span>
             </div>
           )}
 
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">
-                {isSuperAdmin ? 'Super Admin Email' : 'Username / Email / Phone'}
+                {isSuperAdmin ? 'Super Admin Email' : 'Email / Phone / Employee ID'}
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
@@ -98,7 +109,7 @@ export const Login = () => {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full pl-10 pr-3 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500"
-                  placeholder="Enter username"
+                  placeholder={isSuperAdmin ? 'superadmin@7aedu.com' : 'e.g. email, phone, or EMP ID'}
                 />
               </div>
             </div>
@@ -110,13 +121,21 @@ export const Login = () => {
                   <Lock size={16} />
                 </div>
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-3 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500"
+                  className="w-full pl-10 pr-10 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500"
                   placeholder="••••••••"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300"
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
             </div>
 
@@ -133,11 +152,18 @@ export const Login = () => {
           {/* Quick Demo Credentials Helper */}
           <div className="mt-6 pt-4 border-t border-slate-800 text-[11px] text-slate-400 space-y-1">
             <div className="font-semibold text-slate-300">Quick Test Credentials:</div>
-            <div>Staff: <code className="text-blue-400">admin@sample.7aedu.com</code> / <code className="text-blue-400">SamplePass123!</code></div>
-            <div>Super Admin: <code className="text-blue-400">superadmin@7aedu.com</code> / <code className="text-blue-400">AdminSecurePassword123!</code></div>
+            <div>
+              Default Admin: <code className="text-blue-400">admin@sample.com</code> /{' '}
+              <code className="text-blue-400">Admin123!</code>
+            </div>
+            <div>
+              Super Admin: <code className="text-blue-400">superadmin@7aedu.com</code> /{' '}
+              <code className="text-blue-400">AdminSecurePassword123!</code>
+            </div>
           </div>
         </div>
       </div>
     </div>
   );
 };
+

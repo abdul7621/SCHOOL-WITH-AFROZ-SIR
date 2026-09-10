@@ -1,6 +1,6 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, status
-from sqlalchemy import select
+from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.core.database import get_tenant_db
@@ -14,6 +14,8 @@ from app.modules.staff.schemas import (
     DepartmentCreate,
     DesignationCreate,
     StaffCreateRequest,
+    StaffUpdateRequest,
+    StaffResetPasswordRequest,
 )
 
 router = APIRouter(prefix="/staff", tags=["Staff & Teacher Directory"])
@@ -21,11 +23,11 @@ router = APIRouter(prefix="/staff", tags=["Staff & Teacher Directory"])
 
 @router.get("", dependencies=[Depends(RequirePermission("users:manage"))])
 async def list_staff(db: AsyncSession = Depends(get_tenant_db)):
-    """Lists all staff members with designation and department."""
+    """Lists all staff members with designation, department, and assigned login role."""
     stmt = (
         select(StaffProfile)
         .options(
-            selectinload(StaffProfile.user),
+            selectinload(StaffProfile.user).selectinload(User.roles),
             selectinload(StaffProfile.designation),
             selectinload(StaffProfile.department),
         )
@@ -40,17 +42,67 @@ async def list_staff(db: AsyncSession = Depends(get_tenant_db)):
                 "id": s.id,
                 "user_id": s.user_id,
                 "employee_id": s.employee_id,
+                "first_name": s.first_name,
+                "last_name": s.last_name,
                 "full_name": f"{s.first_name} {s.last_name or ''}".strip(),
                 "email": s.user.email if s.user else None,
                 "phone": s.user.phone if s.user else None,
+                "designation_id": s.designation_id,
                 "designation": s.designation.title if s.designation else None,
+                "department_id": s.department_id,
                 "department": s.department.name if s.department else None,
+                "role_id": s.user.roles[0].id if (s.user and s.user.roles) else None,
+                "role_name": s.user.roles[0].name if (s.user and s.user.roles) else None,
+                "role_code": s.user.roles[0].code if (s.user and s.user.roles) else None,
                 "qualification": s.qualification,
                 "joining_date": str(s.joining_date),
+                "emergency_contact": s.emergency_contact,
                 "is_active": s.is_active,
             }
             for s in staff_list
         ]
+    )
+
+
+@router.get("/{staff_id}", dependencies=[Depends(RequirePermission("users:manage"))])
+async def get_staff(staff_id: str, db: AsyncSession = Depends(get_tenant_db)):
+    """Retrieves full details for a single staff member."""
+    stmt = (
+        select(StaffProfile)
+        .options(
+            selectinload(StaffProfile.user).selectinload(User.roles),
+            selectinload(StaffProfile.designation),
+            selectinload(StaffProfile.department),
+        )
+        .where(StaffProfile.id == staff_id)
+    )
+    result = await db.execute(stmt)
+    s = result.scalar_one_or_none()
+    if not s:
+        raise AppException("Staff member not found", "STAFF_NOT_FOUND", status.HTTP_404_NOT_FOUND)
+
+    return success_response(
+        data={
+            "id": s.id,
+            "user_id": s.user_id,
+            "employee_id": s.employee_id,
+            "first_name": s.first_name,
+            "last_name": s.last_name,
+            "full_name": f"{s.first_name} {s.last_name or ''}".strip(),
+            "email": s.user.email if s.user else None,
+            "phone": s.user.phone if s.user else None,
+            "designation_id": s.designation_id,
+            "designation": s.designation.title if s.designation else None,
+            "department_id": s.department_id,
+            "department": s.department.name if s.department else None,
+            "role_id": s.user.roles[0].id if (s.user and s.user.roles) else None,
+            "role_name": s.user.roles[0].name if (s.user and s.user.roles) else None,
+            "role_code": s.user.roles[0].code if (s.user and s.user.roles) else None,
+            "qualification": s.qualification,
+            "joining_date": str(s.joining_date),
+            "emergency_contact": s.emergency_contact,
+            "is_active": s.is_active,
+        }
     )
 
 
@@ -60,19 +112,29 @@ async def create_staff(req: StaffCreateRequest, db: AsyncSession = Depends(get_t
     Creates a new staff login user account, links to specified role,
     and initializes their StaffProfile record.
     """
+    clean_email = req.email.strip().lower()
+    clean_phone = req.phone.strip()
+
     # 1. Check duplicate username/email/phone
     existing_user = await db.execute(
-        select(User).where((User.email == req.email) | (User.phone == req.phone))
+        select(User).where((func.lower(User.email) == clean_email) | (User.phone == clean_phone))
     )
     if existing_user.scalar_one_or_none():
         raise AppException("User with this email or phone number already exists", "USER_ALREADY_EXISTS")
 
+    # Check duplicate employee_id
+    existing_emp = await db.execute(
+        select(StaffProfile).where(StaffProfile.employee_id == req.employee_id.strip())
+    )
+    if existing_emp.scalar_one_or_none():
+        raise AppException("Staff member with this Employee ID already exists", "EMPLOYEE_ID_ALREADY_EXISTS")
+
     # 2. Create User Login
     user = User(
-        username=req.email,
-        email=req.email,
-        phone=req.phone,
-        password_hash=get_password_hash(req.password),
+        username=clean_email,
+        email=clean_email,
+        phone=clean_phone,
+        password_hash=get_password_hash(req.password.strip()),
         user_type="STAFF",
         is_active=True,
     )
@@ -86,14 +148,14 @@ async def create_staff(req: StaffCreateRequest, db: AsyncSession = Depends(get_t
     # 4. Create StaffProfile
     profile = StaffProfile(
         user_id=user.id,
-        employee_id=req.employee_id,
-        first_name=req.first_name,
-        last_name=req.last_name,
+        employee_id=req.employee_id.strip(),
+        first_name=req.first_name.strip(),
+        last_name=req.last_name.strip() if req.last_name else None,
         designation_id=req.designation_id,
         department_id=req.department_id,
-        qualification=req.qualification,
+        qualification=req.qualification.strip() if req.qualification else None,
         joining_date=req.joining_date,
-        emergency_contact=req.emergency_contact,
+        emergency_contact=req.emergency_contact.strip() if req.emergency_contact else None,
         is_active=True,
     )
     db.add(profile)
@@ -104,6 +166,121 @@ async def create_staff(req: StaffCreateRequest, db: AsyncSession = Depends(get_t
     return success_response(
         data={"id": profile.id, "employee_id": profile.employee_id, "user_id": user.id},
         message=f"Staff member '{profile.first_name}' created successfully",
+    )
+
+
+@router.put("/{staff_id}", dependencies=[Depends(RequirePermission("users:manage"))])
+async def update_staff(
+    staff_id: str,
+    req: StaffUpdateRequest,
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Updates staff member details, user account login information, role, and active status."""
+    stmt = (
+        select(StaffProfile)
+        .options(
+            selectinload(StaffProfile.user).selectinload(User.roles),
+            selectinload(StaffProfile.designation),
+            selectinload(StaffProfile.department),
+        )
+        .where(StaffProfile.id == staff_id)
+    )
+    result = await db.execute(stmt)
+    profile = result.scalar_one_or_none()
+    if not profile:
+        raise AppException("Staff member not found", "STAFF_NOT_FOUND", status.HTTP_404_NOT_FOUND)
+
+    user = profile.user
+    if user:
+        if req.email:
+            clean_email = req.email.strip().lower()
+            if clean_email != (user.email or "").lower():
+                dup = await db.execute(
+                    select(User).where(func.lower(User.email) == clean_email, User.id != user.id)
+                )
+                if dup.scalar_one_or_none():
+                    raise AppException("User with this email already exists", "EMAIL_EXISTS")
+                user.email = clean_email
+                user.username = clean_email
+
+        if req.phone:
+            clean_phone = req.phone.strip()
+            if clean_phone != user.phone:
+                dup = await db.execute(
+                    select(User).where(User.phone == clean_phone, User.id != user.id)
+                )
+                if dup.scalar_one_or_none():
+                    raise AppException("User with this phone number already exists", "PHONE_EXISTS")
+                user.phone = clean_phone
+
+        if req.password:
+            user.password_hash = get_password_hash(req.password.strip())
+
+        if req.is_active is not None:
+            user.is_active = req.is_active
+
+        if req.role_id:
+            await db.execute(delete(UserRole).where(UserRole.user_id == user.id))
+            db.add(UserRole(user_id=user.id, role_id=req.role_id))
+
+    if req.employee_id:
+        clean_emp = req.employee_id.strip()
+        if clean_emp != profile.employee_id:
+            dup = await db.execute(
+                select(StaffProfile).where(StaffProfile.employee_id == clean_emp, StaffProfile.id != profile.id)
+            )
+            if dup.scalar_one_or_none():
+                raise AppException("Employee ID already exists", "EMPLOYEE_ID_EXISTS")
+            profile.employee_id = clean_emp
+
+    if req.first_name is not None:
+        profile.first_name = req.first_name.strip()
+    if req.last_name is not None:
+        profile.last_name = req.last_name.strip() if req.last_name else None
+    if req.designation_id is not None:
+        profile.designation_id = req.designation_id
+    if req.department_id is not None:
+        profile.department_id = req.department_id
+    if req.qualification is not None:
+        profile.qualification = req.qualification.strip() if req.qualification else None
+    if req.joining_date is not None:
+        profile.joining_date = req.joining_date
+    if req.emergency_contact is not None:
+        profile.emergency_contact = req.emergency_contact.strip() if req.emergency_contact else None
+    if req.is_active is not None:
+        profile.is_active = req.is_active
+
+    await db.commit()
+    await db.refresh(profile)
+
+    return success_response(
+        data={"id": profile.id, "employee_id": profile.employee_id},
+        message=f"Staff member '{profile.first_name}' updated successfully",
+    )
+
+
+@router.put("/{staff_id}/reset-password", dependencies=[Depends(RequirePermission("users:manage"))])
+async def reset_staff_password(
+    staff_id: str,
+    req: StaffResetPasswordRequest,
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Directly sets a new password for staff login account."""
+    stmt = (
+        select(StaffProfile)
+        .options(selectinload(StaffProfile.user))
+        .where(StaffProfile.id == staff_id)
+    )
+    result = await db.execute(stmt)
+    profile = result.scalar_one_or_none()
+    if not profile or not profile.user:
+        raise AppException("Staff or user record not found", "STAFF_NOT_FOUND", status.HTTP_404_NOT_FOUND)
+
+    profile.user.password_hash = get_password_hash(req.password.strip())
+    await db.commit()
+
+    return success_response(
+        message=f"Password for {profile.first_name} has been reset successfully",
     )
 
 
@@ -119,7 +296,7 @@ async def list_departments(db: AsyncSession = Depends(get_tenant_db)):
 @router.post("/departments", dependencies=[Depends(RequirePermission("users:manage"))])
 async def create_department(req: DepartmentCreate, db: AsyncSession = Depends(get_tenant_db)):
     """Creates a new department."""
-    dep = Department(name=req.name, code=req.code.upper())
+    dep = Department(name=req.name.strip(), code=req.code.strip().upper())
     db.add(dep)
     await db.commit()
     await db.refresh(dep)
@@ -138,7 +315,7 @@ async def list_designations(db: AsyncSession = Depends(get_tenant_db)):
 @router.post("/designations", dependencies=[Depends(RequirePermission("users:manage"))])
 async def create_designation(req: DesignationCreate, db: AsyncSession = Depends(get_tenant_db)):
     """Creates a new designation."""
-    desig = Designation(title=req.title, code=req.code.upper())
+    desig = Designation(title=req.title.strip(), code=req.code.strip().upper())
     db.add(desig)
     await db.commit()
     await db.refresh(desig)
@@ -152,4 +329,5 @@ async def list_roles(db: AsyncSession = Depends(get_tenant_db)):
     result = await db.execute(stmt)
     roles = result.scalars().all()
     return success_response(data=[{"id": r.id, "name": r.name, "code": r.code} for r in roles])
+
 

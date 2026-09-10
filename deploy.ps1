@@ -7,7 +7,6 @@
 .EXAMPLE
     .\deploy.ps1
     .\deploy.ps1 "fix fee receipt styling"
-    .\deploy.ps1 -Fast
     .\deploy.ps1 -Status
     .\deploy.ps1 -Logs
 #>
@@ -26,7 +25,7 @@ $VPS_IP = "187.127.176.21"
 $VPS_DIR = "/var/www/school-erp"
 
 Write-Host "==========================================================================" -ForegroundColor Cyan
-Write-Host "         🚀 7A SCHOOL ERP: 1-CLICK PRODUCTION DEPLOYMENT ENGINE         " -ForegroundColor Green
+Write-Host "         >>> 7A SCHOOL ERP: 1-CLICK PRODUCTION DEPLOYMENT ENGINE <<<      " -ForegroundColor Green
 Write-Host "==========================================================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -51,7 +50,7 @@ if ($VerifyRestore) {
 }
 
 # Step 1: Check Local Git Status
-Write-Host "[1/3] 🔍 Inspecting local changes..." -ForegroundColor Yellow
+Write-Host "[1/3] Inspecting local changes..." -ForegroundColor Yellow
 git status --short
 Write-Host ""
 
@@ -63,19 +62,19 @@ if ($LASTEXITCODE -ne 0) {
         $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm")
         $Message = "deploy update ($timestamp)"
     }
-    Write-Host "💾 Committing local changes: `"$Message`"" -ForegroundColor Green
+    Write-Host "Committing local changes: $Message" -ForegroundColor Green
     git commit -m "$Message"
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Git commit failed!"
         exit 1
     }
 } else {
-    Write-Host "ℹ️ No uncommitted local changes detected. Proceeding with existing commits..." -ForegroundColor Gray
+    Write-Host "No uncommitted local changes detected. Proceeding with existing commits..." -ForegroundColor Gray
 }
 
 # Step 2: Push to GitHub
 Write-Host ""
-Write-Host "[2/3] 📤 Pushing to GitHub (origin/main)..." -ForegroundColor Yellow
+Write-Host "[2/3] Pushing to GitHub (origin/main)..." -ForegroundColor Yellow
 git push origin main
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Git push failed! Please check your network or git credentials."
@@ -84,7 +83,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # Step 3: Trigger VPS Deployment
 Write-Host ""
-Write-Host "[3/3] 🚀 Connecting to VPS ($VPS_IP) and executing deployment pipeline..." -ForegroundColor Yellow
+Write-Host "[3/3] Connecting to VPS ($VPS_IP) and executing deployment pipeline..." -ForegroundColor Yellow
 ssh -o ServerAliveInterval=60 root@$VPS_IP "cd $VPS_DIR && git checkout -- . && git pull origin main && chmod +x deploy.sh && bash deploy.sh $ServerFlag"
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
@@ -96,7 +95,7 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "==========================================================================" -ForegroundColor Cyan
-Write-Host "    🎉 DEPLOYMENT FINISHED SUCCESSFULLY!" -ForegroundColor Green
+Write-Host "    >>> DEPLOYMENT FINISHED SUCCESSFULLY! <<<" -ForegroundColor Green
 Write-Host "    Live Application: http://$VPS_IP" -ForegroundColor White
 Write-Host "    API Health      : http://$VPS_IP/api/health" -ForegroundColor White
 Write-Host "==========================================================================" -ForegroundColor Cyan

@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 echo ==========================================================================
-echo         🚀 7A SCHOOL ERP: 1-CLICK PRODUCTION DEPLOYMENT ENGINE
+echo         7A SCHOOL ERP: 1-CLICK PRODUCTION DEPLOYMENT ENGINE
 echo ==========================================================================
 echo.
 
@@ -37,7 +37,7 @@ if "%COMMIT_MSG%"=="" (
 )
 
 :: Step 1: Check Git Status
-echo [1/3] 🔍 Inspecting local changes...
+echo [1/3] Inspecting local changes...
 git status --short
 echo.
 
@@ -47,19 +47,19 @@ git add -A
 :: Check if there are staged changes to commit
 git diff --cached --quiet
 if errorlevel 1 (
-    echo 💾 Committing local changes: "!COMMIT_MSG!"
+    echo Committing local changes: "!COMMIT_MSG!"
     git commit -m "!COMMIT_MSG!"
     if errorlevel 1 (
         echo [ERROR] Git commit failed!
         exit /b 1
     )
 ) else (
-    echo ℹ️ No uncommitted local changes. Proceeding with existing commits...
+    echo No uncommitted local changes. Proceeding with existing commits...
 )
 
 :: Step 2: Push to GitHub
 echo.
-echo [2/3] 📤 Pushing to GitHub [origin/main]...
+echo [2/3] Pushing to GitHub [origin/main]...
 git push origin main
 if errorlevel 1 (
     echo.
@@ -69,7 +69,7 @@ if errorlevel 1 (
 
 :: Step 3: Trigger VPS Deployment
 echo.
-echo [3/3] 🚀 Connecting to VPS (%VPS_IP%) and executing deployment pipeline...
+echo [3/3] Connecting to VPS (%VPS_IP%) and executing deployment pipeline...
 ssh -o ServerAliveInterval=60 root@%VPS_IP% "cd %VPS_DIR% && git checkout -- . && git pull origin main && chmod +x deploy.sh && bash deploy.sh %SERVER_FLAG%"
 if errorlevel 1 (
     echo.
@@ -81,7 +81,7 @@ if errorlevel 1 (
 
 echo.
 echo ==========================================================================
-echo    🎉 DEPLOYMENT FINISHED SUCCESSFULLY!
+echo    DEPLOYMENT FINISHED SUCCESSFULLY!
 echo    Live Application: http://%VPS_IP%
 echo    API Health      : http://%VPS_IP%/api/health
 echo ==========================================================================
