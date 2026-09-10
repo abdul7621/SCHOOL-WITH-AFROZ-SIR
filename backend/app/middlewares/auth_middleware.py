@@ -36,7 +36,11 @@ async def get_current_user(
 
     # Invariant: Token tenant must strictly match request tenant
     if request_tenant_slug and token_tenant_slug != request_tenant_slug:
-        raise PermissionDeniedException(f"Token is valid for tenant '{token_tenant_slug}', not '{request_tenant_slug}'")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"message": f"Session belongs to school '{token_tenant_slug}', not '{request_tenant_slug}'. Please log in.", "error_code": "TENANT_MISMATCH"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     user_id = payload.get("sub")
     if not user_id:

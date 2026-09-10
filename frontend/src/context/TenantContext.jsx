@@ -48,8 +48,9 @@ export const TenantProvider = ({ children }) => {
 
   const switchTenant = (slug) => {
     localStorage.setItem('tenant_slug', slug);
-    setTenantSlug(slug);
-    window.location.reload();
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    window.location.href = `/login?tenant=${slug}`;
   };
 
   return (
