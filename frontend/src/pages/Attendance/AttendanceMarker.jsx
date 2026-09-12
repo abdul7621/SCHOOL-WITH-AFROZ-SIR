@@ -246,6 +246,21 @@ export const AttendanceMarker = () => {
           {/* Filter Bar */}
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-4 text-xs font-medium">
             <div>
+              <label className="block text-slate-500 mb-1">Academic Session</label>
+              <select
+                value={academicYearId}
+                onChange={(e) => setAcademicYearId(e.target.value)}
+                className="border border-slate-200 rounded-lg px-3 py-1.5 bg-slate-50 font-semibold text-slate-800"
+              >
+                {academicYears.map((y) => (
+                  <option key={y.id} value={y.id}>
+                    {y.name} {y.is_current ? '(Current)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
               <label className="block text-slate-500 mb-1">Date</label>
               <input
                 type="date"
@@ -276,7 +291,9 @@ export const AttendanceMarker = () => {
                 className="border border-slate-200 rounded-lg px-3 py-1.5 bg-slate-50 font-semibold text-slate-800"
               >
                 {(classes.find((c) => c.id === selectedClass)?.sections || []).map((s) => (
-                  <option key={s.id} value={s.id}>Section {s.name}</option>
+                  <option key={s.id} value={s.id}>
+                    {s.name.toLowerCase().startsWith('section') ? s.name : `Section ${s.name}`}
+                  </option>
                 ))}
               </select>
             </div>

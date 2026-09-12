@@ -4,7 +4,7 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.modules.students.models import Student, StudentEnrollment
-from app.modules.academics.models import ClassLevel, Section
+from app.modules.academics.models import ClassLevel, Section, AcademicYear
 from app.modules.lookups.models import LookupCategory, LookupValue
 from app.modules.attendance.models import AttendanceSession, StudentDailyAttendance
 from app.modules.attendance.schemas import SubmitAttendanceRequest
@@ -14,7 +14,7 @@ class AttendanceService:
     @classmethod
     async def get_class_roster_for_date(
         cls,
-        academic_year_id: str,
+        academic_year_id: Optional[str],
         class_id: str,
         section_id: str,
         attendance_date: date,
@@ -29,27 +29,52 @@ class AttendanceService:
             select(Student, StudentEnrollment)
             .join(StudentEnrollment, Student.id == StudentEnrollment.student_id)
             .where(
-                StudentEnrollment.academic_year_id == academic_year_id,
                 StudentEnrollment.class_id == class_id,
                 StudentEnrollment.section_id == section_id,
                 StudentEnrollment.is_active == True,
             )
-            .order_by(StudentEnrollment.roll_no.asc(), Student.first_name.asc())
         )
+        if academic_year_id:
+            stmt = stmt.where(StudentEnrollment.academic_year_id == academic_year_id)
+
+        stmt = stmt.order_by(StudentEnrollment.roll_no.asc(), Student.first_name.asc())
         result = await db.execute(stmt)
         enrolled_students = result.all()
+
+        # Fallback: if no students found with specified session, find any active enrollment in this class & section
+        if not enrolled_students and academic_year_id:
+            fb_stmt = (
+                select(Student, StudentEnrollment)
+                .join(StudentEnrollment, Student.id == StudentEnrollment.student_id)
+                .where(
+                    StudentEnrollment.class_id == class_id,
+                    StudentEnrollment.section_id == section_id,
+                    StudentEnrollment.is_active == True,
+                )
+                .order_by(StudentEnrollment.roll_no.asc(), Student.first_name.asc())
+            )
+            fb_res = await db.execute(fb_stmt)
+            enrolled_students = fb_res.all()
+            if enrolled_students:
+                academic_year_id = enrolled_students[0][1].academic_year_id
+
+        if not academic_year_id:
+            curr_ay = (await db.execute(select(AcademicYear).where(AcademicYear.is_current == True))).scalar_one_or_none()
+            academic_year_id = curr_ay.id if curr_ay else None
 
         # 2. Check if an AttendanceSession already exists
         sess_stmt = (
             select(AttendanceSession)
             .options(selectinload(AttendanceSession.records))
             .where(
-                AttendanceSession.academic_year_id == academic_year_id,
                 AttendanceSession.class_id == class_id,
                 AttendanceSession.section_id == section_id,
                 AttendanceSession.attendance_date == attendance_date,
             )
         )
+        if academic_year_id:
+            sess_stmt = sess_stmt.where(AttendanceSession.academic_year_id == academic_year_id)
+
         sess_result = await db.execute(sess_stmt)
         existing_session = sess_result.scalar_one_or_none()
 
