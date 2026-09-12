@@ -64,10 +64,12 @@ export const AttendanceMarker = () => {
   }, []);
 
   // Fetch Roster
-  const loadRoster = async () => {
+  const loadRoster = async (keepMessage = false) => {
     if (!selectedClass || !selectedSection || !academicYearId) return;
     setLoading(true);
-    setSuccessMsg('');
+    if (!keepMessage) {
+      setSuccessMsg('');
+    }
     try {
       const res = await api.get('/attendance/roster', {
         params: {
@@ -96,6 +98,7 @@ export const AttendanceMarker = () => {
   };
 
   const handleClassChange = (classId) => {
+    setSuccessMsg('');
     setSelectedClass(classId);
     const cls = classes.find((c) => c.id === classId);
     if (cls && cls.sections && cls.sections.length > 0) {
@@ -137,8 +140,7 @@ export const AttendanceMarker = () => {
       };
       await api.post('/attendance/submit', payload);
       setSuccessMsg('Attendance marked & saved successfully!');
-      setTimeout(() => setSuccessMsg(''), 4000);
-      loadRoster();
+      await loadRoster(true);
     } catch (e) {
       alert('Failed to save attendance: ' + (e.response?.data?.message || e.message));
     } finally {
