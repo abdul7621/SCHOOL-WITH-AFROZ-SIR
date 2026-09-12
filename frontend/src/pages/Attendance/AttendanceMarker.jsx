@@ -131,14 +131,16 @@ export const AttendanceMarker = () => {
         attendance_date: attendanceDate,
         records: roster.map((s) => ({
           student_id: s.student_id,
-          attendance_status_id: statusMap[s.status_code] || s.attendance_status_id || Object.values(statusMap)[0],
+          attendance_status_id: statusMap[s.status_code] || s.current_status_id || s.attendance_status_id || s.status_code || 'PRESENT',
           remarks: s.remarks || undefined,
         })),
       };
       await api.post('/attendance/submit', payload);
       setSuccessMsg('Attendance marked & saved successfully!');
+      setTimeout(() => setSuccessMsg(''), 4000);
+      loadRoster();
     } catch (e) {
-      alert('Failed to save attendance: ' + e.message);
+      alert('Failed to save attendance: ' + (e.response?.data?.message || e.message));
     } finally {
       setSaving(false);
     }

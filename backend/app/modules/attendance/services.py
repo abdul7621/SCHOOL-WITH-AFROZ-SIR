@@ -63,14 +63,10 @@ class AttendanceService:
             academic_year_id = curr_ay.id if curr_ay else None
 
         # 2. Check if an AttendanceSession already exists
-        sess_stmt = (
-            select(AttendanceSession)
-            .options(selectinload(AttendanceSession.records))
-            .where(
-                AttendanceSession.class_id == class_id,
-                AttendanceSession.section_id == section_id,
-                AttendanceSession.attendance_date == attendance_date,
-            )
+        sess_stmt = select(AttendanceSession).where(
+            AttendanceSession.class_id == class_id,
+            AttendanceSession.section_id == section_id,
+            AttendanceSession.attendance_date == attendance_date,
         )
         if academic_year_id:
             sess_stmt = sess_stmt.where(AttendanceSession.academic_year_id == academic_year_id)
@@ -80,7 +76,9 @@ class AttendanceService:
 
         marked_map = {}
         if existing_session:
-            for rec in existing_session.records:
+            rec_stmt = select(StudentDailyAttendance).where(StudentDailyAttendance.session_id == existing_session.id)
+            rec_res = await db.execute(rec_stmt)
+            for rec in rec_res.scalars().all():
                 marked_map[rec.student_id] = {
                     "attendance_status_id": rec.attendance_status_id,
                     "remarks": rec.remarks,
@@ -138,15 +136,31 @@ class AttendanceService:
         """
         Atomically saves or updates the daily attendance session and all student records.
         """
-        sess_stmt = (
-            select(AttendanceSession)
-            .options(selectinload(AttendanceSession.records))
-            .where(
-                AttendanceSession.academic_year_id == req.academic_year_id,
-                AttendanceSession.class_id == req.class_id,
-                AttendanceSession.section_id == req.section_id,
-                AttendanceSession.attendance_date == req.attendance_date,
-            )
+        # Ensure ATTENDANCE_STATUS lookups are loaded
+        from app.modules.lookups.services import LookupService
+        await LookupService.ensure_system_lookups(db)
+
+        att_cat = (await db.execute(select(LookupCategory).where(LookupCategory.code == "ATTENDANCE_STATUS"))).scalar_one_or_none()
+        status_map_by_id = {}
+        status_map_by_code = {}
+        default_status_id = None
+
+        if att_cat:
+            v_res = await db.execute(select(LookupValue).where(LookupValue.category_id == att_cat.id, LookupValue.is_active == True))
+            for v in v_res.scalars().all():
+                status_map_by_id[v.id] = v
+                status_map_by_code[v.code.upper()] = v.id
+                if v.code == "PRESENT":
+                    default_status_id = v.id
+        if not default_status_id and status_map_by_id:
+            default_status_id = list(status_map_by_id.keys())[0]
+
+        # 1. Find or create AttendanceSession
+        sess_stmt = select(AttendanceSession).where(
+            AttendanceSession.academic_year_id == req.academic_year_id,
+            AttendanceSession.class_id == req.class_id,
+            AttendanceSession.section_id == req.section_id,
+            AttendanceSession.attendance_date == req.attendance_date,
         )
         result = await db.execute(sess_stmt)
         session = result.scalar_one_or_none()
@@ -162,26 +176,41 @@ class AttendanceService:
             )
             db.add(session)
             await db.flush()
+        else:
+            session.marked_by_user_id = marked_by_user_id
+            session.status = "SUBMITTED"
 
-        # Update / Insert records
-        existing_records_map = {r.student_id: r for r in session.records}
+        # 2. Update / Insert records with direct SQL queries (100% greenlet safe)
+        rec_stmt = select(StudentDailyAttendance).where(StudentDailyAttendance.session_id == session.id)
+        rec_res = await db.execute(rec_stmt)
+        existing_records = rec_res.scalars().all()
+        existing_records_map = {r.student_id: r for r in existing_records}
 
         for item in req.records:
+            status_id = item.attendance_status_id
+            if status_id not in status_map_by_id:
+                if status_id and str(status_id).upper() in status_map_by_code:
+                    status_id = status_map_by_code[str(status_id).upper()]
+                else:
+                    status_id = default_status_id
+
+            if not status_id:
+                continue
+
             if item.student_id in existing_records_map:
                 record = existing_records_map[item.student_id]
-                record.attendance_status_id = item.attendance_status_id
+                record.attendance_status_id = status_id
                 record.remarks = item.remarks
             else:
                 record = StudentDailyAttendance(
                     session_id=session.id,
                     student_id=item.student_id,
-                    attendance_status_id=item.attendance_status_id,
+                    attendance_status_id=status_id,
                     remarks=item.remarks,
                 )
                 db.add(record)
 
         await db.commit()
-        await db.refresh(session)
         return session
 
     @classmethod
