@@ -75,19 +75,8 @@ export const ParentDashboard = () => {
           setChildren(res.data);
           setSelectedChildId(res.data[0].student_id);
         } else {
-          // Fallback sample data if parent has no linked records yet
-          const fallback = [
-            {
-              student_id: 'st_01',
-              student_name: 'Zaid Khan',
-              admission_no: 'ADM-2026-0001',
-              class_name: 'Class 8',
-              section_name: 'Section A',
-              roll_no: 12,
-            },
-          ];
-          setChildren(fallback);
-          setSelectedChildId('st_01');
+          setChildren([]);
+          setSelectedChildId('');
         }
       } catch (err) {
         console.error('Error fetching parent children:', err);

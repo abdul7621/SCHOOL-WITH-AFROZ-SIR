@@ -1165,7 +1165,7 @@ export const ClassesAndSessions = () => {
                 >
                   {(classes.find((c) => c.id === homeworkClassId)?.sections || []).map((sec) => (
                     <option key={sec.id} value={sec.id}>
-                      Section {sec.name}
+                      {sec.name.toLowerCase().startsWith('section') ? sec.name : `Section ${sec.name}`}
                     </option>
                   ))}
                 </select>

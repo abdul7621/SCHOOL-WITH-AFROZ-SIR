@@ -165,4 +165,33 @@ class LookupService:
                     db.add(RolePermission(role_id=r_obj.id, permission_id=p_obj.id))
                     existing_rp_set.add((r_obj.id, p_obj.id))
 
+        # 9. Self-heal Parent User Accounts for existing parents
+        from app.core.security import get_password_hash
+        from app.modules.students.models import Parent
+        from app.modules.users_rbac.models import User, UserRole
+
+        unlinked_parents = (await db.execute(select(Parent).where(Parent.user_id == None))).scalars().all()
+        parent_role_obj = role_objects.get("PARENT")
+
+        for p_rec in unlinked_parents:
+            phone_clean = str(p_rec.primary_phone).strip()
+            if not phone_clean:
+                continue
+            u_ex = (await db.execute(select(User).where(User.phone == phone_clean))).scalar_one_or_none()
+            if not u_ex:
+                u_ex = User(
+                    username=phone_clean,
+                    phone=phone_clean,
+                    email=p_rec.email,
+                    password_hash=get_password_hash("Parent@123"),
+                    user_type="PARENT",
+                    is_active=True,
+                )
+                db.add(u_ex)
+                await db.flush()
+                if parent_role_obj:
+                    db.add(UserRole(user_id=u_ex.id, role_id=parent_role_obj.id))
+                    await db.flush()
+            p_rec.user_id = u_ex.id
+
         await db.commit()

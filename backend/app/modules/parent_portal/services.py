@@ -20,7 +20,20 @@ from app.modules.staff.models import StaffProfile
 class ParentPortalService:
     @staticmethod
     async def _verify_parent_access(parent_user_id: str, student_id: str, db: AsyncSession) -> Student:
-        """Security Guard: Ensures the authenticated parent is strictly the guardian of this student."""
+        """Security Guard: Ensures the authenticated user has access (Parents see their own child, Staff can preview any student)."""
+        from app.modules.users_rbac.models import User, Role, UserRole
+        role_stmt = (
+            select(Role.code)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(UserRole.user_id == parent_user_id)
+        )
+        roles = (await db.execute(role_stmt)).scalars().all()
+        if any(r in ["ADMIN", "PRINCIPAL", "TEACHER", "SUPERADMIN"] for r in roles):
+            student_res = await db.execute(select(Student).where(Student.id == student_id))
+            st = student_res.scalar_one_or_none()
+            if st:
+                return st
+
         stmt = (
             select(Student)
             .join(Parent, Student.parent_id == Parent.id)
@@ -37,18 +50,39 @@ class ParentPortalService:
 
     @classmethod
     async def get_parent_children(cls, parent_user_id: str, db: AsyncSession) -> List[Dict[str, Any]]:
-        """Multi-child switcher: Retrieves all children enrolled under this parent."""
-        stmt = (
-            select(Student, Parent, StudentEnrollment, ClassLevel, Section)
-            .join(Parent, Student.parent_id == Parent.id)
-            .join(StudentEnrollment, Student.id == StudentEnrollment.student_id)
-            .join(ClassLevel, StudentEnrollment.class_id == ClassLevel.id)
-            .join(Section, StudentEnrollment.section_id == Section.id)
-            .where(
-                Parent.user_id == parent_user_id,
-                StudentEnrollment.is_active == True,
-            )
+        """Multi-child switcher: Retrieves all children enrolled under this parent (or all students for Staff preview)."""
+        from app.modules.users_rbac.models import User, Role, UserRole
+        role_stmt = (
+            select(Role.code)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(UserRole.user_id == parent_user_id)
         )
+        roles = (await db.execute(role_stmt)).scalars().all()
+        is_staff = any(r in ["ADMIN", "PRINCIPAL", "TEACHER", "SUPERADMIN"] for r in roles)
+
+        if is_staff:
+            stmt = (
+                select(Student, Parent, StudentEnrollment, ClassLevel, Section)
+                .join(Parent, Student.parent_id == Parent.id)
+                .join(StudentEnrollment, Student.id == StudentEnrollment.student_id)
+                .join(ClassLevel, StudentEnrollment.class_id == ClassLevel.id)
+                .join(Section, StudentEnrollment.section_id == Section.id)
+                .where(StudentEnrollment.is_active == True)
+                .order_by(ClassLevel.numeric_order.asc(), StudentEnrollment.roll_no.asc())
+            )
+        else:
+            stmt = (
+                select(Student, Parent, StudentEnrollment, ClassLevel, Section)
+                .join(Parent, Student.parent_id == Parent.id)
+                .join(StudentEnrollment, Student.id == StudentEnrollment.student_id)
+                .join(ClassLevel, StudentEnrollment.class_id == ClassLevel.id)
+                .join(Section, StudentEnrollment.section_id == Section.id)
+                .where(
+                    Parent.user_id == parent_user_id,
+                    StudentEnrollment.is_active == True,
+                )
+                .order_by(StudentEnrollment.roll_no.asc())
+            )
         res = await db.execute(stmt)
         rows = res.all()
 

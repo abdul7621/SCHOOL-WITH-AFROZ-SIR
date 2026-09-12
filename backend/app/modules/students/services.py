@@ -45,14 +45,35 @@ class StudentService:
         from app.modules.lookups.services import LookupService
         await LookupService.ensure_system_lookups(db)
 
-        # 1. Check/Create Parent
+        # 1. Check/Create Parent & User Account
+        from app.core.security import get_password_hash
+        from app.modules.users_rbac.models import User, Role, UserRole
+
         phone = str(req.parent.primary_phone).strip()
         parent_stmt = select(Parent).where(Parent.primary_phone == phone)
         parent_result = await db.execute(parent_stmt)
         parent = parent_result.scalar_one_or_none()
 
+        parent_user = (await db.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
+        if not parent_user:
+            parent_role = (await db.execute(select(Role).where(Role.code == "PARENT"))).scalar_one_or_none()
+            parent_user = User(
+                username=phone,
+                phone=phone,
+                email=req.parent.email if req.parent.email else None,
+                password_hash=get_password_hash("Parent@123"),
+                user_type="PARENT",
+                is_active=True,
+            )
+            db.add(parent_user)
+            await db.flush()
+            if parent_role:
+                db.add(UserRole(user_id=parent_user.id, role_id=parent_role.id))
+                await db.flush()
+
         if not parent:
             parent = Parent(
+                user_id=parent_user.id if parent_user else None,
                 father_name=req.parent.father_name.strip(),
                 mother_name=req.parent.mother_name.strip() if req.parent.mother_name else None,
                 primary_phone=phone,
@@ -63,6 +84,9 @@ class StudentService:
                 mother_occupation=req.parent.mother_occupation.strip() if req.parent.mother_occupation else None,
             )
             db.add(parent)
+            await db.flush()
+        elif not parent.user_id and parent_user:
+            parent.user_id = parent_user.id
             await db.flush()
 
         # 2. Get/Validate Status
