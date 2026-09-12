@@ -113,7 +113,15 @@ export const Sidebar = () => {
             <div className={`text-[10px] uppercase tracking-wider font-bold ${
               isSuperAdmin ? 'text-amber-400' : 'text-blue-400'
             }`}>
-              {isSuperAdmin ? '👑 Super Admin' : '🎓 School Principal'}
+              {isSuperAdmin
+                ? '👑 Super Admin'
+                : user?.roles?.includes('ADMIN') || user?.roles?.includes('PRINCIPAL') || user?.role === 'PRINCIPAL'
+                ? '🎓 School Principal'
+                : user?.roles?.includes('TEACHER')
+                ? '👨‍🏫 Teaching Faculty'
+                : user?.roles?.includes('ACCOUNTANT') || user?.roles?.includes('CASHIER')
+                ? '💳 Fee Cashier'
+                : `💼 ${user?.roles?.[0] || user?.role || 'Staff'}`}
             </div>
           </div>
         </div>
