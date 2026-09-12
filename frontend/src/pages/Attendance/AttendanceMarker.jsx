@@ -35,9 +35,11 @@ export const AttendanceMarker = () => {
 
         if (clsRes.data && clsRes.data.length > 0) {
           setClasses(clsRes.data);
-          setSelectedClass(clsRes.data[0].id);
-          if (clsRes.data[0].sections?.length > 0) {
-            setSelectedSection(clsRes.data[0].sections[0].id);
+          const classWithStudents = clsRes.data.find((c) => c.sections?.some((s) => (s.enrolled_count || 0) > 0)) || clsRes.data[0];
+          setSelectedClass(classWithStudents.id);
+          if (classWithStudents.sections?.length > 0) {
+            const secWithStudents = classWithStudents.sections.find((s) => (s.enrolled_count || 0) > 0) || classWithStudents.sections[0];
+            setSelectedSection(secWithStudents.id);
           }
         }
 
@@ -75,15 +77,19 @@ export const AttendanceMarker = () => {
           attendance_date: attendanceDate,
         },
       });
-      if (res.data && res.data.students) {
-        const updated = res.data.students.map((s) => ({
+      const dataObj = res?.data || res;
+      if (dataObj && dataObj.students) {
+        const updated = dataObj.students.map((s) => ({
           ...s,
           status_code: s.status_code || 'PRESENT',
         }));
         setRoster(updated);
+      } else {
+        setRoster([]);
       }
     } catch (e) {
       console.log('Error fetching roster:', e);
+      setRoster([]);
     } finally {
       setLoading(false);
     }
@@ -93,7 +99,8 @@ export const AttendanceMarker = () => {
     setSelectedClass(classId);
     const cls = classes.find((c) => c.id === classId);
     if (cls && cls.sections && cls.sections.length > 0) {
-      setSelectedSection(cls.sections[0].id);
+      const secWithStudents = cls.sections.find((s) => (s.enrolled_count || 0) > 0) || cls.sections[0];
+      setSelectedSection(secWithStudents.id);
     } else {
       setSelectedSection('');
     }

@@ -66,11 +66,30 @@ class RequirePermission:
         self.permission_code = permission_code
 
     async def __call__(self, user: CurrentTenantUser = Depends(get_current_user)):
-        # Master Administrator role bypasses granular check
-        if "ADMIN" in user.roles:
+        # Master Administrator & Principal roles bypass granular check
+        if any(r in ["ADMIN", "PRINCIPAL", "SUPERADMIN"] for r in user.roles):
             return user
 
         if self.permission_code not in user.permissions:
+            # Teacher fallback permissions
+            if "TEACHER" in user.roles and self.permission_code in [
+                "attendance:view", "attendance:mark", "students:view", "academics:manage",
+                "academics:view", "development:evaluate", "documents:generate", "reports:view",
+                "notifications:send", "auth:login"
+            ]:
+                return user
+            # Accountant fallback permissions
+            if "ACCOUNTANT" in user.roles and self.permission_code in [
+                "fees:view", "fees:collect", "fees:reverse", "fees:view_reports",
+                "finance:view", "finance:voucher_create", "students:view", "reports:view", "auth:login"
+            ]:
+                return user
+            # Parent / Student fallback permissions
+            if any(r in ["PARENT", "STUDENT"] for r in user.roles) and self.permission_code in [
+                "students:view", "attendance:view", "fees:view", "reports:view", "auth:login"
+            ]:
+                return user
+
             raise PermissionDeniedException(self.permission_code)
 
         return user

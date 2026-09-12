@@ -93,10 +93,12 @@ class AttendanceService:
 
         status_options = []
         default_present_id = None
+        status_id_to_code = {}
         if cat:
             vals = await db.execute(select(LookupValue).where(LookupValue.category_id == cat.id, LookupValue.is_active == True))
             for v in vals.scalars().all():
                 status_options.append({"id": v.id, "code": v.code, "label": v.label})
+                status_id_to_code[v.id] = v.code
                 if v.code == "PRESENT":
                     default_present_id = v.id
 
@@ -112,6 +114,7 @@ class AttendanceService:
                 "full_name": f"{student.first_name} {student.last_name or ''}".strip(),
                 "roll_no": enroll.roll_no,
                 "current_status_id": current_status,
+                "status_code": status_id_to_code.get(current_status, "PRESENT"),
                 "remarks": remarks,
             })
 

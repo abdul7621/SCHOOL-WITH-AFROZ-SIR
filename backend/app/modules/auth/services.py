@@ -47,6 +47,9 @@ class AuthService:
         if not user or not verify_password(clean_password, user.password_hash):
             raise InvalidCredentialsException("Invalid username/phone or password")
 
+        from app.modules.lookups.services import LookupService
+        await LookupService.ensure_system_lookups(db)
+
         # Gather assigned roles
         role_stmt = (
             select(Role)
@@ -69,6 +72,28 @@ class AuthService:
             perm_res = await db.execute(perm_stmt)
             for p_code in perm_res.scalars().all():
                 permission_codes.add(p_code)
+
+        # Ensure role-based fallbacks in token claims
+        if any(r in ["ADMIN", "PRINCIPAL", "SUPERADMIN"] for r in role_codes):
+            all_p = await db.execute(select(Permission.code))
+            for p_c in all_p.scalars().all():
+                permission_codes.add(p_c)
+        if "TEACHER" in role_codes:
+            for p_c in [
+                "attendance:view", "attendance:mark", "students:view", "academics:manage",
+                "academics:view", "development:evaluate", "documents:generate", "reports:view",
+                "notifications:send", "auth:login"
+            ]:
+                permission_codes.add(p_c)
+        if "ACCOUNTANT" in role_codes:
+            for p_c in [
+                "fees:view", "fees:collect", "fees:reverse", "fees:view_reports",
+                "finance:view", "finance:voucher_create", "students:view", "reports:view", "auth:login"
+            ]:
+                permission_codes.add(p_c)
+        if any(r in ["PARENT", "STUDENT"] for r in role_codes):
+            for p_c in ["students:view", "attendance:view", "fees:view", "reports:view", "auth:login"]:
+                permission_codes.add(p_c)
 
         perm_list = list(permission_codes)
 

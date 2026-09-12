@@ -2,16 +2,17 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.lookups.models import LookupCategory, LookupValue, StudentStatus, PaymentMode
+from app.modules.users_rbac.models import Role, Permission, RolePermission
 
 
 class LookupService:
     @classmethod
     async def ensure_system_lookups(cls, db: AsyncSession) -> None:
         """
-        Self-healing lookup engine:
+        Self-healing lookup and RBAC engine:
         Ensures essential categories (GENDER, BLOOD_GROUP, ATTENDANCE_STATUS),
-        student statuses (ACTIVE, SUSPENDED, TRANSFERRED, ALUMNI), and
-        payment modes (CASH, UPI_QR, BANK_TRANSFER, CHEQUE) exist in the tenant DB.
+        student statuses, payment modes, permissions, roles, and role_permissions
+        exist in the tenant DB.
         """
         # 1. GENDER
         gen_cat = (await db.execute(select(LookupCategory).where(LookupCategory.code == "GENDER"))).scalar_one_or_none()
@@ -70,5 +71,98 @@ class LookupService:
             ]
             for m in modes:
                 db.add(m)
+
+        # 6. Standard RBAC Permissions
+        all_perms_def = [
+            ("AUTH", "LOGIN", "auth:login"),
+            ("USERS", "MANAGE", "users:manage"),
+            ("ROLES", "MANAGE", "roles:manage"),
+            ("SETTINGS", "MANAGE", "settings:manage"),
+            ("ACADEMICS", "MANAGE", "academics:manage"),
+            ("ACADEMICS", "VIEW", "academics:view"),
+            ("STUDENTS", "VIEW", "students:view"),
+            ("STUDENTS", "CREATE", "students:create"),
+            ("STUDENTS", "EDIT", "students:edit"),
+            ("ATTENDANCE", "MARK", "attendance:mark"),
+            ("ATTENDANCE", "VIEW", "attendance:view"),
+            ("FEES", "VIEW", "fees:view"),
+            ("FEES", "COLLECT", "fees:collect"),
+            ("FEES", "REVERSE", "fees:reverse"),
+            ("FEES", "VIEW_REPORTS", "fees:view_reports"),
+            ("FINANCE", "VIEW", "finance:view"),
+            ("FINANCE", "VOUCHER_CREATE", "finance:voucher_create"),
+            ("DEVELOPMENT", "EVALUATE", "development:evaluate"),
+            ("DOCUMENTS", "GENERATE", "documents:generate"),
+            ("EXCEL", "IMPORT_EXPORT", "excel:import_export"),
+            ("STAFF", "VIEW", "staff:view"),
+            ("STAFF", "MANAGE", "staff:manage"),
+            ("REPORTS", "VIEW", "reports:view"),
+            ("CMS", "MANAGE", "cms:manage"),
+            ("NOTIFICATIONS", "SEND", "notifications:send"),
+        ]
+
+        perm_objects = {}
+        for mod, act, code in all_perms_def:
+            p = (await db.execute(select(Permission).where(Permission.code == code))).scalar_one_or_none()
+            if not p:
+                p = Permission(id=str(uuid.uuid4()), module=mod, action=act, code=code)
+                db.add(p)
+                await db.flush()
+            perm_objects[code] = p
+
+        # 7. Standard Roles
+        roles_def = [
+            ("ADMIN", "School Administrator"),
+            ("PRINCIPAL", "Principal"),
+            ("TEACHER", "Teacher"),
+            ("ACCOUNTANT", "Fee Accountant"),
+            ("PARENT", "Parent"),
+            ("STUDENT", "Student"),
+        ]
+
+        role_objects = {}
+        for code, name in roles_def:
+            r = (await db.execute(select(Role).where(Role.code == code))).scalar_one_or_none()
+            if not r:
+                r = Role(code=code, name=name, is_system=True)
+                db.add(r)
+                await db.flush()
+            role_objects[code] = r
+
+        # 8. Role Permission Bindings
+        teacher_perm_codes = [
+            "attendance:view", "attendance:mark", "students:view", "academics:manage",
+            "academics:view", "development:evaluate", "documents:generate", "reports:view",
+            "notifications:send", "auth:login"
+        ]
+        accountant_perm_codes = [
+            "fees:view", "fees:collect", "fees:reverse", "fees:view_reports",
+            "finance:view", "finance:voucher_create", "students:view", "reports:view", "auth:login"
+        ]
+        parent_perm_codes = [
+            "students:view", "attendance:view", "fees:view", "reports:view", "auth:login"
+        ]
+
+        # Fetch existing role permissions
+        rp_res = await db.execute(select(RolePermission.role_id, RolePermission.permission_id))
+        existing_rp_set = set(rp_res.all())
+
+        for r_code, r_obj in role_objects.items():
+            if r_code in ["ADMIN", "PRINCIPAL"]:
+                target_perms = list(perm_objects.keys())
+            elif r_code == "TEACHER":
+                target_perms = teacher_perm_codes
+            elif r_code == "ACCOUNTANT":
+                target_perms = accountant_perm_codes
+            elif r_code in ["PARENT", "STUDENT"]:
+                target_perms = parent_perm_codes
+            else:
+                target_perms = ["auth:login"]
+
+            for p_code in target_perms:
+                p_obj = perm_objects.get(p_code)
+                if p_obj and (r_obj.id, p_obj.id) not in existing_rp_set:
+                    db.add(RolePermission(role_id=r_obj.id, permission_id=p_obj.id))
+                    existing_rp_set.add((r_obj.id, p_obj.id))
 
         await db.commit()
