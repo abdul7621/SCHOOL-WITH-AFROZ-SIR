@@ -9,6 +9,7 @@ from app.core.exceptions import ResourceNotFoundException
 from app.shared.responses import success_response
 from app.middlewares.auth_middleware import RequirePermission
 from app.modules.lookups.models import LookupCategory, LookupValue, StudentStatus, PaymentMode
+from app.modules.lookups.services import LookupService
 
 router = APIRouter(prefix="/lookups", tags=["Dynamic Lookups & Taxonomies"])
 
@@ -25,6 +26,11 @@ async def list_lookup_categories(db: AsyncSession = Depends(get_tenant_db)):
     stmt = select(LookupCategory).order_by(LookupCategory.name.asc())
     result = await db.execute(stmt)
     categories = result.scalars().all()
+    if not categories:
+        await LookupService.ensure_system_lookups(db)
+        result = await db.execute(stmt)
+        categories = result.scalars().all()
+
     return success_response(
         data=[{"id": c.id, "code": c.code, "name": c.name, "is_system": c.is_system} for c in categories]
     )
@@ -42,7 +48,12 @@ async def get_category_values(category_code: str, db: AsyncSession = Depends(get
     category = result.scalar_one_or_none()
 
     if not category:
-        raise ResourceNotFoundException("LookupCategory", category_code)
+        await LookupService.ensure_system_lookups(db)
+        result = await db.execute(stmt)
+        category = result.scalar_one_or_none()
+
+    if not category:
+        return success_response(data=[], message=f"No values found for category '{category_code}'")
 
     values = [
         {"id": v.id, "code": v.code, "label": v.label, "numeric_value": v.numeric_value}
@@ -62,6 +73,11 @@ async def add_category_value(
     stmt = select(LookupCategory).where(LookupCategory.code == category_code.upper())
     result = await db.execute(stmt)
     category = result.scalar_one_or_none()
+
+    if not category:
+        await LookupService.ensure_system_lookups(db)
+        result = await db.execute(stmt)
+        category = result.scalar_one_or_none()
 
     if not category:
         raise ResourceNotFoundException("LookupCategory", category_code)
@@ -89,6 +105,11 @@ async def list_student_statuses(db: AsyncSession = Depends(get_tenant_db)):
     stmt = select(StudentStatus).order_by(StudentStatus.name.asc())
     result = await db.execute(stmt)
     statuses = result.scalars().all()
+    if not statuses:
+        await LookupService.ensure_system_lookups(db)
+        result = await db.execute(stmt)
+        statuses = result.scalars().all()
+
     return success_response(
         data=[
             {
@@ -109,6 +130,11 @@ async def list_payment_modes(db: AsyncSession = Depends(get_tenant_db)):
     stmt = select(PaymentMode).where(PaymentMode.is_active == True).order_by(PaymentMode.name.asc())
     result = await db.execute(stmt)
     modes = result.scalars().all()
+    if not modes:
+        await LookupService.ensure_system_lookups(db)
+        result = await db.execute(stmt)
+        modes = result.scalars().all()
+
     return success_response(
         data=[
             {
