@@ -109,7 +109,20 @@ class TenantDatabaseManager:
             self._engines[tenant_slug] = engine
             self._session_factories[tenant_slug] = session_factory
             logger.info(f"Created dynamic DB engine for tenant '{tenant_slug}' (DB: {db_name})")
+
+            # Run asynchronous schema patch (e.g. modify profile_photo_url to LONGTEXT)
+            asyncio.create_task(self._ensure_tenant_schema_patches(engine, tenant_slug))
+
             return session_factory
+
+    async def _ensure_tenant_schema_patches(self, engine: AsyncEngine, tenant_slug: str):
+        """Applies essential schema fixes (like LONGTEXT for photo URLs) automatically."""
+        try:
+            from sqlalchemy import text
+            async with engine.begin() as conn:
+                await conn.execute(text("ALTER TABLE students MODIFY COLUMN profile_photo_url LONGTEXT;"))
+        except Exception as e:
+            logger.debug(f"Schema patch notice for tenant '{tenant_slug}': {e}")
 
     @asynccontextmanager
     async def get_session(self, tenant_slug: str) -> AsyncGenerator[AsyncSession, None]:

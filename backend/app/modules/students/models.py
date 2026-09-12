@@ -1,4 +1,5 @@
 from sqlalchemy import Column, String, Integer, Date, Boolean, Text, ForeignKey, JSON, UniqueConstraint
+from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import relationship
 from app.shared.base_models import BaseTenantModel
 
@@ -33,7 +34,7 @@ class Student(BaseTenantModel):
     caste_category_id = Column(String(36), ForeignKey("lookup_values.id"), nullable=True)
     parent_id = Column(String(36), ForeignKey("parents.id"), nullable=False, index=True)
     status_id = Column(String(36), ForeignKey("student_statuses.id"), nullable=False, index=True)
-    profile_photo_url = Column(Text, nullable=True)
+    profile_photo_url = Column(Text().with_variant(LONGTEXT, "mysql"), nullable=True)
     emergency_contact = Column(String(20), nullable=True)
     custom_attributes = Column(JSON, nullable=True)  # Variable school fields (e.g. BPL card, Aadhar, etc.)
 

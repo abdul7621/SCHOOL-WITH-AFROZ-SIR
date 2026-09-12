@@ -447,7 +447,7 @@ class TenantProvisioningService:
                     caste_category_id VARCHAR(36),
                     parent_id VARCHAR(36) NOT NULL,
                     status_id VARCHAR(36) NOT NULL,
-                    profile_photo_url VARCHAR(255),
+                    profile_photo_url LONGTEXT,
                     emergency_contact VARCHAR(20),
                     custom_attributes JSON,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

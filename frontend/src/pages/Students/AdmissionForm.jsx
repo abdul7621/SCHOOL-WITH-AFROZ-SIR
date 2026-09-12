@@ -53,8 +53,8 @@ export const AdmissionForm = () => {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 300;
-        const MAX_HEIGHT = 360;
+        const MAX_WIDTH = 200;
+        const MAX_HEIGHT = 240;
         let width = img.width;
         let height = img.height;
 
@@ -75,7 +75,7 @@ export const AdmissionForm = () => {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
 
-        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.75);
         setPhotoPreview(compressedDataUrl);
         setPhotoUrl(compressedDataUrl);
       };
