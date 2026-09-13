@@ -35,6 +35,7 @@ export const Sidebar = () => {
   const schoolNavItems = [
     { to: '/', label: 'Principal Dashboard', icon: LayoutDashboard, show: true },
     { to: '/students', label: 'Students & 360° Profile', icon: Users, show: hasPermission('students:view') },
+    { to: '/students/promotion', label: 'Annual Student Promotion', icon: GraduationCap, show: hasPermission('students:create') },
     { to: '/staff', label: 'Staff & Teachers', icon: Briefcase, show: hasPermission('users:manage') },
     { to: '/development', label: 'Discipline & Awards', icon: Award, show: hasPermission('development:evaluate') },
     { to: '/academics', label: 'Classes & Sessions', icon: Layers, show: true },

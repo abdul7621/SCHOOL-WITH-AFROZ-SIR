@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload, joinedload
 
 from app.core.database import get_tenant_db
 from app.core.exceptions import ResourceNotFoundException
-from app.middlewares.auth_middleware import RequirePermission
+from app.middlewares.auth_middleware import RequirePermission, get_current_user_or_token, CurrentTenantUser
 from app.modules.settings.models import SystemSetting
 from app.modules.fees.models import FeeCollection, FeeCollectionItem
 from app.modules.exams.services import ExamService
@@ -20,6 +20,7 @@ router = APIRouter(prefix="/documents", tags=["Document Generation & Report Card
 async def view_report_card_html(
     term_id: str,
     student_id: str,
+    current_user: CurrentTenantUser = Depends(get_current_user_or_token),
     db: AsyncSession = Depends(get_tenant_db),
 ):
     """
@@ -51,6 +52,7 @@ async def view_report_card_html(
 @router.get("/fee-receipt/{receipt_no}/html", response_class=HTMLResponse)
 async def view_fee_receipt_html(
     receipt_no: str,
+    current_user: CurrentTenantUser = Depends(get_current_user_or_token),
     db: AsyncSession = Depends(get_tenant_db),
 ):
     """
@@ -148,6 +150,7 @@ async def view_transfer_certificate_html(
     student_id: str,
     leaving_reason: str = "Parent Relocation / Transferred",
     conduct: str = "EXCELLENT",
+    current_user: CurrentTenantUser = Depends(get_current_user_or_token),
     db: AsyncSession = Depends(get_tenant_db),
 ):
     """
@@ -203,6 +206,7 @@ async def view_transfer_certificate_html(
 @router.get("/id-cards/batch/html", response_class=HTMLResponse)
 async def view_id_cards_batch_html(
     class_id: str = None,
+    current_user: CurrentTenantUser = Depends(get_current_user_or_token),
     db: AsyncSession = Depends(get_tenant_db),
 ):
     """
@@ -257,6 +261,7 @@ async def view_id_cards_batch_html(
 async def view_fee_card_html(
     student_id: str,
     academic_year_id: str = None,
+    current_user: CurrentTenantUser = Depends(get_current_user_or_token),
     db: AsyncSession = Depends(get_tenant_db),
 ):
     """
@@ -297,6 +302,7 @@ async def view_fee_card_html(
 @router.get("/warning-letter/{incident_id}/html", response_class=HTMLResponse)
 async def view_warning_letter_html(
     incident_id: str,
+    current_user: CurrentTenantUser = Depends(get_current_user_or_token),
     db: AsyncSession = Depends(get_tenant_db),
 ):
     """
@@ -364,6 +370,7 @@ async def view_warning_letter_html(
 @router.get("/award-certificate/{award_id}/html", response_class=HTMLResponse)
 async def view_award_certificate_html(
     award_id: str,
+    current_user: CurrentTenantUser = Depends(get_current_user_or_token),
     db: AsyncSession = Depends(get_tenant_db),
 ):
     """

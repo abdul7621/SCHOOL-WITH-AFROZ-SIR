@@ -11,7 +11,10 @@ export const TenantProvider = ({ children }) => {
       localStorage.setItem('tenant_slug', qTenant);
       return qTenant;
     }
-    return localStorage.getItem('tenant_slug') || 'sample';
+    const stored = localStorage.getItem('tenant_slug');
+    if (stored && stored !== 'sample') return stored;
+    localStorage.setItem('tenant_slug', '7aschoolerpuat');
+    return '7aschoolerpuat';
   });
   const [settings, setSettings] = useState({
     school_name: '7A Model School',

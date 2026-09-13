@@ -7,6 +7,7 @@ import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { StudentList } from './pages/Students/StudentList';
 import { AdmissionForm } from './pages/Students/AdmissionForm';
+import { StudentPromotion } from './pages/Students/StudentPromotion';
 import { AttendanceMarker } from './pages/Attendance/AttendanceMarker';
 import { FeeCollection } from './pages/Fees/FeeCollection';
 import { MarksEntry } from './pages/Exams/MarksEntry';
@@ -39,6 +40,7 @@ export const App = () => {
               <Route index element={<Dashboard />} />
               <Route path="students" element={<StudentList />} />
               <Route path="students/admit" element={<AdmissionForm />} />
+              <Route path="students/promotion" element={<StudentPromotion />} />
               <Route path="staff" element={<StaffDirectory />} />
               <Route path="development" element={<DisciplineAndAwards />} />
               <Route path="academics" element={<ClassesAndSessions />} />

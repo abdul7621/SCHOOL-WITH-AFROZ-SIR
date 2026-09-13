@@ -123,7 +123,7 @@ export const DocumentCenter = () => {
                 </div>
 
                 <a
-                  href={`/api/v1/documents/transfer-certificate/${selectedStudent.id}/html?leaving_reason=${encodeURIComponent(leavingReason)}&conduct=${encodeURIComponent(conduct)}&tenant_slug=${localStorage.getItem('tenant_slug') || 'sample'}`}
+                  href={`/api/v1/documents/transfer-certificate/${selectedStudent.id}/html?leaving_reason=${encodeURIComponent(leavingReason)}&conduct=${encodeURIComponent(conduct)}&token=${encodeURIComponent(localStorage.getItem('token') || '')}&tenant_slug=${encodeURIComponent(localStorage.getItem('tenant_slug') || '7aschoolerpuat')}`}
                   target="_blank"
                   rel="noreferrer"
                   className="w-full flex items-center justify-center gap-2 mt-2 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg transition-colors"
@@ -162,7 +162,7 @@ export const DocumentCenter = () => {
             </div>
 
             <a
-              href={`/api/v1/documents/id-cards/batch/html?class_id=${selectedClass}&tenant_slug=${localStorage.getItem('tenant_slug') || 'sample'}`}
+              href={`/api/v1/documents/id-cards/batch/html?class_id=${selectedClass}&token=${encodeURIComponent(localStorage.getItem('token') || '')}&tenant_slug=${encodeURIComponent(localStorage.getItem('tenant_slug') || '7aschoolerpuat')}`}
               target="_blank"
               rel="noreferrer"
               className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg transition-colors shadow"
@@ -190,7 +190,7 @@ export const DocumentCenter = () => {
                 <div className="font-bold text-indigo-900">{selectedStudent.full_name}</div>
                 <div className="text-slate-600">Admission No: {selectedStudent.admission_no} | Class: {selectedStudent.class_name}</div>
                 <a
-                  href={`/api/v1/documents/fee-card/${selectedStudent.id}/html?tenant_slug=${localStorage.getItem('tenant_slug') || 'sample'}`}
+                  href={`/api/v1/documents/fee-card/${selectedStudent.id}/html?token=${encodeURIComponent(localStorage.getItem('token') || '')}&tenant_slug=${encodeURIComponent(localStorage.getItem('tenant_slug') || '7aschoolerpuat')}`}
                   target="_blank"
                   rel="noreferrer"
                   className="w-full flex items-center justify-center gap-2 mt-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-lg transition-colors shadow"

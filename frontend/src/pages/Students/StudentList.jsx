@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { UserPlus, Search, Filter, Eye, CreditCard, Sparkles, RefreshCw, MessageCircle } from 'lucide-react';
+import { UserPlus, Search, Filter, Eye, CreditCard, Sparkles, RefreshCw, MessageCircle, GraduationCap } from 'lucide-react';
 import api from '../../api/client';
 import { Student360Drawer } from './Student360Drawer';
 
@@ -69,6 +69,14 @@ export const StudentList = () => {
               <span>{seeding ? 'Seeding Data...' : '⚡ Seed 50+ Live Students'}</span>
             </button>
           )}
+
+          <Link
+            to="/students/promotion"
+            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow transition-colors"
+          >
+            <GraduationCap size={14} />
+            <span>Annual Promotion</span>
+          </Link>
 
           <Link
             to="/students/admit"

@@ -20,6 +20,15 @@ export const Student360Drawer = ({ student, isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [ledger, setLedger] = useState(null);
   const [loadingLedger, setLoadingLedger] = useState(false);
+  const [attendanceSummary, setAttendanceSummary] = useState(null);
+  const [loadingAttendance, setLoadingAttendance] = useState(false);
+  const [examTerms, setExamTerms] = useState([]);
+  const [selectedTermId, setSelectedTermId] = useState('');
+  const [examReport, setExamReport] = useState(null);
+  const [loadingExams, setLoadingExams] = useState(false);
+
+  const token = localStorage.getItem('token') || '';
+  const tenantSlug = localStorage.getItem('tenant_slug') || '7aschoolerpuat';
 
   useEffect(() => {
     if (isOpen && student?.id && activeTab === 'fees') {
@@ -37,6 +46,70 @@ export const Student360Drawer = ({ student, isOpen, onClose }) => {
       fetchLedger();
     }
   }, [isOpen, student?.id, activeTab]);
+
+  useEffect(() => {
+    if (isOpen && student?.id && activeTab === 'attendance') {
+      const fetchAttendance = async () => {
+        setLoadingAttendance(true);
+        try {
+          const res = await api.get(`/attendance/students/${student.id}/summary`);
+          if (res.data?.data) {
+            setAttendanceSummary(res.data.data);
+          }
+        } catch (err) {
+          console.error('Error loading attendance summary in drawer:', err);
+        } finally {
+          setLoadingAttendance(false);
+        }
+      };
+      fetchAttendance();
+    }
+  }, [isOpen, student?.id, activeTab]);
+
+  useEffect(() => {
+    if (isOpen && student?.id && activeTab === 'academics') {
+      const fetchExams = async () => {
+        setLoadingExams(true);
+        try {
+          const termsRes = await api.get('/exams/terms');
+          const terms = termsRes.data?.data || [];
+          setExamTerms(terms);
+          const activeTerm = selectedTermId || (terms.length > 0 ? terms[0].id : null);
+          if (activeTerm) {
+            setSelectedTermId(activeTerm);
+            const reportRes = await api.get(`/exams/terms/${activeTerm}/students/${student.id}/report-card`);
+            if (reportRes.data?.data) {
+              setExamReport(reportRes.data.data);
+            }
+          }
+        } catch (err) {
+          console.error('Error loading exam report in drawer:', err);
+        } finally {
+          setLoadingExams(false);
+        }
+      };
+      fetchExams();
+    }
+  }, [isOpen, student?.id, activeTab]);
+
+  const handleSelectTerm = async (termId) => {
+    setSelectedTermId(termId);
+    if (!termId || !student?.id) return;
+    setLoadingExams(true);
+    try {
+      const reportRes = await api.get(`/exams/terms/${termId}/students/${student.id}/report-card`);
+      if (reportRes.data?.data) {
+        setExamReport(reportRes.data.data);
+      } else {
+        setExamReport(null);
+      }
+    } catch (err) {
+      console.error('Error fetching term report:', err);
+      setExamReport(null);
+    } finally {
+      setLoadingExams(false);
+    }
+  };
 
   if (!isOpen || !student) return null;
 
@@ -174,36 +247,69 @@ export const Student360Drawer = ({ student, isOpen, onClose }) => {
           {/* TAB 2: Attendance Heatmap */}
           {activeTab === 'attendance' && (
             <div className="space-y-6">
-              <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-bold text-emerald-800 uppercase">Overall Term Attendance</div>
-                  <div className="text-2xl font-black text-emerald-950 mt-1">94.2%</div>
-                  <div className="text-[11px] text-emerald-700 mt-0.5">24 Present &bull; 2 Absent &bull; 1 Late</div>
+              {loadingAttendance ? (
+                <div className="py-12 text-center text-slate-400 font-bold text-xs animate-pulse">
+                  Loading live attendance metrics...
                 </div>
-                <div className="text-3xl">📅</div>
-              </div>
-
-              {/* 30-Day Grid */}
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-                <div className="font-bold text-slate-900">Recent 30 Days Attendance Matrix</div>
-                <div className="grid grid-cols-6 gap-2 text-center font-mono text-[11px] font-bold">
-                  {Array.from({ length: 24 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className={`p-2 rounded-lg ${
-                        i === 4 || i === 18
-                          ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                          : i === 11
-                          ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                          : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                      }`}
-                    >
-                      Day {i + 1}
-                      <div className="text-[9px] mt-0.5">{i === 4 || i === 18 ? 'ABS' : i === 11 ? 'LATE' : 'PRES'}</div>
+              ) : (
+                <>
+                  <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-emerald-800 uppercase">Overall Term Attendance</div>
+                      <div className="text-2xl font-black text-emerald-950 mt-1">
+                        {attendanceSummary ? `${attendanceSummary.attendance_percentage}%` : '0%'}
+                      </div>
+                      <div className="text-[11px] text-emerald-700 mt-0.5">
+                        {attendanceSummary && attendanceSummary.total_sessions > 0 ? (
+                          `${attendanceSummary.present_count} Present • ${attendanceSummary.absent_count} Absent • ${attendanceSummary.late_count} Late • ${attendanceSummary.half_day_count} Half-Day (${attendanceSummary.total_sessions} Total Sessions)`
+                        ) : (
+                          'No attendance records found'
+                        )}
+                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
+                    <div className="text-3xl">📅</div>
+                  </div>
+
+                  {/* Recent Attendance Grid */}
+                  <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                    <div className="font-bold text-slate-900">Recent Attendance Records (Last 30 Sessions)</div>
+                    {attendanceSummary?.recent_records?.length > 0 ? (
+                      <div className="grid grid-cols-5 sm:grid-cols-6 gap-2 text-center font-mono text-[11px] font-bold">
+                        {attendanceSummary.recent_records.map((rec, i) => {
+                          const isAbs = ['ABSENT', 'A'].includes(rec.status_code);
+                          const isLate = ['LATE', 'L'].includes(rec.status_code);
+                          const isHalf = ['HALF_DAY', 'HD'].includes(rec.status_code);
+
+                          let badgeClass = 'bg-emerald-100 text-emerald-800 border border-emerald-200';
+                          let label = 'PRES';
+
+                          if (isAbs) {
+                            badgeClass = 'bg-rose-100 text-rose-800 border border-rose-200';
+                            label = 'ABS';
+                          } else if (isLate) {
+                            badgeClass = 'bg-amber-100 text-amber-800 border border-amber-200';
+                            label = 'LATE';
+                          } else if (isHalf) {
+                            badgeClass = 'bg-purple-100 text-purple-800 border border-purple-200';
+                            label = 'HALF';
+                          }
+
+                          return (
+                            <div key={i} className={`p-2 rounded-lg ${badgeClass}`} title={`${rec.date} - ${rec.status_name}`}>
+                              <div className="text-[10px] truncate">{rec.date ? rec.date.slice(5) : `D${i+1}`}</div>
+                              <div className="text-[9px] mt-0.5">{label}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="p-8 text-center text-slate-400 text-xs">
+                        No daily attendance records have been registered for this student yet.
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -235,7 +341,7 @@ export const Student360Drawer = ({ student, isOpen, onClose }) => {
                       </div>
                     </div>
                     <a
-                      href={`/api/v1/documents/fee-card/${student.id}/html`}
+                      href={`/api/v1/documents/fee-card/${student.id}/html?token=${encodeURIComponent(token)}&tenant_slug=${encodeURIComponent(tenantSlug)}`}
                       target="_blank"
                       rel="noreferrer"
                       className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow"
@@ -277,45 +383,99 @@ export const Student360Drawer = ({ student, isOpen, onClose }) => {
           {/* TAB 4: Academics & Qualitative Ratings */}
           {activeTab === 'academics' && (
             <div className="space-y-6">
-              <div className="p-5 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-3">
-                <div className="flex justify-between items-center">
-                  <div className="font-bold text-slate-900">Mid-Term Examination Result</div>
-                  <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-md font-bold text-[10px]">PASSED (88.4%)</span>
+              {/* Term Selector */}
+              {examTerms.length > 0 && (
+                <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                  <span className="text-xs font-bold text-slate-700">Select Exam Term:</span>
+                  <select
+                    value={selectedTermId}
+                    onChange={(e) => handleSelectTerm(e.target.value)}
+                    className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {examTerms.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <div className="grid grid-cols-2 gap-2 font-medium">
-                  <div className="p-2 bg-slate-50 rounded-lg flex justify-between">
-                    <span>Mathematics:</span> <strong>92/100 (A1)</strong>
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded-lg flex justify-between">
-                    <span>Science:</span> <strong>86/100 (A2)</strong>
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded-lg flex justify-between">
-                    <span>English:</span> <strong>89/100 (A2)</strong>
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded-lg flex justify-between">
-                    <span>Social Science:</span> <strong>87/100 (A2)</strong>
-                  </div>
-                </div>
-              </div>
+              )}
 
-              {/* 5-Star Behavioral Ratings */}
-              <div className="p-5 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-3">
-                <div className="font-bold text-slate-900">Qualitative Behavioral Assessment</div>
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                    <span>Cleanliness & Hygiene</span>
-                    <span className="text-amber-500 font-bold">★★★★★ (5/5)</span>
-                  </div>
-                  <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                    <span>Discipline & Punctuality</span>
-                    <span className="text-amber-500 font-bold">★★★★☆ (4/5)</span>
-                  </div>
-                  <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                    <span>Leadership & Teamwork</span>
-                    <span className="text-amber-500 font-bold">★★★★★ (5/5)</span>
-                  </div>
+              {loadingExams ? (
+                <div className="py-12 text-center text-slate-400 font-bold text-xs animate-pulse">
+                  Loading live exam scores and evaluations...
                 </div>
-              </div>
+              ) : examReport ? (
+                <>
+                  <div className="p-5 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <div className="font-bold text-slate-900">
+                          {examReport.school_info?.term_name || 'Examination Result'}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          Academic Session: {examReport.school_info?.session_name || 'Current'}
+                        </div>
+                      </div>
+                      <span className={`px-2.5 py-1 rounded-md font-bold text-[10px] ${
+                        examReport.summary?.result === 'PASSED'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : examReport.summary?.result === 'IN_PROGRESS'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-rose-100 text-rose-800'
+                      }`}>
+                        {examReport.summary?.result || 'PENDING'} ({examReport.summary?.overall_percentage || 0}%)
+                      </span>
+                    </div>
+
+                    {examReport.subject_scores?.length > 0 ? (
+                      <div className="grid grid-cols-2 gap-2 font-medium">
+                        {examReport.subject_scores.map((s) => (
+                          <div key={s.subject_code} className="p-2 bg-slate-50 rounded-lg flex justify-between items-center">
+                            <span className="truncate mr-2">{s.subject_name}:</span>
+                            <strong className="shrink-0 text-slate-900">
+                              {s.is_absent
+                                ? 'AB (Absent)'
+                                : s.marks_obtained !== null
+                                ? `${s.marks_obtained}/${s.max_marks} (${s.grade_letter})`
+                                : '-- (Pending)'}
+                            </strong>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-4 text-center text-slate-400 text-xs">
+                        No subject exams configured or marks entered for this term yet.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Qualitative Assessment */}
+                  <div className="p-5 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                    <div className="font-bold text-slate-900">Qualitative Behavioral Assessment</div>
+                    {examReport.qualitative_development?.length > 0 ? (
+                      <div className="space-y-2">
+                        {examReport.qualitative_development.map((crit, idx) => (
+                          <div key={idx} className="flex justify-between items-center py-1.5 border-b border-slate-100">
+                            <span>{crit.criteria_name}</span>
+                            <span className="text-amber-500 font-bold">{crit.rating_value || 'Satisfactory'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-4 text-center text-slate-400 text-xs">
+                        No qualitative behavioral ratings entered for this academic term yet.
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="p-8 text-center text-slate-400 text-xs bg-slate-50 border border-dashed border-slate-200 rounded-2xl">
+                  {examTerms.length === 0
+                    ? 'No examination terms configured in the academic calendar.'
+                    : 'Select an examination term above to view academic scores.'}
+                </div>
+              )}
             </div>
           )}
 
@@ -328,7 +488,7 @@ export const Student360Drawer = ({ student, isOpen, onClose }) => {
                   <div className="text-slate-400 text-[10px]">With official security border and anti-tamper QR code verification</div>
                 </div>
                 <a
-                  href={`/api/v1/documents/transfer-certificate/${student.id}/html`}
+                  href={`/api/v1/documents/transfer-certificate/${student.id}/html?token=${encodeURIComponent(token)}&tenant_slug=${encodeURIComponent(tenantSlug)}`}
                   target="_blank"
                   rel="noreferrer"
                   className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold flex items-center gap-1.5 shadow"
@@ -343,7 +503,7 @@ export const Student360Drawer = ({ student, isOpen, onClose }) => {
                   <div className="text-slate-400 text-[10px]">Front + Back with photo box, emergency phone, and blood group</div>
                 </div>
                 <a
-                  href={`/api/v1/documents/id-cards/batch/html?class_id=${student.class_id || ''}`}
+                  href={`/api/v1/documents/id-cards/batch/html?class_id=${student.class_id || ''}&token=${encodeURIComponent(token)}&tenant_slug=${encodeURIComponent(tenantSlug)}`}
                   target="_blank"
                   rel="noreferrer"
                   className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold flex items-center gap-1.5 shadow"
@@ -358,7 +518,7 @@ export const Student360Drawer = ({ student, isOpen, onClose }) => {
                   <div className="text-slate-400 text-[10px]">Complete billing ledger with demands, payments, concessions, and outstanding dues</div>
                 </div>
                 <a
-                  href={`/api/v1/documents/fee-card/${student.id}/html`}
+                  href={`/api/v1/documents/fee-card/${student.id}/html?token=${encodeURIComponent(token)}&tenant_slug=${encodeURIComponent(tenantSlug)}`}
                   target="_blank"
                   rel="noreferrer"
                   className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold flex items-center gap-1.5 shadow"

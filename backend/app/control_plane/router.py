@@ -69,6 +69,18 @@ async def list_tenants(db: AsyncSession = Depends(get_control_db)):
     return success_response(data=tenant_list, message="Tenants retrieved successfully")
 
 
+@router.get("/tenants/public")
+async def list_public_tenants(db: AsyncSession = Depends(get_control_db)):
+    """Public directory of active schools for login tenant switcher."""
+    stmt = select(Tenant).where(Tenant.status == "ACTIVE").order_by(Tenant.school_name.asc())
+    result = await db.execute(stmt)
+    tenants = result.scalars().all()
+    data = [{"slug": t.slug, "school_name": t.school_name} for t in tenants]
+    if not data:
+        data = [{"slug": "7aschoolerpuat", "school_name": "7A School ERP UAT"}]
+    return success_response(data=data, message="Public tenants directory retrieved")
+
+
 @router.post("/tenants", status_code=status.HTTP_201_CREATED)
 async def create_and_provision_tenant(
     req: TenantCreateRequest,

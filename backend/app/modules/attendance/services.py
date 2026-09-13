@@ -256,3 +256,60 @@ class AttendanceService:
             "half_day": half_day,
             "attendance_percentage": pct,
         }
+
+    @classmethod
+    async def get_student_attendance_summary(
+        cls,
+        student_id: str,
+        db: AsyncSession,
+    ) -> Dict[str, Any]:
+        """
+        Calculates real attendance stats and recent history for Student 360 profile.
+        """
+        stmt = (
+            select(StudentDailyAttendance, AttendanceSession, LookupValue)
+            .join(AttendanceSession, StudentDailyAttendance.session_id == AttendanceSession.id)
+            .join(LookupValue, StudentDailyAttendance.attendance_status_id == LookupValue.id)
+            .where(StudentDailyAttendance.student_id == student_id)
+            .order_by(AttendanceSession.attendance_date.desc())
+        )
+        res = await db.execute(stmt)
+        rows = res.all()
+
+        total = len(rows)
+        present = 0
+        absent = 0
+        late = 0
+        half_day = 0
+        recent = []
+
+        for record, session, lookup in rows:
+            code = (lookup.code or "").upper()
+            if code in ["PRESENT", "P"]:
+                present += 1
+            elif code in ["ABSENT", "A"]:
+                absent += 1
+            elif code in ["LATE", "L"]:
+                late += 1
+            elif code in ["HALF_DAY", "HD"]:
+                half_day += 1
+
+            if len(recent) < 30:
+                recent.append({
+                    "date": str(session.attendance_date),
+                    "status_code": code,
+                    "status_name": lookup.name or code,
+                })
+
+        pct = round(((present + (late * 0.5) + (half_day * 0.5)) / total * 100), 1) if total > 0 else 0.0
+
+        return {
+            "total_sessions": total,
+            "present_count": present,
+            "absent_count": absent,
+            "late_count": late,
+            "half_day_count": half_day,
+            "attendance_percentage": pct,
+            "recent_records": recent,
+        }
+

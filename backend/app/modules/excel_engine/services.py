@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import AppException
+from app.core.security import get_password_hash
+from app.modules.users_rbac.models import User, Role, UserRole
 from app.modules.students.models import Student, Parent, StudentEnrollment
 from app.modules.academics.models import ClassLevel, Section, AcademicYear
 from app.modules.lookups.models import StudentStatus, LookupValue
@@ -297,13 +299,30 @@ class ExcelMigrationService:
             matched_class = class_map[class_name.lower()]
             matched_section = next(s for s in matched_class.sections if s.name.strip().lower() == section_name.lower())
 
-            # 1. Find or create Parent
+            # 1. Find or create Parent & Parent User account
             parent_stmt = select(Parent).where(Parent.primary_phone == phone)
             parent_res = await db.execute(parent_stmt)
             parent = parent_res.scalar_one_or_none()
 
+            parent_user = (await db.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
+            if not parent_user:
+                parent_role = (await db.execute(select(Role).where(Role.code == "PARENT"))).scalar_one_or_none()
+                parent_user = User(
+                    username=phone,
+                    phone=phone,
+                    password_hash=get_password_hash("Parent@123"),
+                    user_type="PARENT",
+                    is_active=True,
+                )
+                db.add(parent_user)
+                await db.flush()
+                if parent_role:
+                    db.add(UserRole(user_id=parent_user.id, role_id=parent_role.id))
+                    await db.flush()
+
             if not parent:
                 parent = Parent(
+                    user_id=parent_user.id if parent_user else None,
                     father_name=father_name,
                     mother_name=mother_name,
                     primary_phone=phone,
@@ -311,6 +330,9 @@ class ExcelMigrationService:
                     address=address,
                 )
                 db.add(parent)
+                await db.flush()
+            elif not parent.user_id and parent_user:
+                parent.user_id = parent_user.id
                 await db.flush()
 
             # 2. Create Student

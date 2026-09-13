@@ -28,7 +28,7 @@ router = APIRouter(prefix="/exams", tags=["Examinations, Grading & Report Cards"
 # ==========================================
 # 1. Exam Terms
 # ==========================================
-@router.get("/terms", dependencies=[Depends(RequirePermission("academics:manage"))])
+@router.get("/terms", dependencies=[Depends(RequirePermission("academics:manage", "academics:view", "students:view"))])
 async def list_exam_terms(
     academic_year_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_tenant_db),
@@ -209,7 +209,7 @@ async def submit_marks_grid(
     return success_response(data={"records_updated": count}, message=f"Marks saved for {count} students")
 
 
-@router.get("/terms/{term_id}/students/{student_id}/report-card", dependencies=[Depends(RequirePermission("academics:manage"))])
+@router.get("/terms/{term_id}/students/{student_id}/report-card", dependencies=[Depends(RequirePermission("academics:manage", "academics:view", "students:view"))])
 async def get_student_report_card_data(
     term_id: str,
     student_id: str,

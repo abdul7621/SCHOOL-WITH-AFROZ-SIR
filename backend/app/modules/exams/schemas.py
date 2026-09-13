@@ -88,7 +88,7 @@ class StudentMarkEntryItem(BaseModel):
 
 
 class SubmitMarksGridRequest(BaseModel):
-    exam_schedule_id: str
+    exam_schedule_id: Optional[str] = None
     marks: List[StudentMarkEntryItem]
 
 

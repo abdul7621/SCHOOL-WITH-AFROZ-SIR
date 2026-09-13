@@ -15,11 +15,25 @@ api.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
 
-    // Dynamic tenant slug detection (from localStorage or subdomain)
-    const storedTenant = localStorage.getItem('tenant_slug') || 'sample';
-    if (storedTenant) {
-      config.headers['x-tenant-slug'] = storedTenant;
+    // Dynamic tenant slug detection (from URL, localStorage, or env default)
+    let resolvedTenant = null;
+    if (typeof window !== 'undefined') {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        resolvedTenant = urlParams.get('tenant') || urlParams.get('tenant_slug');
+        if (!resolvedTenant) {
+          const stored = localStorage.getItem('tenant_slug');
+          if (stored && stored !== 'sample') {
+            resolvedTenant = stored;
+          }
+        }
+      } catch (e) {
+        // Fallback gracefully if window.location is unavailable
+      }
     }
+    const defaultTenant = (import.meta.env && import.meta.env.VITE_DEFAULT_TENANT_SLUG) || '7aschoolerpuat';
+    const finalTenant = resolvedTenant || defaultTenant;
+    config.headers['x-tenant-slug'] = finalTenant;
 
     return config;
   },

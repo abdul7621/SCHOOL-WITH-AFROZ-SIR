@@ -134,10 +134,12 @@ export const FeeCollection = () => {
   }, [searchQuery]);
 
   // Load Student Ledger
-  const loadStudentLedger = async (student) => {
+  const loadStudentLedger = async (student, preserveReceipt = false) => {
     setSelectedStudent(student);
     setPosLoading(true);
-    setReceipt(null);
+    if (!preserveReceipt) {
+      setReceipt(null);
+    }
     try {
       const res = await api.get(`/fees/ledger/${student.id}`, {
         params: academicYearId ? { academic_year_id: academicYearId } : {},
@@ -156,7 +158,7 @@ export const FeeCollection = () => {
   // Collect Payment
   const handleCollectPayment = async (e) => {
     e.preventDefault();
-    if (!selectedStudent || !paymentAmount || !academicYearId || !paymentModeId) return;
+    if (!selectedStudent || !paymentAmount || !academicYearId || !paymentModeId || posLoading) return;
 
     setPosLoading(true);
     try {
@@ -170,7 +172,7 @@ export const FeeCollection = () => {
       const res = await api.post('/fees/collect', payload);
       if (res.data) {
         setReceipt(res.data);
-        loadStudentLedger(selectedStudent);
+        await loadStudentLedger(selectedStudent, true);
       }
     } catch (err) {
       alert('Fee Collection Failed: ' + err.message);
@@ -634,21 +636,40 @@ export const FeeCollection = () => {
 
                 {receipt && (
                   <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2 text-xs">
-                    <div className="flex items-center gap-1.5 text-emerald-800 font-bold">
-                      <CheckCircle2 size={16} />
-                      <span>Payment Settled!</span>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-emerald-800 font-bold">
+                        <CheckCircle2 size={16} />
+                        <span>Payment Settled Successfully!</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setReceipt(null)}
+                        className="text-slate-400 hover:text-slate-700 font-bold px-1.5 py-0.5 rounded hover:bg-emerald-100"
+                        title="Close Receipt Banner"
+                      >
+                        ✕ Close
+                      </button>
                     </div>
                     <div>Receipt No: <strong className="font-mono">{receipt.receipt_no}</strong></div>
                     <div>Amount Paid: <strong>₹{receipt.total_amount_paid}</strong></div>
-                    <a
-                      href={`/api/v1/documents/fee-receipt/${receipt.receipt_no}/html?tenant_slug=${localStorage.getItem('tenant_slug') || 'sample'}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1.5 mt-2 bg-emerald-600 text-white px-3 py-1.5 rounded-lg font-bold text-xs hover:bg-emerald-700 shadow"
-                    >
-                      <Printer size={14} />
-                      <span>Print Standard Fee Receipt</span>
-                    </a>
+                    <div className="flex items-center gap-2 mt-2">
+                      <a
+                        href={`/api/v1/documents/fee-receipt/${receipt.receipt_no}/html?token=${encodeURIComponent(localStorage.getItem('token') || '')}&tenant_slug=${encodeURIComponent(localStorage.getItem('tenant_slug') || '7aschoolerpuat')}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 bg-emerald-600 text-white px-3 py-1.5 rounded-lg font-bold text-xs hover:bg-emerald-700 shadow"
+                      >
+                        <Printer size={14} />
+                        <span>Print Official Fee Receipt</span>
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => setReceipt(null)}
+                        className="px-3 py-1.5 border border-slate-300 text-slate-700 rounded-lg font-semibold hover:bg-white text-xs"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

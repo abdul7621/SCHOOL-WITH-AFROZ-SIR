@@ -69,3 +69,13 @@ async def get_daily_attendance_summary(
         db=db,
     )
     return success_response(data=summary)
+
+
+@router.get("/students/{student_id}/summary", dependencies=[Depends(RequirePermission("attendance:view"))])
+async def get_student_attendance_summary(
+    student_id: str,
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Returns individual student attendance history and percentage for Student 360 profile."""
+    summary = await AttendanceService.get_student_attendance_summary(student_id=student_id, db=db)
+    return success_response(data=summary)

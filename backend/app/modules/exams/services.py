@@ -203,6 +203,7 @@ class ExamService:
         total_max_marks = Decimal("0.00")
         total_obtained_marks = Decimal("0.00")
         has_failed = False
+        has_pending = False
 
         for sched in schedules:
             mark_entry = next((m for m in sched.marks if m.student_id == student.id), None)
@@ -213,19 +214,25 @@ class ExamService:
             marks_val = Decimal(str(mark_entry.marks_obtained)) if mark_entry and mark_entry.marks_obtained is not None else None
             is_absent = mark_entry.is_absent if mark_entry else False
 
+            tiers = sorted(sched.grading_scale.tiers, key=lambda x: x.min_score_percent, reverse=True) if sched.grading_scale else []
+
             if marks_val is not None and not is_absent:
                 total_obtained_marks += marks_val
                 pct = (marks_val / max_m) * Decimal("100.00") if max_m > 0 else Decimal("0.00")
                 is_pass = marks_val >= pass_m
                 if not is_pass:
                     has_failed = True
-            else:
+                grade_letter, grade_remarks = cls._calculate_grade_tier(pct, tiers)
+            elif is_absent:
                 pct = Decimal("0.00")
                 is_pass = False
                 has_failed = True
-
-            tiers = sorted(sched.grading_scale.tiers, key=lambda x: x.min_score_percent, reverse=True) if sched.grading_scale else []
-            grade_letter, grade_remarks = cls._calculate_grade_tier(pct, tiers) if not is_absent and marks_val is not None else ("AB", "Absent")
+                grade_letter, grade_remarks = ("AB", "Absent")
+            else:
+                pct = Decimal("0.00")
+                is_pass = None
+                has_pending = True
+                grade_letter, grade_remarks = ("--", "Pending / Scheduled")
 
             subject_scores.append({
                 "subject_code": sched.subject.code,
@@ -240,7 +247,12 @@ class ExamService:
             })
 
         overall_percentage = round(float((total_obtained_marks / total_max_marks * 100)), 2) if total_max_marks > 0 else 0.0
-        final_result = "FAILED" if has_failed else "PASSED"
+        if has_failed:
+            final_result = "FAILED"
+        elif has_pending:
+            final_result = "IN_PROGRESS"
+        else:
+            final_result = "PASSED"
 
         # 3. Attendance Stats in the Term period
         att_stmt = (

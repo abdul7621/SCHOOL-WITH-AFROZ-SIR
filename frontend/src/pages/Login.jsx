@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, User, Shield, School, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTenant } from '../context/TenantContext';
+import api from '../api/client';
 
 export const Login = () => {
   const { login } = useAuth();
-  const { settings, tenantSlug } = useTenant();
+  const { settings, tenantSlug, switchTenant } = useTenant();
   const navigate = useNavigate();
 
   const [username, setUsername] = useState(() => (tenantSlug === 'sample' ? 'admin@sample.com' : ''));
@@ -15,6 +16,23 @@ export const Login = () => {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [tenantList, setTenantList] = useState([
+    { slug: '7aschoolerpuat', school_name: '7A School ERP UAT' },
+  ]);
+
+  useEffect(() => {
+    const fetchTenants = async () => {
+      try {
+        const res = await api.get('/control/tenants/public');
+        if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+          setTenantList(res.data);
+        }
+      } catch (err) {
+        // Fallback silently to default tenant list
+      }
+    };
+    fetchTenants();
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -27,6 +45,8 @@ export const Login = () => {
       const userData = await login(cleanUser, cleanPass, isSuperAdmin);
       if (isSuperAdmin || userData?.isSuperAdmin || userData?.role === 'SUPER_ADMIN') {
         navigate('/superadmin');
+      } else if (userData?.roles?.includes('PARENT') || userData?.user_type === 'PARENT') {
+        navigate('/parent-portal');
       } else {
         navigate('/');
       }
@@ -44,10 +64,10 @@ export const Login = () => {
           7A
         </div>
         <h2 className="text-2xl font-black text-white tracking-tight">
-          {isSuperAdmin ? 'Platform Super Admin Portal' : settings.school_name}
+          {isSuperAdmin ? 'Platform Super Admin Portal' : settings.school_name || '7A School ERP'}
         </h2>
         <p className="text-xs text-slate-400 mt-1 uppercase tracking-wider font-medium flex items-center justify-center gap-2">
-          <span>{isSuperAdmin ? '7A Digital Solution — Control Plane' : 'Staff & Faculty ERP Login'}</span>
+          <span>{isSuperAdmin ? '7A Digital Solution — Control Plane' : 'Staff, Faculty & Parent Login'}</span>
           {!isSuperAdmin && (
             <span className="bg-blue-900/60 text-blue-300 font-mono text-[10px] px-2 py-0.5 rounded-full border border-blue-700/50 lowercase">
               slug: {tenantSlug}
@@ -58,20 +78,44 @@ export const Login = () => {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-slate-900 border border-slate-800 py-8 px-6 shadow-2xl rounded-2xl sm:px-10">
+          {/* School Database Switcher */}
+          {!isSuperAdmin && (
+            <div className="mb-5 bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+              <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                <School size={13} className="text-blue-400" />
+                <span>Target School Database</span>
+              </label>
+              <select
+                value={tenantSlug}
+                onChange={(e) => switchTenant(e.target.value)}
+                className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-blue-300 font-semibold focus:outline-none focus:border-blue-500"
+              >
+                {tenantList.map((t) => (
+                  <option key={t.slug} value={t.slug}>
+                    🏫 {t.school_name} ({t.slug})
+                  </option>
+                ))}
+                {!tenantList.some((t) => t.slug === tenantSlug) && (
+                  <option value={tenantSlug}>🏫 Current: {tenantSlug}</option>
+                )}
+              </select>
+            </div>
+          )}
+
           {/* Mode Switcher */}
           <div className="flex bg-slate-950 p-1 rounded-lg mb-6 border border-slate-800">
             <button
               type="button"
               onClick={() => {
                 setIsSuperAdmin(false);
-                setUsername('admin@sample.com');
-                setPassword('Admin123!');
+                setUsername('');
+                setPassword('');
               }}
               className={`flex-1 py-2 text-xs font-semibold rounded-md transition-all ${
                 !isSuperAdmin ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
               }`}
             >
-              School Principal / Staff
+              School Portal (Staff / Parent)
             </button>
             <button
               type="button"
@@ -109,7 +153,7 @@ export const Login = () => {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full pl-10 pr-3 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500"
-                  placeholder={isSuperAdmin ? 'superadmin@7aedu.com' : 'e.g. email, phone, or EMP ID'}
+                  placeholder={isSuperAdmin ? 'superadmin@7aedu.com' : 'e.g. 7984495290 or email'}
                 />
               </div>
             </div>
@@ -151,14 +195,15 @@ export const Login = () => {
 
           {/* Quick Demo Credentials Helper */}
           <div className="mt-6 pt-4 border-t border-slate-800 text-[11px] text-slate-400 space-y-1">
-            <div className="font-semibold text-slate-300">Quick Test Credentials:</div>
+            <div className="font-semibold text-slate-300">Live UAT Logins (7aschoolerpuat):</div>
             <div>
-              Default Admin: <code className="text-blue-400">admin@sample.com</code> /{' '}
-              <code className="text-blue-400">Admin123!</code>
+              👨‍💼 Principal: <code className="text-blue-400">abduljalilmulla762@gmail.com</code> / <code className="text-blue-400">Afroz@123456</code>
             </div>
             <div>
-              Super Admin: <code className="text-blue-400">superadmin@7aedu.com</code> /{' '}
-              <code className="text-blue-400">AdminSecurePassword123!</code>
+              👨‍🏫 Teacher: <code className="text-blue-400">abdulbasitmulla762@gmail.com</code> / <code className="text-blue-400">Teacher@123</code>
+            </div>
+            <div>
+              👨‍👩‍👦 Parent: <code className="text-emerald-400">7984495290</code> / <code className="text-emerald-400">Parent@123</code>
             </div>
           </div>
         </div>
