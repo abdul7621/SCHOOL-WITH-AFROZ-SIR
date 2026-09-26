@@ -47,9 +47,6 @@ class AuthService:
         if not user or not verify_password(clean_password, user.password_hash):
             raise InvalidCredentialsException("Invalid username/phone or password")
 
-        from app.modules.lookups.services import LookupService
-        await LookupService.ensure_system_lookups(db)
-
         # Gather assigned roles
         role_stmt = (
             select(Role)

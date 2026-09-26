@@ -145,7 +145,7 @@ class LookupService:
 
         # Fetch existing role permissions
         rp_res = await db.execute(select(RolePermission.role_id, RolePermission.permission_id))
-        existing_rp_set = set(rp_res.all())
+        existing_rp_set = {(str(r[0]), str(r[1])) for r in rp_res.all()}
 
         for r_code, r_obj in role_objects.items():
             if r_code in ["ADMIN", "PRINCIPAL"]:
@@ -161,9 +161,9 @@ class LookupService:
 
             for p_code in target_perms:
                 p_obj = perm_objects.get(p_code)
-                if p_obj and (r_obj.id, p_obj.id) not in existing_rp_set:
+                if p_obj and (str(r_obj.id), str(p_obj.id)) not in existing_rp_set:
                     db.add(RolePermission(role_id=r_obj.id, permission_id=p_obj.id))
-                    existing_rp_set.add((r_obj.id, p_obj.id))
+                    existing_rp_set.add((str(r_obj.id), str(p_obj.id)))
 
         # 9. Self-heal Parent User Accounts for existing parents
         from app.core.security import get_password_hash
@@ -174,24 +174,29 @@ class LookupService:
         parent_role_obj = role_objects.get("PARENT")
 
         for p_rec in unlinked_parents:
-            phone_clean = str(p_rec.primary_phone).strip()
+            phone_clean = str(p_rec.primary_phone or "").strip()
             if not phone_clean:
                 continue
-            u_ex = (await db.execute(select(User).where(User.phone == phone_clean))).scalar_one_or_none()
+            u_ex = (await db.execute(select(User).where(or_(User.phone == phone_clean, User.username == phone_clean)))).scalar_one_or_none()
             if not u_ex:
-                u_ex = User(
-                    username=phone_clean,
-                    phone=phone_clean,
-                    email=p_rec.email,
-                    password_hash=get_password_hash("Parent@123"),
-                    user_type="PARENT",
-                    is_active=True,
-                )
-                db.add(u_ex)
-                await db.flush()
-                if parent_role_obj:
-                    db.add(UserRole(user_id=u_ex.id, role_id=parent_role_obj.id))
+                try:
+                    u_ex = User(
+                        username=phone_clean,
+                        phone=phone_clean,
+                        email=p_rec.email if p_rec.email else None,
+                        password_hash=get_password_hash("Parent@123"),
+                        user_type="PARENT",
+                        is_active=True,
+                    )
+                    db.add(u_ex)
                     await db.flush()
-            p_rec.user_id = u_ex.id
+                    if parent_role_obj:
+                        db.add(UserRole(user_id=u_ex.id, role_id=parent_role_obj.id))
+                        await db.flush()
+                except Exception:
+                    # Sibling or duplicate phone/email - find or fallback
+                    u_ex = (await db.execute(select(User).where(or_(User.phone == phone_clean, User.username == phone_clean)))).scalar_one_or_none()
+            if u_ex:
+                p_rec.user_id = u_ex.id
 
         await db.commit()
