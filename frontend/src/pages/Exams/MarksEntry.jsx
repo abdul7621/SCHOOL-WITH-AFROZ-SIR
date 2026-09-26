@@ -139,9 +139,11 @@ export const MarksEntry = () => {
         exam_schedule_id: selectedSchedule,
         marks: marksData.map((s) => ({
           student_id: s.student_id,
-          marks_obtained: s.marks_obtained,
-          is_absent: s.is_absent || false,
-          remarks: s.remarks || undefined,
+          marks_obtained: (s.is_absent || s.marks_obtained === '' || s.marks_obtained === null || isNaN(s.marks_obtained))
+            ? null
+            : parseFloat(s.marks_obtained),
+          is_absent: Boolean(s.is_absent),
+          remarks: s.remarks?.trim() || undefined,
         })),
       };
       await api.post(`/exams/schedules/${selectedSchedule}/marks`, payload);

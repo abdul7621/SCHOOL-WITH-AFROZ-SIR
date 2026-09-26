@@ -142,8 +142,9 @@ export const ReportsCenter = () => {
             <div className="p-4 border-b border-slate-100 font-bold text-xs text-slate-800 flex justify-between items-center">
               <span>Overdue Fee Defaulters Roster</span>
               <a
-                href="/api/v1/excel/export/students"
+                href={`/api/v1/excel/export/students?token=${encodeURIComponent(localStorage.getItem('token') || '')}&tenant_slug=${encodeURIComponent(localStorage.getItem('tenant_slug') || '7aschoolerpuat')}`}
                 target="_blank"
+                rel="noreferrer"
                 className="flex items-center gap-1 text-emerald-700 hover:underline font-semibold"
               >
                 <Download size={14} /> Export to Excel

@@ -509,7 +509,7 @@ export const FeeCollection = () => {
                     </div>
                     <div className="flex items-center gap-3">
                       <a
-                        href={`/api/v1/documents/fee-card/${selectedStudent.id}/html?tenant_slug=${localStorage.getItem('tenant_slug') || 'sample'}`}
+                        href={`/api/v1/documents/fee-card/${selectedStudent.id}/html?token=${encodeURIComponent(localStorage.getItem('token') || '')}&tenant_slug=${encodeURIComponent(localStorage.getItem('tenant_slug') || '7aschoolerpuat')}`}
                         target="_blank"
                         rel="noreferrer"
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold transition-colors shadow-sm"
@@ -517,6 +517,14 @@ export const FeeCollection = () => {
                         <Printer size={13} />
                         <span>Print Fee Card</span>
                       </a>
+                      {ledger?.advance_wallet_balance > 0 && (
+                        <div className="text-right bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
+                          <div className="text-[10px] font-bold text-emerald-700 uppercase">Advance Credit</div>
+                          <div className="text-xl font-black text-emerald-700">
+                            +₹{ledger.advance_wallet_balance.toLocaleString()}
+                          </div>
+                        </div>
+                      )}
                       <div className="text-right">
                         <div className="text-[11px] font-semibold text-slate-400 uppercase">Net Outstanding Balance</div>
                         <div className="text-2xl font-black text-rose-600">

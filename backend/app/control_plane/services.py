@@ -635,12 +635,16 @@ class TenantProvisioningService:
                     paid_amount DECIMAL(10, 2) DEFAULT 0.00,
                     balance_amount DECIMAL(10, 2) NOT NULL,
                     status VARCHAR(30) DEFAULT 'UNPAID',
+                    waived_by_user_id VARCHAR(36) NULL,
+                    waived_at DATETIME NULL,
+                    waiver_reason TEXT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
                     FOREIGN KEY (academic_year_id) REFERENCES academic_years(id),
                     FOREIGN KEY (installment_schedule_id) REFERENCES fee_installment_schedules(id),
                     FOREIGN KEY (fee_head_id) REFERENCES fee_heads(id),
+                    FOREIGN KEY (waived_by_user_id) REFERENCES users(id),
                     UNIQUE KEY uk_st_sched_head (student_id, installment_schedule_id, fee_head_id),
                     INDEX idx_demand_status (status)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -708,6 +712,38 @@ class TenantProvisioningService:
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
                 """)
 
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS student_advance_wallets (
+                    id VARCHAR(36) PRIMARY KEY,
+                    student_id VARCHAR(36) NOT NULL UNIQUE,
+                    credit_balance DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+                    INDEX idx_saw_student_id (student_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """)
+
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS student_advance_wallet_transactions (
+                    id VARCHAR(36) PRIMARY KEY,
+                    wallet_id VARCHAR(36) NOT NULL,
+                    transaction_type VARCHAR(30) NOT NULL,
+                    amount DECIMAL(10, 2) NOT NULL,
+                    running_balance DECIMAL(10, 2) NOT NULL,
+                    fee_collection_id VARCHAR(36) NULL,
+                    student_fee_demand_id VARCHAR(36) NULL,
+                    notes VARCHAR(255) NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (wallet_id) REFERENCES student_advance_wallets(id) ON DELETE CASCADE,
+                    FOREIGN KEY (fee_collection_id) REFERENCES fee_collections(id) ON DELETE SET NULL,
+                    FOREIGN KEY (student_fee_demand_id) REFERENCES student_fee_demands(id) ON DELETE SET NULL,
+                    INDEX idx_sawt_wallet_id (wallet_id),
+                    INDEX idx_sawt_collection_id (fee_collection_id),
+                    INDEX idx_sawt_demand_id (student_fee_demand_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """)
 
                 # Finance & Hisaab-Kitab
                 cursor.execute("""

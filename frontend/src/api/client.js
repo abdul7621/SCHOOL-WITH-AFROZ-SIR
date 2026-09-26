@@ -23,7 +23,7 @@ api.interceptors.request.use(
         resolvedTenant = urlParams.get('tenant') || urlParams.get('tenant_slug');
         if (!resolvedTenant) {
           const stored = localStorage.getItem('tenant_slug');
-          if (stored && stored !== 'sample') {
+          if (stored) {
             resolvedTenant = stored;
           }
         }

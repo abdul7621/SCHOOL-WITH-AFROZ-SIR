@@ -59,7 +59,6 @@ class ExamService:
             .where(
                 StudentEnrollment.academic_year_id == schedule.exam_term.academic_year_id,
                 StudentEnrollment.class_id == schedule.class_id,
-                StudentEnrollment.is_active == True,
             )
             .order_by(StudentEnrollment.roll_no.asc(), Student.first_name.asc())
         )
@@ -168,11 +167,10 @@ class ExamService:
             .join(StudentEnrollment, Student.id == StudentEnrollment.student_id)
             .join(ClassLevel, StudentEnrollment.class_id == ClassLevel.id)
             .join(Section, StudentEnrollment.section_id == Section.id)
-            .join(Parent, Student.parent_id == Parent.id)
+            .outerjoin(Parent, Student.parent_id == Parent.id)
             .where(
                 Student.id == student_id,
                 StudentEnrollment.academic_year_id == term.academic_year_id,
-                StudentEnrollment.is_active == True,
             )
         )
         st_res = await db.execute(st_stmt)
@@ -303,8 +301,8 @@ class ExamService:
                 "student_id": student.id,
                 "admission_no": student.admission_no,
                 "student_name": f"{student.first_name} {student.last_name or ''}".strip(),
-                "father_name": parent.father_name,
-                "mother_name": parent.mother_name,
+                "father_name": parent.father_name if parent else "-",
+                "mother_name": parent.mother_name if parent else "-",
                 "dob": str(student.dob),
                 "class_name": cls_lvl.name,
                 "section_name": sec.name,

@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { UserPlus, ArrowLeft, CheckCircle2, AlertCircle, Save, Camera, Upload, Trash2, User } from 'lucide-react';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { UserPlus, ArrowLeft, CheckCircle2, AlertCircle, Save, Camera, Upload, Trash2, User, Sparkles } from 'lucide-react';
 import api from '../../api/client';
 
 export const AdmissionForm = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const inquiryData = location.state?.inquiry;
   const fileInputRef = useRef(null);
   const [classes, setClasses] = useState([]);
   const [academicYears, setAcademicYears] = useState([]);
@@ -91,10 +93,26 @@ export const AdmissionForm = () => {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const cleanPhone = (val) => String(val || '').replace(/\D/g, '').slice(-10);
+
   useEffect(() => {
     const fetchFormData = async () => {
       setLoading(true);
       try {
+        if (inquiryData) {
+          const parts = (inquiryData.applicant_name || inquiryData.name || '').trim().split(' ');
+          if (parts.length > 0 && parts[0]) setFirstName(parts[0]);
+          if (parts.length > 1) setLastName(parts.slice(1).join(' '));
+          if (inquiryData.parent_name || inquiryData.father_name) {
+            setFatherName(inquiryData.parent_name || inquiryData.father_name);
+          }
+          if (inquiryData.phone) {
+            const cleaned = cleanPhone(inquiryData.phone);
+            setPrimaryPhone(cleaned);
+            setWhatsappPhone(cleaned);
+          }
+        }
+
         const [clsRes, yrRes, genRes, bgRes] = await Promise.all([
           api.get('/academics/classes'),
           api.get('/academics/years'),
@@ -104,10 +122,22 @@ export const AdmissionForm = () => {
 
         if (clsRes.data && clsRes.data.length > 0) {
           setClasses(clsRes.data);
-          setClassId(clsRes.data[0].id);
-          if (clsRes.data[0].sections?.length > 0) {
-            setSectionId(clsRes.data[0].sections[0].id);
+          let targetCId = clsRes.data[0].id;
+          let targetSId = clsRes.data[0].sections?.[0]?.id || '';
+
+          if (inquiryData && inquiryData.target_class) {
+            const qTarget = inquiryData.target_class.toLowerCase().trim();
+            const matched = clsRes.data.find(
+              (c) => c.name.toLowerCase().includes(qTarget) || qTarget.includes(c.name.toLowerCase())
+            );
+            if (matched) {
+              targetCId = matched.id;
+              targetSId = matched.sections?.[0]?.id || '';
+            }
           }
+
+          setClassId(targetCId);
+          setSectionId(targetSId);
         }
 
         if (yrRes.data && yrRes.data.length > 0) {
@@ -167,13 +197,20 @@ export const AdmissionForm = () => {
         parent: {
           father_name: fatherName,
           mother_name: motherName || undefined,
-          primary_phone: primaryPhone,
-          whatsapp_phone: whatsappPhone || primaryPhone,
+          primary_phone: cleanPhone(primaryPhone),
+          whatsapp_phone: cleanPhone(whatsappPhone || primaryPhone),
           address: address || undefined,
         },
       };
 
       const res = await api.post('/students/admit', payload);
+      if (inquiryData?.id) {
+        try {
+          await api.patch(`/cms/inquiries/${inquiryData.id}/status`, { status: 'ENROLLED' });
+        } catch {
+          // Non-blocking status sync
+        }
+      }
       alert(`Student admitted successfully! Admission No: ${res.data.admission_no}`);
       navigate('/students');
     } catch (err) {
@@ -205,6 +242,23 @@ export const AdmissionForm = () => {
           </div>
         </div>
       </div>
+
+      {inquiryData && (
+        <div className="bg-indigo-50 border border-indigo-200 text-indigo-900 px-4 py-3 rounded-2xl flex items-center justify-between text-xs shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <span className="p-1.5 bg-indigo-100 rounded-lg text-indigo-600 font-bold">🚀</span>
+            <div>
+              <div className="font-bold">Fast-Track Website Inquiry Conversion</div>
+              <div className="text-slate-600 text-[11px]">
+                Pre-filled student and parent particulars from website inquiry for <strong>{inquiryData.applicant_name || inquiryData.name || 'Applicant'}</strong>.
+              </div>
+            </div>
+          </div>
+          <span className="bg-indigo-600 text-white font-bold px-2.5 py-1 rounded-lg text-[10px] tracking-wide uppercase">
+            Inquiry Linked
+          </span>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Section 1: Student Details & Passport Photo */}
@@ -438,16 +492,46 @@ export const AdmissionForm = () => {
             </div>
 
             <div>
-              <label className="block mb-1">Roll Number</label>
+              <label className="block mb-1 flex items-center justify-between">
+                <span>Roll Number</span>
+                <span className="text-[10px] text-slate-400 font-normal">Auto if blank</span>
+              </label>
               <input
                 type="number"
                 value={rollNo}
                 onChange={(e) => setRollNo(e.target.value)}
-                placeholder="e.g. 15"
+                placeholder="Auto-assigned"
                 className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono"
               />
             </div>
           </div>
+
+          {(() => {
+            const activeSec = currentSections.find((s) => s.id === sectionId);
+            if (!activeSec) return null;
+            const cap = activeSec.capacity || 40;
+            const enrolled = activeSec.enrolled_count || 0;
+            const vacant = activeSec.vacant_seats !== undefined ? activeSec.vacant_seats : Math.max(0, cap - enrolled);
+            const isFull = vacant <= 0;
+            const isNearlyFull = vacant <= 5 && !isFull;
+
+            return (
+              <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                <span className="text-xs font-semibold text-slate-500">Section Capacity Radar:</span>
+                <span className={`px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1.5 ${
+                  isFull
+                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                    : isNearlyFull
+                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                }`}>
+                  <span>{isFull ? '🔴 FULL' : isNearlyFull ? '🟡 FILLING FAST' : '🟢 AVAILABLE'}</span>
+                  <span>•</span>
+                  <span>{enrolled} / {cap} Seats Occupied ({vacant} Remaining)</span>
+                </span>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Submit Bar */}

@@ -116,11 +116,55 @@ class TenantDatabaseManager:
             return session_factory
 
     async def _ensure_tenant_schema_patches(self, engine: AsyncEngine, tenant_slug: str):
-        """Applies essential schema fixes (like LONGTEXT for photo URLs) automatically."""
+        """Applies essential schema fixes (like LONGTEXT for photo URLs, advance wallet tables, and waiver columns) automatically."""
         try:
             from sqlalchemy import text
             async with engine.begin() as conn:
+                # 1. LONGTEXT for student profile photo
                 await conn.execute(text("ALTER TABLE students MODIFY COLUMN profile_photo_url LONGTEXT;"))
+                
+                # 2. Advance wallet table
+                await conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS student_advance_wallets (
+                        id VARCHAR(36) PRIMARY KEY,
+                        student_id VARCHAR(36) NOT NULL UNIQUE,
+                        credit_balance DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        INDEX idx_saw_student_id (student_id)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """))
+                
+                # 3. Advance wallet transactions table
+                await conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS student_advance_wallet_transactions (
+                        id VARCHAR(36) PRIMARY KEY,
+                        wallet_id VARCHAR(36) NOT NULL,
+                        transaction_type VARCHAR(30) NOT NULL,
+                        amount DECIMAL(10, 2) NOT NULL,
+                        running_balance DECIMAL(10, 2) NOT NULL,
+                        fee_collection_id VARCHAR(36) NULL,
+                        student_fee_demand_id VARCHAR(36) NULL,
+                        notes VARCHAR(255) NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        INDEX idx_sawt_wallet_id (wallet_id),
+                        INDEX idx_sawt_collection_id (fee_collection_id),
+                        INDEX idx_sawt_demand_id (student_fee_demand_id)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """))
+
+                # 4. Fee waiver audit columns on student_fee_demands
+                for col_sql in [
+                    "ALTER TABLE student_fee_demands ADD COLUMN waived_by_user_id VARCHAR(36) NULL;",
+                    "ALTER TABLE student_fee_demands ADD COLUMN waived_at DATETIME NULL;",
+                    "ALTER TABLE student_fee_demands ADD COLUMN waiver_reason TEXT NULL;",
+                ]:
+                    try:
+                        await conn.execute(text(col_sql))
+                    except Exception as col_err:
+                        if "Duplicate" not in str(col_err) and "already exists" not in str(col_err):
+                            logger.debug(f"Column patch notice on tenant '{tenant_slug}': {col_err}")
         except Exception as e:
             logger.debug(f"Schema patch notice for tenant '{tenant_slug}': {e}")
 

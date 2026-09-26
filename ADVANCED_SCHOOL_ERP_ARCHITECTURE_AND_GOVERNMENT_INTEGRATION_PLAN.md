@@ -194,9 +194,49 @@ graph LR
 3. **Bucket 3 (31 - 60 Days Overdue)**: **Promise-to-Pay (PTP) Tracker**. If parent promised 15th September, system pauses alerts until 15th. If unpaid on 16th, automatic escalation alert triggers.
 4. **Bucket 4 (60+ Days Overdue)**: Case flagged for Trust Management review for Zakat / Charity fee subsidy or meeting with Principal.
 
+### 6.3 Physical Fee Receipt Slip Generator (`media_1790068795318.jpg`)
+Schools require paper/thermal slip receipts for cash and counter payments:
+- **Receipt Prefix Sequencing**: Dynamic prefix per medium/wing (e.g. `PE/427` for Primary English, `PG/` for Primary Gujarati, `SE/` for Secondary English).
+- **Header Structure**: School Branding, Address, Trust registration, Phone, Section (`PRIMARY (English) (PE)`), `School Copy` / `Parent Copy`.
+- **Student Data**: Student Full Name, Std, Div, GR No, Period (e.g. `Jun - Aug`), Year (`2026-27`), Payment Mode (`Cash`, `UPI`, `Cheque`, `Bank Transfer`).
+- **Fees Ledger**: Itemized break-up (`Education Fee: ₹3750.00`).
+- **Total Amount**: Displayed in figures and statutory legal words (`THREE THOUSAND SEVEN HUNDRED FIFTY RUPEES ONLY`).
+- **Cashier Signature & Verification**: Received By name, digital signature, and official school stamp.
+- **Customizable Statutory Terms & Conditions**: Multilingual terms printed at footer (e.g. "Fees timing 9:00 AM to 1:00 PM", "Fees not transferable", "Cheque subject to realization").
+
+### 6.4 Physical 2-Sided Student Fee Card Engine (`media_1790068814363.jpg` & `media_1790068822438.jpg`)
+Every student receives a physical pocket Fee Card at the start of the academic year:
+- **Front Face (`media_1790068822438.jpg`)**:
+  - School Logo & Trust Name (e.g., `UME WELFARE TRUST / UME SCHOOL`).
+  - School Address & Official Phone Numbers (`+91 910 600 3604 / +91 704 128 6032`).
+  - Medium Checkboxes (`[ ] ENGLISH MEDIUM`, `[ ] GUJARATI MEDIUM`).
+  - Section Checkboxes (`[ ] PRE-PRIMARY`, `[ ] PRIMARY`, `[ ] SECONDARY`).
+  - Card Box: `Academic Year`, `Student Name`, `Mobile No.`, `Std`, `Division`, `G.R. No.`.
+  - Multilingual Guidelines Box (in Hindi/Gujarati/English):
+    *(1) Jab bhi fees jama karne aayen to Fee Card saath layen.*
+    *(2) June, September, November aur January mahine ki 10 tareekh tak fees ke installment jama karayein.*
+    *(3) Diye gaye waqt par fees jama karna zaroori hai.*
+    *(4) Fees bharne ka samay: Subah 9:00 baje se 1:30 baje tak.*
+- **Back Face (`media_1790068814363.jpg`) — Installment Grid**:
+  - **The 4 Statutory Installments**:
+    1. 🟢 `JUNE 1 TO 10 / 1ST INSTALMENT`
+    2. 🌸 `SEPT. 1 TO 10 / 2ND INSTALMENT`
+    3. 🟤 `NOV. 1 TO 10 / 3RD INSTALMENT`
+    4. 🔵 `JAN. 1 TO 10 / 4TH INSTALMENT`
+  - **Grid Row Columns**:
+    - `INSTALMENT`
+    - `PAY DATE`
+    - `AMOUNT`
+    - `RECEIPT NO.`
+    - `CASHIER SIGN.`
+- **Maximum Dynamic Rule**:
+  - While UME Trust uses 4 quarterly installments (June, Sept, Nov, Jan), the engine is **100% dynamically configurable per tenant**:
+    - Frequency: Monthly (12), Bi-Monthly (6), Quarterly (4), or Semi-Annual (2).
+    - Custom due windows, colors, labels, and notice texts can be customized per school.
+
 ---
 
-## 7. Government Compliance Portals & The Statutory G.R. Register
+## 7. Government Compliance Portals & The Statutory 2-Page G.R. Register
 
 ### 7.1 The Hard Reality: Do Public Government APIs Exist?
 > [!CAUTION]
@@ -210,10 +250,10 @@ graph LR
 +------------------------------------------------------------------------------------+
 |                      3-PILLAR GOVERNMENT COMPLIANCE SUITE                          |
 +------------------------------------------------------------------------------------+
-| PILLAR 1: Statutory G.R. (General Register) Print Engine                           |
-|           - Exact reproduction of the state gazette ledger format                  |
-|           - Matches the uploaded statutory photo (media_1790068035347.jpg)         |
-|           - Includes APAAR ID, PEN, caste, birth place, and legal leaving records  |
+| PILLAR 1: Statutory 2-Page G.R. (General Register) Print Engine                    |
+|           - Exact reproduction of the state gazette 2-page ledger format           |
+|           - Matches physical register photos (media_1790068787865 & 8805046)       |
+|           - Includes 18-digit Child UID, 11-digit PEN, APAAR ID, DISE Code, RTE    |
 |           - High-resolution A3 landscape print for permanent physical binding      |
 +------------------------------------------------------------------------------------+
 | PILLAR 2: 1-Click Statutory Schema Exporter                                        |
@@ -230,31 +270,124 @@ graph LR
 +------------------------------------------------------------------------------------+
 ```
 
-### 7.3 Statutory G.R. Register Schema (As per Photo `media_1790068035347.jpg`)
-The physical register requires 15 statutory columns:
-1. **G.R. Number (General Register No.)**: Unique permanent sequential integer.
-2. **Student Full Name**: Format: `[Surname] [Student Name] [Father's Name] [Mother's Name]`.
-3. **Religion & Caste**: Detailed sub-caste specification (e.g. `Muslim - Sunni / Pinjara` or `Hindu - Luhana`).
-4. **Place of Birth**: Full hierarchy: `[Village/Town]`, `[Taluka]`, `[District]`, `[State]`.
-5. **Date of Birth**:
-   - In Figures: `DD/MM/YYYY` (e.g., `14/08/2015`).
-   - In Statutory Words: (e.g., `Fourteenth August Two Thousand Fifteen`).
-6. **Previous School Attended & Last Standard Studied**.
-7. **Date of Admission & Standard Admitted Into**.
-8. **Progress & Moral Conduct Remarks**.
-9. **Date of Leaving School**.
-10. **Standard from which Leaving & Reason for Leaving**.
-11. **School Leaving Certificate (LC) Number & Date of Issue**.
-12. **APAAR ID** (Automated Permanent Academic Account Registry — 12-digit national Edu ID).
-13. **PEN** (Permanent Education Number assigned under UDISE+).
-14. **Student & Parent Aadhar Numbers**.
+### 7.3 Statutory 2-Page G.R. Register Schema (As per Photos `media_1790068787865.jpg` & `media_1790068805046.jpg`)
+The physical register spans a **two-page landscape ledger** with bilingual headings (Gujarati & English):
+
+#### 📖 Left Page (`media_1790068787865.jpg`): Student Identity & Birth Record
+1. **School Name & Medium**: e.g., `Ume school`, Medium: `English`, `GENERAL REGISTER`.
+2. **Col 1: General Reg. No. of the Student (`વિદ્યાર્થીનો જી.આર. નં.`)**: Sequential integer locked sequence (e.g. 2640, 2641, 2642...).
+3. **Col 2: Full Name of the Student (`વિદ્યાર્થીનું પૂરું નામ`)**: Split across 4 distinct lines:
+   - `Name : [Student First Name]`
+   - `Father's Name : [Father's Name]`
+   - `Surname : [Surname]`
+   - `Mother's Name : [Mother's Name]`
+4. **Col 3: Religion & Caste (`ધર્મ અને જાતિ`)**: Category (`GEN / EWS / OBC / SC / ST`), Religion & Sub-caste (e.g. `Islam / Muslim`).
+5. **Col 4: Place of Birth with Taluka & District (`જન્મ સ્થળ તાલુકો - જિલ્લો સહિત`)**:
+   - `Village/City`, `Di: [District]`, `St: [State]` (e.g., `Surat, Gujarat` or `Jambusar, Di: Bharuch, St: Gujarat`).
+   - **Dedicated APAAR ID Box**: 12-digit national Automated Permanent Academic Account Registry box.
+6. **Col 5: Date of Birth (`જન્મ તારીખ`)**:
+   - In Figures: `DD/MM/YYYY` (e.g., `08/12/2018`).
+   - In Words (Christian Calendar): (e.g., `Eight December Two Thousand Eighteen`, `Sixth July Two Thousand Eighteen`).
+
+#### 📖 Right Page (`media_1790068805046.jpg`): Enrollment, State UIDs & Leaving Record
+1. **Header**: `REGISTER`, **Dise Code: 24221501552** (Dynamic School UDISE Code), `Year: 2025-26`, `Page No: 1`.
+2. **Col 6: Last School Attended & G.R. No. (`અભ્યાસ કર્યો હોય તે છેલ્લી શાળાનું નામ અને જી.આર. નં.`)**.
+3. **Child Tracking UID No.**:
+   - 18 individual boxes for Gujarat Child Tracking UID (e.g., `2 4 2 2 1 5 1 9 8 1 0 2 4 1 0 0 0 9`).
+4. **PEN No. (Permanent Education Number)**:
+   - 11 individual boxes for national UDISE+ PEN (e.g., `2 2 9 4 8 1 6 2 1 7 6`).
+5. **Col 7: Date of Admission with Class (`પ્રવેશ તારીખ ધોરણ સહિત`)**:
+   - Date: `DD/MM/YYYY` (e.g., `11/06/2025`).
+   - Class & Division: `Std./Div: 1st - A`.
+   - **R.T.E. Quota Stamp**: Bold annotation if admitted under Right to Education 25% disadvantaged quota.
+6. **Col 8: Admi. in Std./Class / Stream (`ધો./વર્ગમાં દાખલ કર્યા હોય તે`)**.
+7. **Col 9: Progress (`પ્રગતિ`)**: Qualitative progress remark.
+8. **Col 10: Conduct (`વર્તણૂંક`)**: Moral behavior remark (e.g., `Good`).
+9. **Col 11: Date of Leaving the School (`શાળા છોડ્યાની તારીખ`)**.
+10. **Col 12: Std & Class at the time of Leaving the School (`શાળા છોડતી વખતે ધો./વર્ગ`)**.
+11. **Col 13: Remarks (`વિશેષ નોંધ`)**: Reason for leaving school, Fees paid or unpaid, `Std./Div`, `L.C. No.` (Leaving Certificate Number), and Principal Signature.
 15. **Signature of Headmaster / Principal**.
 
 ---
 
 ## 8. Module 7: Dynamic Multi-School & Multi-Tenant Customization
 
-Every school operates under different conditions. The architecture uses a **Dynamic Tenant Configuration Engine**:
+### 8.1 The Core SaaS Principle: 100% Modular, Zero Forced Requirements
+Every school has its own culture, board affiliation, and administrative philosophy:
+- **No Mandatory Features**: Koi bhi feature (jaise 9-Point Habits, Fee Cards, ya Weekly Awards) kisi school par mandatory nahi hai.
+- **Starter Presets as Reference Examples**: New tenants jo banenge, unhe pehle se bani hui reference templates milengi. Woh inhe dekh kar samajh sakte hain aur chahein to 1-click me adopt kar sakte hain, ya poori tarah customize/disable kar sakte hain.
+
+### 8.2 Ready-to-Use Example Starter Presets
+When an admin registers or configures their school, they can choose from 3 starter archetypes:
+
+```
++------------------------------------------------------------------------------------+
+|                         PRE-CONFIGURED STARTER PRESETS                             |
++------------------------------------------------------------------------------------+
+| 🟢 PRESET 1: "Gujarat Trust School Model" (UME Welfare Trust Example)             |
+|    - 9-Point Character & Habit Scoring active                                      |
+|    - 4 UME Certificate Frames pre-loaded (Star Student, Homework Hero, etc.)       |
+|    - 4-Quarterly Installment Fee Model (June, Sept, Nov, Jan)                      |
+|    - 2-Sided Pocket Fee Card Print active with Hindi/Gujarati notes                |
+|    - 2-Page Statutory G.R. Register (GSEB Bilingual) with RTE 25% quota tracking   |
++------------------------------------------------------------------------------------+
+| 🔵 PRESET 2: "Standard CBSE Private School Model"                                  |
+|    - 5-Point Habit Scoring (Attendance, Uniform, Homework, Discipline, Lunch)      |
+|    - Monthly Fee Collection Cycle (12 Monthly billing receipts)                    |
+|    - Standard English Merit Certificates                                           |
+|    - CBSE List of Candidates (LOC) and Single-Page G.R. format                     |
++------------------------------------------------------------------------------------+
+| ⚪ PRESET 3: "Lean / Minimal School Model"                                         |
+|    - Habit tracking completely DISABLED (Clean & simple interface)                 |
+|    - Simple Daily Attendance + Standard Fee Collection                            |
+|    - Digital-only fee receipts (Physical Fee Card disabled)                        |
+|    - Standard Student Directory                                                    |
++------------------------------------------------------------------------------------+
+```
+
+### 8.3 Self-Serve Admin Customization Cockpit (Full CRUD & Deep Editing — Not Just Toggles!)
+Every school admin gets full interactive control to edit, create, delete, and customize everything to match their operational reality:
+
+```
++------------------------------------------------------------------------------------+
+|                         DEEP SELF-SERVE EDITING SUITE                              |
++------------------------------------------------------------------------------------+
+| 1. HABITS ENGINE FULL CRUD & REORDERING                                            |
+|    - Add Custom Habits (e.g. "Quran Recitation", "Sportsmanship", "Book Reading")  |
+|    - Edit Any Habit: Change Title, Description, Icon, Weight (1 pt, 2 pts)        |
+|    - Delete / Deactivate unwanted habits with 1 click                              |
+|    - Drag & Drop Reorder: Set exact order for teacher's daily 60-second screen     |
++------------------------------------------------------------------------------------+
+| 2. AWARDS & CERTIFICATES DESIGNER                                                  |
+|    - Add Custom Awards (e.g. "Best Athlete of Month", "Spelling Champion")        |
+|    - Edit Nomination Rules: Set minimum attendance %, minimum habit score, zero-   |
+|      discipline violation conditions                                               |
+|    - Visual Frame Designer: Upload custom background frame image (PNG/JPG),        |
+|      drag-and-drop placeholder boxes (Student Name, Class, QR Code, Signatures)    |
+|      with custom font sizes and colors                                             |
++------------------------------------------------------------------------------------+
+| 3. FEES, INSTALLMENTS & PHYSICAL FEE CARD EDITOR                                   |
+|    - Full Installment Schedule Editor: Add/Edit installment names, change dates    |
+|      (e.g. shift from June 1-10 to July 5-15), set percentage of total fee         |
+|    - Multilingual Notice Box Editor: Full rich-text editor for Hindi, Gujarati,    |
+|      Urdu, or English rules printed on the front of the student Fee Card           |
+|    - Receipt Prefix & Numbering Patterns: Set custom prefixes per wing (PE/, PG/,  |
+|      SEC/, HSEC/) and reset starting sequence numbers                              |
+|    - Operating Hours & Counter Rules: Edit counter timings (9:00 AM to 1:30 PM)    |
++------------------------------------------------------------------------------------+
+| 4. TOMORROW'S LEARNING WORKFLOW EDITOR                                             |
+|    - Edit Teacher submission window (e.g. 2:00 PM to 4:30 PM)                      |
+|    - Edit Parent WhatsApp evening dispatch time (e.g. 5:30 PM vs 6:30 PM)          |
+|    - Edit parent message formatting template with dynamic tags                     |
++------------------------------------------------------------------------------------+
+| 5. STATUTORY G.R. REGISTER CUSTOMIZER                                              |
+|    - Add Custom Columns (e.g. BPL Card No, Ration Card No, Mother Tongue)          |
+|    - Edit Bilingual Header Labels (Gujarati/English, Marathi/English, etc.)        |
+|    - Toggle State-Specific Blocks (APAAR ID, PEN Number, 18-digit Child UID)       |
++------------------------------------------------------------------------------------+
+```
+
+### 8.4 Example Tenant Configuration Schema
 
 ```json
 {
@@ -262,6 +395,7 @@ Every school operates under different conditions. The architecture uses a **Dyna
   "school_name": "UME Welfare Trust English School",
   "board": "GSEB",
   "language": "EN_GUJ",
+  "preset_applied": "GUJARAT_TRUST_MODEL",
   "habit_tracking": {
     "enabled": true,
     "points_count": 9,
@@ -269,28 +403,40 @@ Every school operates under different conditions. The architecture uses a **Dyna
     "negative_marking": false
   },
   "awards": {
+    "enabled": true,
     "weekly_enabled": true,
+    "monthly_enabled": true,
+    "yearly_enabled": true,
     "max_winners_per_section": 1,
-    "custom_frame_slugs": {
+    "custom_frames": {
       "star_student": "ume_star_student_frame.png",
       "homework_hero": "ume_homework_hero_frame.png",
       "max_attendance": "ume_max_attendance_frame.png",
       "super_helper": "ume_super_helper_frame.png"
     }
   },
+  "fees": {
+    "installment_model": "QUARTERLY_4",
+    "receipt_prefixes": {
+      "primary_english": "PE/",
+      "primary_gujarati": "PG/",
+      "secondary_english": "SE/"
+    },
+    "fee_card_enabled": true,
+    "custom_timings": "9:00 AM to 1:30 PM",
+    "notice_language": "HI"
+  },
   "compliance": {
+    "gr_layout": "GUJARAT_2_PAGE_SPREAD",
     "gr_number_prefix": "UME/GR/",
-    "gr_number_digits": 5,
     "state": "Gujarat",
-    "district": "Ahmedabad",
+    "dise_code": "24221501552",
     "rte_quota_enabled": true
   }
 }
 ```
 
-- **School A (UME Welfare Trust)**: 9-point habits active, UME graphic certificate frames, Gujarat G.R. layout, RTE 25% tracking.
-- **School B (Standard Private High School)**: 5-point habits (Attendance, Uniform, Homework, Discipline, Lunch), CBSE board, standard certificates.
-- **Zero code branching**: All controlled through database-driven tenant configurations.
+- **Zero Code Branching**: Changes made by one school in their settings panel only alter their tenant JSON; the core codebase remains pure, stable, and multi-tenant isolated.
 
 ---
 
@@ -414,6 +560,7 @@ CREATE TABLE statutory_gr_records (
     mother_name VARCHAR(100) NOT NULL,
     religion VARCHAR(50) NOT NULL,
     caste VARCHAR(50) NOT NULL,
+    caste_category ENUM('GEN', 'EWS', 'OBC', 'SC', 'ST') DEFAULT 'GEN',
     sub_caste VARCHAR(50) NULL,
     birth_place_village_city VARCHAR(100) NOT NULL,
     birth_place_taluka VARCHAR(100) NOT NULL,
@@ -424,19 +571,65 @@ CREATE TABLE statutory_gr_records (
     previous_school VARCHAR(255) NULL,
     last_class_attended VARCHAR(50) NULL,
     admission_standard VARCHAR(50) NOT NULL,
+    admission_division VARCHAR(10) NOT NULL,
     admission_date DATE NOT NULL,
+    is_rte BOOLEAN DEFAULT FALSE,
+    child_uid_number VARCHAR(18) NULL, -- 18-digit State Child Tracking ID
+    pen_number VARCHAR(11) NULL,       -- 11-digit Permanent Education Number
+    apaar_id VARCHAR(12) NULL,         -- 12-digit Edu ID
+    aadhar_number VARCHAR(12) NULL,
+    dise_code VARCHAR(20) NOT NULL,
     leaving_date DATE NULL,
     leaving_standard VARCHAR(50) NULL,
     reason_for_leaving TEXT NULL,
     conduct_progress VARCHAR(100) DEFAULT 'Good',
     lc_number VARCHAR(50) NULL,
     lc_date DATE NULL,
-    apaar_id VARCHAR(20) NULL,
-    pen_number VARCHAR(20) NULL,
-    aadhar_number VARCHAR(20) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_tenant_gr_number (tenant_id, gr_number)
+);
+
+-- 7. Physical Fee Receipts (Slip Prints)
+CREATE TABLE physical_fee_receipts (
+    id VARCHAR(36) PRIMARY KEY,
+    tenant_id VARCHAR(36) NOT NULL,
+    receipt_number VARCHAR(50) NOT NULL,
+    receipt_prefix VARCHAR(20) NOT NULL DEFAULT 'PE',
+    student_id VARCHAR(36) NOT NULL,
+    gr_number VARCHAR(50) NOT NULL,
+    academic_year_id VARCHAR(36) NOT NULL,
+    class_id VARCHAR(36) NOT NULL,
+    section_id VARCHAR(36) NOT NULL,
+    receipt_date DATE NOT NULL,
+    period_label VARCHAR(50) NOT NULL,
+    installment_number TINYINT UNSIGNED NOT NULL DEFAULT 1,
+    payment_mode ENUM('CASH', 'UPI', 'CHEQUE', 'BANK_TRANSFER') DEFAULT 'CASH',
+    cheque_number VARCHAR(50) NULL,
+    cheque_bank VARCHAR(100) NULL,
+    fee_breakdown JSON NOT NULL,
+    total_amount DECIMAL(10, 2) NOT NULL,
+    amount_in_words VARCHAR(255) NOT NULL,
+    received_by_user_id VARCHAR(36) NOT NULL,
+    cashier_signature_url VARCHAR(500) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_tenant_receipt_num (tenant_id, receipt_number)
+);
+
+-- 8. Physical 2-Sided Student Fee Cards
+CREATE TABLE student_fee_cards (
+    id VARCHAR(36) PRIMARY KEY,
+    tenant_id VARCHAR(36) NOT NULL,
+    student_id VARCHAR(36) NOT NULL,
+    academic_year_id VARCHAR(36) NOT NULL,
+    card_serial_number VARCHAR(50) NOT NULL,
+    medium VARCHAR(20) NOT NULL DEFAULT 'ENGLISH',
+    division_level VARCHAR(20) NOT NULL DEFAULT 'PRIMARY',
+    installments_config JSON NOT NULL,
+    dynamic_notice_text TEXT NULL,
+    issued_date DATE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_tenant_student_card (tenant_id, student_id, academic_year_id)
 );
 ```
 

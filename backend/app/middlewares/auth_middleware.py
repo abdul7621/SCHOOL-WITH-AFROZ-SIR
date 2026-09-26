@@ -116,7 +116,7 @@ class RequirePermission:
     def __init__(self, *permission_codes: str):
         self.permission_codes = permission_codes
 
-    async def __call__(self, user: CurrentTenantUser = Depends(get_current_user)):
+    async def __call__(self, user: CurrentTenantUser = Depends(get_current_user_or_token)):
         # Master Administrator & Principal roles bypass granular check
         if any(r in ["ADMIN", "PRINCIPAL", "SUPERADMIN"] for r in user.roles):
             return user
@@ -127,7 +127,7 @@ class RequirePermission:
             # Teacher fallback permissions
             if "TEACHER" in user.roles and p_code in [
                 "attendance:view", "attendance:mark", "students:view", "academics:manage",
-                "academics:view", "development:evaluate", "documents:generate", "reports:view",
+                "academics:view", "exams:mark", "development:evaluate", "documents:generate", "reports:view",
                 "notifications:send", "auth:login"
             ]:
                 return user

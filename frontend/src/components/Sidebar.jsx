@@ -26,10 +26,19 @@ export const Sidebar = () => {
   const { settings } = useTenant();
 
   const isSuperAdmin = user?.role === 'SUPER_ADMIN' || user?.isSuperAdmin;
+  const isParentOnly =
+    !isSuperAdmin &&
+    (user?.user_type === 'PARENT' || user?.roles?.includes('PARENT')) &&
+    !user?.roles?.some((r) => ['ADMIN', 'PRINCIPAL', 'TEACHER', 'ACCOUNTANT', 'CASHIER'].includes(r));
 
   const superAdminNavItems = [
     { to: '/superadmin', label: 'Schools / Tenants Directory', icon: School, show: true },
     { to: '/landing', label: 'SaaS Platform Preview', icon: Globe, show: true },
+  ];
+
+  const parentNavItems = [
+    { to: '/parent-portal', label: 'My Children Dashboard', icon: Users, show: true },
+    { to: '/website', label: 'School Public Website', icon: Globe, show: true },
   ];
 
   const schoolNavItems = [
@@ -38,8 +47,8 @@ export const Sidebar = () => {
     { to: '/students/promotion', label: 'Annual Student Promotion', icon: GraduationCap, show: hasPermission('students:create') },
     { to: '/staff', label: 'Staff & Teachers', icon: Briefcase, show: hasPermission('users:manage') },
     { to: '/development', label: 'Discipline & Awards', icon: Award, show: hasPermission('development:evaluate') },
-    { to: '/academics', label: 'Classes & Sessions', icon: Layers, show: true },
-    { to: '/academics/timetable', label: 'Timetable & Syllabus', icon: GraduationCap, show: true },
+    { to: '/academics', label: 'Classes & Sessions', icon: Layers, show: hasPermission('academics:manage') || hasPermission('academics:view') },
+    { to: '/academics/timetable', label: 'Timetable & Syllabus', icon: GraduationCap, show: hasPermission('academics:manage') || hasPermission('academics:view') },
     { to: '/attendance', label: 'Daily Attendance', icon: CalendarCheck, show: hasPermission('attendance:view') },
     { to: '/fees', label: 'Fee Collection (FIFO)', icon: CreditCard, show: hasPermission('fees:view') },
     { to: '/exams', label: 'Exams & Marks', icon: BookOpen, show: hasPermission('academics:manage') },
@@ -47,11 +56,11 @@ export const Sidebar = () => {
     { to: '/migration', label: 'Excel Data Migration', icon: FileSpreadsheet, show: hasPermission('excel:import_export') },
     { to: '/documents', label: 'Certificates & TC Vault', icon: FileText, show: hasPermission('documents:generate') },
     { to: '/reports', label: 'Reports & Analytics', icon: BarChart3, show: hasPermission('fees:view_reports') },
-    { to: '/cms', label: 'Website CMS & Notices', icon: Globe, show: true },
+    { to: '/cms', label: 'Website CMS & Notices', icon: Globe, show: hasPermission('settings:manage') || hasPermission('academics:manage') },
     { to: '/parent-portal', label: 'Parent Portal View', icon: Users, show: true },
   ];
 
-  const navItems = isSuperAdmin ? superAdminNavItems : schoolNavItems;
+  const navItems = isSuperAdmin ? superAdminNavItems : isParentOnly ? parentNavItems : schoolNavItems;
 
   return (
     <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col h-screen fixed left-0 top-0 z-30 border-r border-slate-800">
@@ -69,7 +78,7 @@ export const Sidebar = () => {
           <div className={`text-[11px] font-medium tracking-wide uppercase ${
             isSuperAdmin ? 'text-amber-400' : 'text-blue-400'
           }`}>
-            {isSuperAdmin ? 'Platform Super Admin' : 'School ERP Cockpit'}
+            {isSuperAdmin ? 'Platform Super Admin' : isParentOnly ? 'Parent & Student Portal' : 'School ERP Cockpit'}
           </div>
         </div>
       </div>
@@ -122,6 +131,8 @@ export const Sidebar = () => {
                 ? '👨‍🏫 Teaching Faculty'
                 : user?.roles?.includes('ACCOUNTANT') || user?.roles?.includes('CASHIER')
                 ? '💳 Fee Cashier'
+                : isParentOnly
+                ? '👨‍👩‍👧 Parent Portal'
                 : `💼 ${user?.roles?.[0] || user?.role || 'Staff'}`}
             </div>
           </div>

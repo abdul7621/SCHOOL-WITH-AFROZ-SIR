@@ -21,11 +21,14 @@ from app.modules.fees.models import (
     FeeCollection,
     FeeCollectionItem,
     FeeRefund,
+    StudentAdvanceWallet,
+    StudentAdvanceWalletTransaction,
 )
 from app.modules.fees.schemas import (
     CollectFeePaymentRequest,
     GenerateBulkFeeDemandsRequest,
     FeeStructureCreate,
+    WaiveFeeDemandsRequest,
 )
 
 
@@ -186,6 +189,35 @@ class FeeService:
                         balance_amount=net_demand,
                         status="UNPAID",
                     )
+
+                    # Auto-offset from StudentAdvanceWallet if credit is available
+                    wallet_stmt = select(StudentAdvanceWallet).where(StudentAdvanceWallet.student_id == student_id)
+                    wallet_res = await db.execute(wallet_stmt)
+                    wallet = wallet_res.scalar_one_or_none()
+                    if wallet and Decimal(str(wallet.credit_balance)) > Decimal("0.00"):
+                        avail_credit = Decimal(str(wallet.credit_balance))
+                        offset = min(avail_credit, net_demand)
+                        if offset > Decimal("0.00"):
+                            demand.paid_amount = offset
+                            demand.balance_amount = net_demand - offset
+                            demand.status = "PAID" if demand.balance_amount == Decimal("0.00") else "PARTIALLY_PAID"
+                            wallet.credit_balance = avail_credit - offset
+
+                            db.add(demand)
+                            await db.flush()
+
+                            advance_tx = StudentAdvanceWalletTransaction(
+                                wallet_id=wallet.id,
+                                transaction_type="CREDIT_OFFSET",
+                                amount=offset,
+                                running_balance=wallet.credit_balance,
+                                student_fee_demand_id=demand.id,
+                                notes=f"Auto-settled from advance wallet credit for {schedule.name}",
+                            )
+                            db.add(advance_tx)
+                            demands_created += 1
+                            continue
+
                     db.add(demand)
                     demands_created += 1
 
@@ -209,23 +241,20 @@ class FeeService:
         if amount_to_allocate <= Decimal("0.00"):
             raise AppException("Payment amount must be greater than zero")
 
-        # 1. Query pending demands for student in FIFO order
+        # 1. Query pending demands across sessions in FIFO order (prioritizing past arrears chronologically)
         demands_stmt = (
             select(StudentFeeDemand)
             .join(FeeInstallmentSchedule, StudentFeeDemand.installment_schedule_id == FeeInstallmentSchedule.id)
             .join(FeeHead, StudentFeeDemand.fee_head_id == FeeHead.id)
+            .join(AcademicYear, StudentFeeDemand.academic_year_id == AcademicYear.id)
             .where(
                 StudentFeeDemand.student_id == req.student_id,
-                StudentFeeDemand.academic_year_id == req.academic_year_id,
                 StudentFeeDemand.status.in_(["UNPAID", "PARTIALLY_PAID"]),
             )
-            .order_by(FeeInstallmentSchedule.due_date.asc(), FeeHead.priority_order.asc())
+            .order_by(AcademicYear.start_date.asc(), FeeInstallmentSchedule.due_date.asc(), FeeHead.priority_order.asc())
         )
         demands_res = await db.execute(demands_stmt)
         pending_demands = demands_res.scalars().all()
-
-        if not pending_demands:
-            raise AppException("No unpaid fee demands found for this student in the session", "NO_PENDING_DEMANDS")
 
         # 2. Create FeeCollection Receipt Header
         receipt_no = await cls._generate_receipt_no(db)
@@ -244,8 +273,34 @@ class FeeService:
         db.add(collection)
         await db.flush()
 
-        # 3. FIFO Penny Allocation Loop
         remaining = amount_to_allocate
+
+        # If student has zero pending demands, credit full deposit into StudentAdvanceWallet
+        if not pending_demands:
+            wallet_res = await db.execute(
+                select(StudentAdvanceWallet).where(StudentAdvanceWallet.student_id == req.student_id)
+            )
+            wallet = wallet_res.scalar_one_or_none()
+            if not wallet:
+                wallet = StudentAdvanceWallet(student_id=req.student_id, credit_balance=Decimal("0.00"))
+                db.add(wallet)
+                await db.flush()
+
+            wallet.credit_balance = Decimal(str(wallet.credit_balance)) + remaining
+            advance_tx = StudentAdvanceWalletTransaction(
+                wallet_id=wallet.id,
+                transaction_type="CREDIT_ADDED",
+                amount=remaining,
+                running_balance=wallet.credit_balance,
+                fee_collection_id=collection.id,
+                notes=f"Advance fee deposit (no pending demands) via {receipt_no}",
+            )
+            db.add(advance_tx)
+            await db.commit()
+            await db.refresh(collection)
+            return collection
+
+        # 3. FIFO Penny Allocation Loop
         for demand in pending_demands:
             if remaining <= Decimal("0.00"):
                 break
@@ -272,6 +327,28 @@ class FeeService:
 
             remaining -= allocated
 
+        # 4. If any excess payment remains after clearing all pending demands, credit to StudentAdvanceWallet
+        if remaining > Decimal("0.00"):
+            wallet_res = await db.execute(
+                select(StudentAdvanceWallet).where(StudentAdvanceWallet.student_id == req.student_id)
+            )
+            wallet = wallet_res.scalar_one_or_none()
+            if not wallet:
+                wallet = StudentAdvanceWallet(student_id=req.student_id, credit_balance=Decimal("0.00"))
+                db.add(wallet)
+                await db.flush()
+
+            wallet.credit_balance = Decimal(str(wallet.credit_balance)) + remaining
+            advance_tx = StudentAdvanceWalletTransaction(
+                wallet_id=wallet.id,
+                transaction_type="CREDIT_ADDED",
+                amount=remaining,
+                running_balance=wallet.credit_balance,
+                fee_collection_id=collection.id,
+                notes=f"Overpayment excess credit from receipt {receipt_no}",
+            )
+            db.add(advance_tx)
+
         await db.commit()
         await db.refresh(collection)
         return collection
@@ -287,7 +364,7 @@ class FeeService:
         """
         Strict Zero-Destructive Deletion:
         Reverses a confirmed fee receipt, restores student fee demands,
-        and marks receipt as REVERSED with full audit trail.
+        rolls back advance wallet credits, and marks receipt as REVERSED with full audit trail.
         """
         stmt = (
             select(FeeCollection)
@@ -316,7 +393,64 @@ class FeeService:
                 else:
                     demand.status = "PARTIALLY_PAID"
 
-        # 2. Mark collection as REVERSED
+        # 2. Rollback any advance wallet credits created from this collection
+        wallet_tx_stmt = select(StudentAdvanceWalletTransaction).where(
+            StudentAdvanceWalletTransaction.fee_collection_id == collection.id,
+            StudentAdvanceWalletTransaction.transaction_type == "CREDIT_ADDED",
+        )
+        wallet_tx_res = await db.execute(wallet_tx_stmt)
+        wallet_txs = wallet_tx_res.scalars().all()
+        for wtx in wallet_txs:
+            wallet_res = await db.execute(
+                select(StudentAdvanceWallet).where(StudentAdvanceWallet.id == wtx.wallet_id)
+            )
+            wallet = wallet_res.scalar_one_or_none()
+            if wallet:
+                credit_to_rollback = Decimal(str(wtx.amount))
+                current_balance = Decimal(str(wallet.credit_balance))
+
+                if current_balance >= credit_to_rollback:
+                    wallet.credit_balance = current_balance - credit_to_rollback
+                else:
+                    # Credit was partially or fully utilized to settle subsequent demands.
+                    # Reopen the demands that consumed this advance credit in reverse chronological order
+                    deficit = credit_to_rollback - current_balance
+                    wallet.credit_balance = Decimal("0.00")
+
+                    offset_stmt = (
+                        select(StudentAdvanceWalletTransaction)
+                        .options(selectinload(StudentAdvanceWalletTransaction.demand))
+                        .where(
+                            StudentAdvanceWalletTransaction.wallet_id == wallet.id,
+                            StudentAdvanceWalletTransaction.transaction_type == "CREDIT_OFFSET",
+                            StudentAdvanceWalletTransaction.student_fee_demand_id.isnot(None),
+                        )
+                        .order_by(StudentAdvanceWalletTransaction.created_at.desc())
+                    )
+                    offset_res = await db.execute(offset_stmt)
+                    offset_txs = offset_res.scalars().all()
+
+                    for otx in offset_txs:
+                        if deficit <= Decimal("0.00"):
+                            break
+                        if otx.demand:
+                            revert_amt = min(deficit, Decimal(str(otx.amount)))
+                            otx.demand.paid_amount = max(Decimal("0.00"), Decimal(str(otx.demand.paid_amount)) - revert_amt)
+                            otx.demand.balance_amount = Decimal(str(otx.demand.balance_amount)) + revert_amt
+                            otx.demand.status = "UNPAID" if otx.demand.paid_amount == Decimal("0.00") else "PARTIALLY_PAID"
+                            deficit -= revert_amt
+
+                rev_tx = StudentAdvanceWalletTransaction(
+                    wallet_id=wallet.id,
+                    transaction_type="CREDIT_OFFSET",
+                    amount=credit_to_rollback,
+                    running_balance=wallet.credit_balance,
+                    fee_collection_id=collection.id,
+                    notes=f"Reversal of advance deposit receipt {collection.receipt_no}",
+                )
+                db.add(rev_tx)
+
+        # 3. Mark collection as REVERSED
         collection.status = "REVERSED"
         collection.reversal_reason = reversal_reason
         collection.reversed_by_user_id = user_id
@@ -413,6 +547,13 @@ class FeeService:
         total_fine = sum(Decimal(str(d.fine_amount)) for d in demands)
         net_balance_due = sum(Decimal(str(d.balance_amount)) for d in demands)
 
+        # 4. Advance Fee Wallet
+        wallet_res = await db.execute(
+            select(StudentAdvanceWallet).where(StudentAdvanceWallet.student_id == student_id)
+        )
+        wallet = wallet_res.scalar_one_or_none()
+        advance_wallet_balance = float(wallet.credit_balance) if wallet else 0.0
+
         return {
             "student_id": student.id,
             "admission_no": student.admission_no,
@@ -427,6 +568,7 @@ class FeeService:
             "total_paid": float(total_paid),
             "net_balance_due": float(net_balance_due),
             "net_outstanding_balance": float(net_balance_due),
+            "advance_wallet_balance": advance_wallet_balance,
             "demands": [
                 {
                     "id": d.id,
@@ -491,4 +633,93 @@ class FeeService:
         await db.commit()
         await db.refresh(refund)
         return refund
+
+    @classmethod
+    async def get_student_wallet(cls, student_id: str, db: AsyncSession) -> Dict[str, Any]:
+        """Retrieves Student Advance Wallet balance and transaction audit history."""
+        wallet_res = await db.execute(
+            select(StudentAdvanceWallet).where(StudentAdvanceWallet.student_id == student_id)
+        )
+        wallet = wallet_res.scalar_one_or_none()
+        if not wallet:
+            return {
+                "student_id": student_id,
+                "credit_balance": 0.0,
+                "transactions": [],
+            }
+
+        tx_stmt = (
+            select(StudentAdvanceWalletTransaction)
+            .where(StudentAdvanceWalletTransaction.wallet_id == wallet.id)
+            .order_by(StudentAdvanceWalletTransaction.created_at.desc())
+        )
+        tx_res = await db.execute(tx_stmt)
+        transactions = tx_res.scalars().all()
+
+        return {
+            "id": wallet.id,
+            "student_id": wallet.student_id,
+            "credit_balance": float(wallet.credit_balance),
+            "transactions": [
+                {
+                    "id": tx.id,
+                    "transaction_type": tx.transaction_type,
+                    "amount": float(tx.amount),
+                    "running_balance": float(tx.running_balance),
+                    "fee_collection_id": tx.fee_collection_id,
+                    "student_fee_demand_id": tx.student_fee_demand_id,
+                    "notes": tx.notes,
+                    "created_at": str(tx.created_at),
+                }
+                for tx in transactions
+            ],
+        }
+
+    @classmethod
+    async def waive_fee_demands(
+        cls,
+        req: WaiveFeeDemandsRequest,
+        principal_user_id: str,
+        db: AsyncSession,
+    ) -> Dict[str, Any]:
+        """
+        Principal Fee Waiver Authorization (FIX-08):
+        Authorizes waiver of fee demands (e.g. for EWS hardship or Transfer Certificate clearance).
+        Zeros out balance_amount, marks status='WAIVED', records audit trail.
+        """
+        stmt = select(StudentFeeDemand).where(
+            StudentFeeDemand.student_id == req.student_id,
+            StudentFeeDemand.status.in_(["UNPAID", "PARTIALLY_PAID"]),
+        )
+        if req.demand_ids:
+            stmt = stmt.where(StudentFeeDemand.id.in_(req.demand_ids))
+
+        res = await db.execute(stmt)
+        demands = res.scalars().all()
+
+        if not demands:
+            return {"waived_count": 0, "total_waived_amount": 0.0, "message": "No pending demands found to waive"}
+
+        now = datetime.utcnow()
+        total_waived = Decimal("0.00")
+        waived_ids = []
+
+        for d in demands:
+            waive_amt = Decimal(str(d.balance_amount))
+            total_waived += waive_amt
+            d.balance_amount = Decimal("0.00")
+            d.status = "WAIVED"
+            d.waived_by_user_id = principal_user_id
+            d.waived_at = now
+            d.waiver_reason = req.waiver_reason
+            waived_ids.append(d.id)
+
+        await db.commit()
+        return {
+            "waived_count": len(demands),
+            "total_waived_amount": float(total_waived),
+            "waived_demand_ids": waived_ids,
+            "waiver_reason": req.waiver_reason,
+            "waived_at": str(now),
+        }
 

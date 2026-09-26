@@ -129,7 +129,10 @@ class DocumentGeneratorService:
                 <div class="signatures">
                     <div class="sig-box">Class Teacher</div>
                     <div class="sig-box">Parent / Guardian</div>
-                    <div class="sig-box">Principal</div>
+                    <div class="sig-box" style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;">
+                        {f'<img src="{data.get("principal_signature_image")}" alt="Principal Signature" style="max-height:30px;margin-bottom:2px;object-fit:contain;"/>' if data.get("principal_signature_image") else ''}
+                        <span>Principal</span>
+                    </div>
                 </div>
             </div>
         </body>
@@ -201,7 +204,7 @@ class DocumentGeneratorService:
                     <div class="tc-field"><div class="tc-label">6. Class in which the pupil last studied:</div><div class="tc-val"><strong>{student.get('class_name')} ({student.get('section_name')})</strong></div></div>
                     <div class="tc-field"><div class="tc-label">7. School / Board Annual Exam Last Taken:</div><div class="tc-val">Passed & Promoted</div></div>
                     <div class="tc-field"><div class="tc-label">8. Whether Failed (if so, once/twice):</div><div class="tc-val">No</div></div>
-                    <div class="tc-field"><div class="tc-label">9. Month up to which School Dues Paid:</div><div class="tc-val">All Clear</div></div>
+                    <div class="tc-field"><div class="tc-label">9. Month up to which School Dues Paid:</div><div class="tc-val"><strong>{data.get('dues_status', 'All Clear (Verified)')}</strong></div></div>
                     <div class="tc-field"><div class="tc-label">10. Total No. of Working Days in Session:</div><div class="tc-val">220 Days</div></div>
                     <div class="tc-field"><div class="tc-label">11. Total No. of Days Present:</div><div class="tc-val">208 Days</div></div>
                     <div class="tc-field"><div class="tc-label">12. Reason for Leaving the School:</div><div class="tc-val"><strong>{leaving_reason}</strong></div></div>
@@ -209,14 +212,20 @@ class DocumentGeneratorService:
                 </div>
 
                 <div class="qr-zone">
-                    <div class="qr-box">
-                        <div style="font-size:32px;line-height:1;">📱</div>
-                        Scan to Verify
+                    <div style="display:flex;align-items:center;gap:15px;">
+                        <div class="qr-box">
+                            <div style="font-size:32px;line-height:1;">📱</div>
+                            Scan to Verify
+                        </div>
+                        {f'<img src="{data.get("school_seal_image")}" alt="School Seal" style="width:75px;height:75px;object-fit:contain;"/>' if data.get("school_seal_image") else ''}
                     </div>
                     <div class="signatures">
                         <div class="sig">Class Teacher</div>
                         <div class="sig">Checked By (Clerk)</div>
-                        <div class="sig">Principal (Seal)</div>
+                        <div class="sig" style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;">
+                            {f'<img src="{data.get("principal_signature_image")}" alt="Principal Signature" style="max-height:36px;margin-bottom:2px;object-fit:contain;"/>' if data.get("principal_signature_image") else ''}
+                            <span>Principal (Seal)</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -608,5 +617,425 @@ class DocumentGeneratorService:
         </body>
         </html>
         """
+        return html_content
+
+    @staticmethod
+    def generate_fee_card_html(data: Dict[str, Any], school_name: str = "7A Model Academy", brand_color: str = "#1E40AF") -> str:
+        """
+        Renders a 2-sided pocket fee card (Front: Particulars & Rules, Back: Payment Matrix & Ledger)
+        matching Indian physical school fee cards.
+        """
+        student = data.get("student", {})
+        academic_year = data.get("academic_year", {})
+        installments = data.get("installments", [])
+        totals = data.get("totals", {})
+        school_info = data.get("school_info", {})
+        currency = school_info.get("currency_symbol", "₹")
+
+        matrix_rows = ""
+        for item in installments:
+            bal = float(item.get("balance", 0.0))
+            demand_val = float(item.get("demand", 0.0))
+            concession_val = float(item.get("concession", 0.0))
+            net_val = float(item.get("net_payable", 0.0))
+            paid_val = float(item.get("paid", 0.0))
+
+            balance_style = "color:#DC2626;font-weight:bold;" if bal > 0 else "color:#16A34A;font-weight:bold;"
+            receipt_info = f"{item['receipt_no']} ({item['paid_date']})" if item.get('receipt_no') else "-"
+            matrix_rows += f"""
+            <tr>
+                <td style="padding: 7px 10px; border: 1px solid #CBD5E1; font-weight: 600;">{item.get('name', '-')}</td>
+                <td style="padding: 7px 10px; border: 1px solid #CBD5E1; text-align: center; font-size: 11px;">{item.get('due_date', '-')}</td>
+                <td style="padding: 7px 10px; border: 1px solid #CBD5E1; text-align: right;">{currency}{demand_val:.2f}</td>
+                <td style="padding: 7px 10px; border: 1px solid #CBD5E1; text-align: right; color: #475569;">{currency}{concession_val:.2f}</td>
+                <td style="padding: 7px 10px; border: 1px solid #CBD5E1; text-align: right; font-weight: 600;">{currency}{net_val:.2f}</td>
+                <td style="padding: 7px 10px; border: 1px solid #CBD5E1; text-align: right; font-weight: bold; color: #047857;">{currency}{paid_val:.2f}</td>
+                <td style="padding: 7px 10px; border: 1px solid #CBD5E1; text-align: center; font-size: 11px;">{receipt_info}</td>
+                <td style="padding: 7px 10px; border: 1px solid #CBD5E1; text-align: right; {balance_style}">{currency}{bal:.2f}</td>
+                <td style="padding: 7px 10px; border: 1px solid #CBD5E1; text-align: center; color: #94A3B8; font-size: 10px;">{item.get('cashier_sign', '')}</td>
+            </tr>
+            """
+
+        empty_needed = max(0, 4 - len(installments))
+        for _ in range(empty_needed):
+            matrix_rows += f"""
+            <tr style="height: 32px;">
+                <td style="padding: 7px 10px; border: 1px solid #CBD5E1;">&nbsp;</td>
+                <td style="padding: 7px 10px; border: 1px solid #CBD5E1;"></td>
+                <td style="padding: 7px 10px; border: 1px solid #CBD5E1;"></td>
+                <td style="padding: 7px 10px; border: 1px solid #CBD5E1;"></td>
+                <td style="padding: 7px 10px; border: 1px solid #CBD5E1;"></td>
+                <td style="padding: 7px 10px; border: 1px solid #CBD5E1;"></td>
+                <td style="padding: 7px 10px; border: 1px solid #CBD5E1;"></td>
+                <td style="padding: 7px 10px; border: 1px solid #CBD5E1;"></td>
+                <td style="padding: 7px 10px; border: 1px solid #CBD5E1;"></td>
+            </tr>
+            """
+
+        gross_demand = float(totals.get('gross_demand', 0.0))
+        concession_total = float(totals.get('concession', 0.0))
+        total_paid = float(totals.get('total_paid', 0.0))
+        balance_due = float(totals.get('balance_due', 0.0))
+        balance_color = "#DC2626" if balance_due > 0 else "#16A34A"
+
+        html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Fee Card - {student.get('full_name', 'Student')} ({student.get('admission_no', '')})</title>
+    <style>
+        @page {{
+            size: A4 portrait;
+            margin: 10mm;
+        }}
+        * {{ box-sizing: border-box; }}
+        body {{
+            font-family: 'Segoe UI', Arial, sans-serif;
+            color: #1E293B;
+            background: #F8FAFC;
+            margin: 0;
+            padding: 15px;
+            font-size: 12px;
+        }}
+        .print-btn {{
+            position: fixed;
+            top: 15px;
+            right: 15px;
+            background: {brand_color};
+            color: white;
+            padding: 8px 18px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+            z-index: 1000;
+        }}
+        @media print {{
+            body {{ background: #fff; padding: 0; }}
+            .print-btn {{ display: none; }}
+            .card-page {{ page-break-after: always; border: 2px solid {brand_color} !important; box-shadow: none !important; }}
+            .card-page:last-child {{ page-break-after: auto; }}
+        }}
+        .card-page {{
+            max-width: 760px;
+            margin: 0 auto 25px auto;
+            background: #fff;
+            border: 2px solid {brand_color};
+            border-radius: 10px;
+            padding: 22px 26px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+            position: relative;
+        }}
+        .school-header {{
+            text-align: center;
+            border-bottom: 2px solid {brand_color};
+            padding-bottom: 10px;
+            margin-bottom: 12px;
+        }}
+        .school-title {{
+            font-size: 24px;
+            font-weight: 800;
+            color: {brand_color};
+            text-transform: uppercase;
+            margin: 0;
+            letter-spacing: 0.5px;
+        }}
+        .school-sub {{
+            font-size: 11px;
+            color: #64748B;
+            margin-top: 3px;
+        }}
+        .card-type-banner {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #EEF2F6;
+            border-radius: 6px;
+            padding: 6px 14px;
+            margin-bottom: 14px;
+            font-weight: bold;
+        }}
+        .badge-session {{
+            background: {brand_color};
+            color: #fff;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+        }}
+        .medium-check {{
+            display: flex;
+            gap: 12px;
+            font-size: 11px;
+        }}
+        .medium-check span {{
+            border: 1px solid #94A3B8;
+            padding: 1px 6px;
+            border-radius: 3px;
+        }}
+        .info-grid {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px 16px;
+            background: #F1F5F9;
+            padding: 12px 14px;
+            border-radius: 8px;
+            margin-bottom: 14px;
+            border: 1px solid #E2E8F0;
+        }}
+        .info-item {{
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+        }}
+        .info-label {{
+            font-size: 11px;
+            font-weight: 600;
+            color: #475569;
+            min-width: 110px;
+        }}
+        .info-val {{
+            font-weight: 700;
+            color: #0F172A;
+            border-bottom: 1px dotted #94A3B8;
+            flex: 1;
+        }}
+        .rules-box {{
+            border: 1px solid #CBD5E1;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 14px;
+            background: #FAFAFA;
+        }}
+        .rules-title {{
+            font-weight: bold;
+            font-size: 12px;
+            color: {brand_color};
+            margin-bottom: 6px;
+            text-transform: uppercase;
+        }}
+        .rules-list {{
+            margin: 0;
+            padding-left: 18px;
+            line-height: 1.6;
+            color: #334155;
+            font-size: 11px;
+        }}
+        .sign-row {{
+            display: flex;
+            justify-content: space-between;
+            margin-top: 25px;
+            padding-top: 15px;
+        }}
+        .sign-col {{
+            text-align: center;
+            width: 170px;
+            border-top: 1px solid #475569;
+            padding-top: 5px;
+            font-size: 11px;
+            font-weight: bold;
+            color: #334155;
+        }}
+        table.matrix-table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 8px;
+            margin-bottom: 14px;
+            font-size: 11px;
+        }}
+        table.matrix-table th {{
+            background: {brand_color};
+            color: #fff;
+            padding: 8px;
+            border: 1px solid {brand_color};
+            text-align: center;
+            font-size: 11px;
+        }}
+        .summary-box {{
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            background: #F8FAFC;
+            border: 1px solid #CBD5E1;
+            border-radius: 8px;
+            padding: 10px 14px;
+            margin-bottom: 16px;
+            text-align: center;
+        }}
+        .summary-card {{
+            padding: 6px;
+            border-radius: 6px;
+            background: #fff;
+            border: 1px solid #E2E8F0;
+        }}
+        .summary-card .label {{
+            font-size: 10px;
+            color: #64748B;
+            text-transform: uppercase;
+            font-weight: 600;
+        }}
+        .summary-card .val {{
+            font-size: 14px;
+            font-weight: 800;
+            margin-top: 2px;
+        }}
+        .watermark {{
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-30deg);
+            font-size: 48px;
+            color: rgba(30, 64, 175, 0.04);
+            font-weight: 900;
+            pointer-events: none;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }}
+    </style>
+</head>
+<body>
+    <button class="print-btn" onclick="window.print()">🖨️ Print Fee Card</button>
+
+    <!-- SIDE 1: FRONT -->
+    <div class="card-page">
+        <div class="watermark">{school_name}</div>
+        <div class="school-header">
+            <h1 class="school-title">{school_name}</h1>
+            <div class="school-sub">{school_info.get('address', 'Recognized & Affiliated Institution')}</div>
+            <div class="school-sub">Contact: {school_info.get('phone', 'School Office')} | Email: {school_info.get('email', 'office@school.edu')}</div>
+        </div>
+
+        <div class="card-type-banner">
+            <span style="color: {brand_color}; font-size: 13px;">STUDENT FEE CARD & IDENTITY RECORD (शुल्क कार्ड)</span>
+            <span class="badge-session">Session: {academic_year.get('name', '2026-27')}</span>
+            <div class="medium-check">
+                <span>[ ] English</span>
+                <span>[ ] Hindi</span>
+                <span>[ ] Urdu</span>
+            </div>
+        </div>
+
+        <div class="info-grid">
+            <div class="info-item">
+                <span class="info-label">Admission / Scholar No:</span>
+                <span class="info-val">{student.get('admission_no', '-')}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Roll Number:</span>
+                <span class="info-val">{student.get('roll_no', '-')}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Student Name:</span>
+                <span class="info-val">{student.get('full_name', '-')}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Class & Section:</span>
+                <span class="info-val">{student.get('class_name', '-')} - {student.get('section_name', '-')}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Father's Name:</span>
+                <span class="info-val">{student.get('father_name', '-')}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Mother's Name:</span>
+                <span class="info-val">{student.get('mother_name', '-')}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">S.S.S.M. / UID No:</span>
+                <span class="info-val">{student.get('aadhar_no') or student.get('sssm_id') or '-'}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Registered Phone:</span>
+                <span class="info-val">{student.get('emergency_contact', '-')}</span>
+            </div>
+            <div class="info-item" style="grid-column: span 2;">
+                <span class="info-label">Residential Address:</span>
+                <span class="info-val">{student.get('address', '-')}</span>
+            </div>
+        </div>
+
+        <div class="rules-box">
+            <div class="rules-title">आवश्यक नियम व निर्देश (Rules & Payment Instructions)</div>
+            <ol class="rules-list">
+                <li>प्रत्येक छात्र/छात्रा का शुल्क प्रत्येक माह अथवा त्रैमासिक किस्त की नियत तिथि तक कार्यालय में जमा करना अनिवार्य है।</li>
+                <li>नियत तिथि के पश्चात विलम्ब शुल्क नियमानुसार देय होगा।</li>
+                <li>शुल्क जमा कराते समय यह <strong>शुल्क कार्ड प्रस्तुत करना अनिवार्य</strong> है। बिना कार्ड के फीस स्वीकार नहीं की जाएगी।</li>
+                <li>जमा किए गए शुल्क की आधिकारिक कम्प्यूटरीकृत रसीद अनिवार्य रूप से प्राप्त करें एवं संभाल कर रखें।</li>
+                <li>शुल्क एक बार जमा होने के पश्चात किसी भी परिस्थिति में वापस अथवा समायोजित नहीं किया जाएगा।</li>
+                <li>वार्षिक परीक्षा में सम्मिलित होने हेतु समस्त सत्र का शुल्क पूर्णतः चुकता (No-Dues) होना अनिवार्य है।</li>
+            </ol>
+        </div>
+
+        <div class="sign-row">
+            <div class="sign-col">Parent / Guardian Signature</div>
+            <div class="sign-col">Class Teacher Signature</div>
+            <div class="sign-col">Principal / Headmaster (Seal)</div>
+        </div>
+    </div>
+
+    <!-- SIDE 2: BACK -->
+    <div class="card-page">
+        <div class="watermark">{school_name}</div>
+        <div class="school-header" style="padding-bottom: 6px; margin-bottom: 8px;">
+            <div style="font-weight: 800; font-size: 16px; color: {brand_color}; text-transform: uppercase;">
+                FEE PAYMENT INSTALLMENT RECORD (शुल्क भुगतान विवरणी)
+            </div>
+            <div style="font-size: 11px; color: #64748B; margin-top: 2px;">
+                Scholar No: <strong>{student.get('admission_no', '-')}</strong> | Student: <strong>{student.get('full_name', '-')}</strong> | Class: <strong>{student.get('class_name', '-')} - {student.get('section_name', '-')}</strong>
+            </div>
+        </div>
+
+        <table class="matrix-table">
+            <thead>
+                <tr>
+                    <th>Installment / Period</th>
+                    <th>Due Date</th>
+                    <th>Gross Demand</th>
+                    <th>Concession</th>
+                    <th>Net Payable</th>
+                    <th>Amount Paid</th>
+                    <th>Receipt No / Date</th>
+                    <th>Balance Due</th>
+                    <th>Cashier Sign</th>
+                </tr>
+            </thead>
+            <tbody>
+                {matrix_rows}
+            </tbody>
+        </table>
+
+        <div class="summary-box">
+            <div class="summary-card">
+                <div class="label">Total Annual Fee</div>
+                <div class="val" style="color: #1E293B;">{currency}{gross_demand:.2f}</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">Total Concession</div>
+                <div class="val" style="color: #6366F1;">{currency}{concession_total:.2f}</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">Total Paid</div>
+                <div class="val" style="color: #059669;">{currency}{total_paid:.2f}</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">Outstanding Dues</div>
+                <div class="val" style="color: {balance_color};">
+                    {currency}{balance_due:.2f}
+                </div>
+            </div>
+        </div>
+
+        <div style="background: #F1F5F9; border-radius: 6px; padding: 8px 12px; font-size: 10px; color: #475569; border-left: 3px solid {brand_color};">
+            <strong>Ledger Note:</strong> This document reflects the verified multi-session student ledger record generated from the School ERP. All payments are backed by system-generated receipt numbers.
+        </div>
+
+        <div class="sign-row" style="margin-top: 30px;">
+            <div class="sign-col">Prepared By (Cashier)</div>
+            <div class="sign-col">Accountant / Office In-Charge</div>
+            <div class="sign-col">Principal / Head of School</div>
+        </div>
+    </div>
+</body>
+</html>"""
         return html_content
 

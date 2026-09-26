@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict, Any
 from datetime import date, time, datetime
 from decimal import Decimal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # 1. Exam Terms
@@ -85,6 +85,13 @@ class StudentMarkEntryItem(BaseModel):
     marks_obtained: Optional[Decimal] = None
     is_absent: bool = False
     remarks: Optional[str] = None
+
+    @field_validator("marks_obtained", mode="before")
+    @classmethod
+    def sanitize_marks(cls, v):
+        if v == "" or v is None:
+            return None
+        return v
 
 
 class SubmitMarksGridRequest(BaseModel):

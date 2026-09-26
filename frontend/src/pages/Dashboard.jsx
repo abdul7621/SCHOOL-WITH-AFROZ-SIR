@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import {
   Users,
   CalendarCheck,
@@ -18,6 +18,9 @@ import {
   RefreshCcw,
   FileText,
   ClipboardList,
+  Stamp,
+  PenTool,
+  X,
 } from 'lucide-react';
 import { StatCard } from '../components/StatCard';
 import { useAuth } from '../context/AuthContext';
@@ -30,17 +33,38 @@ export const Dashboard = () => {
   const [activeRoleView, setActiveRoleView] = useState('PRINCIPAL'); // PRINCIPAL, TEACHER, CASHIER, ADMIN
   const [loading, setLoading] = useState(true);
 
+  // FIX-10: Dynamic Syllabus State
+  const [syllabusList, setSyllabusList] = useState([]);
+  const [loadingSyllabus, setLoadingSyllabus] = useState(false);
+
+  // FIX-11: Official Seal & Signature Studio States
+  const [showStudioModal, setShowStudioModal] = useState(false);
+  const [schoolSealUrl, setSchoolSealUrl] = useState('');
+  const [principalSigUrl, setPrincipalSigUrl] = useState('');
+  const [savingStudio, setSavingStudio] = useState(false);
+  const [studioSuccess, setStudioSuccess] = useState('');
+
   const isAdmin =
     user?.role === 'ADMIN' ||
     user?.role === 'SUPER_ADMIN' ||
     user?.roles?.includes('ADMIN') ||
     user?.roles?.includes('SUPER_ADMIN');
 
+  const isParentOnly =
+    !isAdmin &&
+    (user?.user_type === 'PARENT' || user?.roles?.includes('PARENT')) &&
+    !user?.roles?.some((r) => ['ADMIN', 'PRINCIPAL', 'TEACHER', 'ACCOUNTANT', 'CASHIER'].includes(r));
+
   useEffect(() => {
     if (!isAdmin && user) {
       if (user.role === 'TEACHER' || user.roles?.includes('TEACHER')) {
         setActiveRoleView('TEACHER');
-      } else if (user.role === 'CASHIER' || user.roles?.includes('CASHIER')) {
+      } else if (
+        user.role === 'CASHIER' ||
+        user.role === 'ACCOUNTANT' ||
+        user.roles?.includes('CASHIER') ||
+        user.roles?.includes('ACCOUNTANT')
+      ) {
         setActiveRoleView('CASHIER');
       }
     }
@@ -84,9 +108,69 @@ export const Dashboard = () => {
     }
   };
 
+  const fetchSyllabusProgress = async () => {
+    setLoadingSyllabus(true);
+    try {
+      const res = await api.get('/academics/syllabus/completion-summary');
+      const items = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+      setSyllabusList(items);
+    } catch (err) {
+      console.warn('Could not load dynamic syllabus meter:', err);
+    } finally {
+      setLoadingSyllabus(false);
+    }
+  };
+
+  const fetchSealSettings = async () => {
+    try {
+      const res = await api.get('/settings/public');
+      if (res.data) {
+        setSchoolSealUrl(res.data.school_seal_image || '');
+        setPrincipalSigUrl(res.data.principal_signature_image || '');
+      }
+    } catch (err) {
+      console.warn('Could not load seal settings:', err);
+    }
+  };
+
   useEffect(() => {
+    if (isParentOnly) return;
     fetchDashboardStats();
-  }, []);
+    fetchSyllabusProgress();
+    fetchSealSettings();
+  }, [isParentOnly]);
+
+  if (isParentOnly) {
+    return <Navigate to="/parent-portal" replace />;
+  }
+
+  const handleSaveStudio = async (e) => {
+    e.preventDefault();
+    setSavingStudio(true);
+    try {
+      await api.post('/settings', {
+        setting_key: 'school_seal_image',
+        setting_value: schoolSealUrl.trim(),
+        is_public: true,
+        description: 'Official round seal and stamp of the school',
+      });
+      await api.post('/settings', {
+        setting_key: 'principal_signature_image',
+        setting_value: principalSigUrl.trim(),
+        is_public: true,
+        description: 'Authorized digital signature of the School Principal',
+      });
+      setStudioSuccess('Official Seal & Principal Signature synchronized successfully!');
+      setTimeout(() => {
+        setStudioSuccess('');
+        setShowStudioModal(false);
+      }, 1400);
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'Failed to save studio settings');
+    } finally {
+      setSavingStudio(false);
+    }
+  };
 
   const cashInHand = stats.finance.mode_breakdown['CASH'] || stats.finance.mode_breakdown['Cash'] || 0.0;
   const upiInflow = stats.finance.mode_breakdown['UPI'] || stats.finance.mode_breakdown['Online'] || 0.0;
@@ -180,48 +264,68 @@ export const Dashboard = () => {
 
           {/* 2-Column Grid: Syllabus Targets & Campus Actions */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Syllabus Velocity Speedometer */}
+            {/* Syllabus Velocity Speedometer (FIX-10 Dynamic) */}
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
                   <Clock size={18} className="text-blue-600" />
                   <span>Syllabus Completion Speedometer</span>
                 </div>
-                <span className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
-                  Term 1 Targets
-                </span>
+                <Link
+                  to="/academics/timetable"
+                  className="text-[10px] font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 px-2.5 py-1 rounded-full transition-colors"
+                >
+                  View Timetable &rarr;
+                </Link>
               </div>
 
               <div className="space-y-4 text-xs">
-                <div>
-                  <div className="flex justify-between font-bold mb-1">
-                    <span className="text-slate-800">Class 8 — Mathematics</span>
-                    <span className="text-emerald-600">68% (On Track)</span>
+                {loadingSyllabus ? (
+                  <div className="py-8 text-center text-slate-400 font-bold animate-pulse">
+                    Computing real curriculum coverage velocity...
                   </div>
-                  <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: '68%' }}></div>
-                  </div>
-                </div>
+                ) : syllabusList.length > 0 ? (
+                  syllabusList.slice(0, 4).map((s, idx) => {
+                    const barColor =
+                      s.status === 'ON_TRACK'
+                        ? 'bg-emerald-500'
+                        : s.status === 'SLIGHTLY_BEHIND'
+                        ? 'bg-amber-500'
+                        : 'bg-rose-500';
+                    const textColor =
+                      s.status === 'ON_TRACK'
+                        ? 'text-emerald-600'
+                        : s.status === 'SLIGHTLY_BEHIND'
+                        ? 'text-amber-600'
+                        : 'text-rose-600';
 
-                <div>
-                  <div className="flex justify-between font-bold mb-1">
-                    <span className="text-slate-800">Class 9 — Science & Physics</span>
-                    <span className="text-rose-600">38% (12 Days Behind Schedule)</span>
+                    return (
+                      <div key={idx}>
+                        <div className="flex justify-between font-bold mb-1">
+                          <span className="text-slate-800">
+                            {s.class_name} &bull; {s.subject_name}
+                          </span>
+                          <span className={textColor}>
+                            {s.completion_percentage}% ({s.status_label})
+                          </span>
+                        </div>
+                        <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${barColor} rounded-full transition-all duration-500`}
+                            style={{ width: `${Math.min(100, s.completion_percentage)}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="py-6 text-center text-slate-400">
+                    No curriculum subjects mapped yet.{' '}
+                    <Link to="/academics" className="text-blue-600 font-bold underline">
+                      Configure Subjects &rarr;
+                    </Link>
                   </div>
-                  <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-rose-500 rounded-full" style={{ width: '38%' }}></div>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between font-bold mb-1">
-                    <span className="text-slate-800">Class 10 — English Language</span>
-                    <span className="text-emerald-600">74% (On Track)</span>
-                  </div>
-                  <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: '74%' }}></div>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
 
@@ -251,12 +355,14 @@ export const Dashboard = () => {
                   >
                     📄 Issue Transfer Certificate (TC)
                   </Link>
-                  <Link
-                    to="/attendance"
-                    className="p-3 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-xl font-bold text-slate-800 transition-colors block text-center"
+                  <button
+                    type="button"
+                    onClick={() => setShowStudioModal(true)}
+                    className="p-3 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 rounded-xl font-bold transition-colors block text-center flex items-center justify-center gap-1.5"
                   >
-                    📅 Class Attendance Summary
-                  </Link>
+                    <Stamp size={14} className="text-amber-700" />
+                    <span>Seal & Signature Studio</span>
+                  </button>
                 </div>
               </div>
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-center justify-between">
@@ -424,6 +530,117 @@ export const Dashboard = () => {
                 Review Inquiries &rarr;
               </Link>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Official School Seal & Principal Signature Studio Modal (FIX-11) */}
+      {showStudioModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden border border-slate-200 animate-in zoom-in-95">
+            <div className="p-5 bg-gradient-to-r from-amber-600 to-amber-700 text-white flex justify-between items-center">
+              <div className="flex items-center gap-2.5">
+                <Stamp size={20} />
+                <div>
+                  <h3 className="font-black text-sm">Official Seal & Principal Signature Studio</h3>
+                  <p className="text-[10px] text-amber-200">Auto-embed on Transfer Certificates, Report Cards & Awards</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowStudioModal(false)}
+                className="text-white/80 hover:text-white"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveStudio} className="p-5 space-y-4">
+              {studioSuccess && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-bold flex items-center gap-2">
+                  <CheckCircle2 size={16} className="shrink-0" />
+                  <span>{studioSuccess}</span>
+                </div>
+              )}
+
+              {/* School Seal */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                  <Stamp size={13} className="text-amber-600" />
+                  <span>Official School Round Seal / Stamp Image URL</span>
+                </label>
+                <input
+                  type="url"
+                  value={schoolSealUrl}
+                  onChange={(e) => setSchoolSealUrl(e.target.value)}
+                  placeholder="https://example.com/assets/school-seal.png"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 outline-none focus:ring-2 focus:ring-amber-500 font-mono"
+                />
+              </div>
+
+              {/* Principal Signature */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                  <PenTool size={13} className="text-blue-600" />
+                  <span>Principal Authorized Signature Image URL</span>
+                </label>
+                <input
+                  type="url"
+                  value={principalSigUrl}
+                  onChange={(e) => setPrincipalSigUrl(e.target.value)}
+                  placeholder="https://example.com/assets/principal-signature.png"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                />
+              </div>
+
+              {/* Live Preview Box */}
+              <div className="p-4 bg-slate-50 border border-dashed border-slate-300 rounded-xl">
+                <div className="text-[10px] uppercase font-bold text-slate-400 mb-3 text-center">
+                  Live Certificate / TC Stamping Preview
+                </div>
+                <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-200">
+                  <div className="text-center">
+                    <div className="w-16 h-16 border-2 border-dashed border-slate-300 rounded-full flex items-center justify-center overflow-hidden mx-auto bg-slate-50">
+                      {schoolSealUrl ? (
+                        <img src={schoolSealUrl} alt="Seal Preview" className="w-full h-full object-contain p-1" />
+                      ) : (
+                        <span className="text-[9px] text-slate-400 font-bold">No Seal</span>
+                      )}
+                    </div>
+                    <div className="text-[9px] font-bold text-slate-500 mt-1">School Seal</div>
+                  </div>
+
+                  <div className="text-center">
+                    <div className="h-12 w-28 border-b border-slate-400 flex items-center justify-center overflow-hidden mx-auto">
+                      {principalSigUrl ? (
+                        <img src={principalSigUrl} alt="Signature Preview" className="max-h-10 object-contain" />
+                      ) : (
+                        <span className="text-[9px] text-slate-400 italic">No Signature</span>
+                      )}
+                    </div>
+                    <div className="text-[10px] font-bold text-slate-700 mt-1">Principal (Authorized)</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  disabled={savingStudio}
+                  onClick={() => setShowStudioModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingStudio}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold text-xs shadow flex items-center gap-1.5"
+                >
+                  {savingStudio ? 'Synchronizing...' : 'Save & Synchronize Documents'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -190,14 +190,14 @@ async def create_exam_schedule(req: ExamScheduleCreate, db: AsyncSession = Depen
 # ==========================================
 # 4. Marks Entry Grid & Report Cards
 # ==========================================
-@router.get("/schedules/{schedule_id}/roster", dependencies=[Depends(RequirePermission("academics:manage"))])
+@router.get("/schedules/{schedule_id}/roster", dependencies=[Depends(RequirePermission("academics:manage", "exams:mark", "academics:view"))])
 async def get_marks_entry_roster(schedule_id: str, db: AsyncSession = Depends(get_tenant_db)):
     """Teacher Marks Entry Grid: Fetches enrolled students with previously entered scores."""
     roster = await ExamService.get_marks_roster(schedule_id, db)
     return success_response(data=roster)
 
 
-@router.post("/schedules/{schedule_id}/marks", dependencies=[Depends(RequirePermission("academics:manage"))])
+@router.post("/schedules/{schedule_id}/marks", dependencies=[Depends(RequirePermission("academics:manage", "exams:mark"))])
 async def submit_marks_grid(
     schedule_id: str,
     req: SubmitMarksGridRequest,

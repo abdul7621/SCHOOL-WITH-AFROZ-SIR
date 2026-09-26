@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Dict, Any, Optional
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -34,18 +34,30 @@ class ParentPortalService:
             if st:
                 return st
 
+        user_stmt = select(User).where(User.id == parent_user_id)
+        user_res = await db.execute(user_stmt)
+        user_obj = user_res.scalar_one_or_none()
+        phone_match = user_obj.phone if user_obj else None
+
         stmt = (
-            select(Student)
+            select(Student, Parent)
             .join(Parent, Student.parent_id == Parent.id)
             .where(
-                Parent.user_id == parent_user_id,
+                or_(
+                    Parent.user_id == parent_user_id,
+                    Parent.primary_phone == phone_match if phone_match else False,
+                ),
                 Student.id == student_id,
             )
         )
         res = await db.execute(stmt)
-        student = res.scalar_one_or_none()
-        if not student:
+        row = res.first()
+        if not row:
             raise PermissionDeniedException("You do not have authorization to view this student's portal")
+        student, parent = row
+        if not parent.user_id:
+            parent.user_id = parent_user_id
+            await db.commit()
         return student
 
     @classmethod
@@ -71,6 +83,11 @@ class ParentPortalService:
                 .order_by(ClassLevel.numeric_order.asc(), StudentEnrollment.roll_no.asc())
             )
         else:
+            user_stmt = select(User).where(User.id == parent_user_id)
+            user_res = await db.execute(user_stmt)
+            user_obj = user_res.scalar_one_or_none()
+            phone_match = user_obj.phone if user_obj else None
+
             stmt = (
                 select(Student, Parent, StudentEnrollment, ClassLevel, Section)
                 .join(Parent, Student.parent_id == Parent.id)
@@ -78,7 +95,10 @@ class ParentPortalService:
                 .join(ClassLevel, StudentEnrollment.class_id == ClassLevel.id)
                 .join(Section, StudentEnrollment.section_id == Section.id)
                 .where(
-                    Parent.user_id == parent_user_id,
+                    or_(
+                        Parent.user_id == parent_user_id,
+                        Parent.primary_phone == phone_match if phone_match else False,
+                    ),
                     StudentEnrollment.is_active == True,
                 )
                 .order_by(StudentEnrollment.roll_no.asc())

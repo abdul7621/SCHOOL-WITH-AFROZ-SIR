@@ -12,9 +12,10 @@ export const TenantProvider = ({ children }) => {
       return qTenant;
     }
     const stored = localStorage.getItem('tenant_slug');
-    if (stored && stored !== 'sample') return stored;
-    localStorage.setItem('tenant_slug', '7aschoolerpuat');
-    return '7aschoolerpuat';
+    if (stored) return stored;
+    const defaultSlug = (import.meta.env && import.meta.env.VITE_DEFAULT_TENANT_SLUG) || '7aschoolerpuat';
+    localStorage.setItem('tenant_slug', defaultSlug);
+    return defaultSlug;
   });
   const [settings, setSettings] = useState({
     school_name: '7A Model School',

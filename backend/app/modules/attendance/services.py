@@ -298,7 +298,7 @@ class AttendanceService:
                 recent.append({
                     "date": str(session.attendance_date),
                     "status_code": code,
-                    "status_name": lookup.name or code,
+                    "status_name": getattr(lookup, "label", None) or getattr(lookup, "name", None) or code,
                 })
 
         pct = round(((present + (late * 0.5) + (half_day * 0.5)) / total * 100), 1) if total > 0 else 0.0

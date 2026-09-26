@@ -149,12 +149,31 @@ fi
 
 chmod -R 755 /var/www/school-erp/frontend/dist
 
-# Sync Nginx Virtual Host Configuration
+# Sync Nginx Virtual Host Configuration (Non-destructive multi-tenant / multi-project co-existence)
 if [ -f /var/www/school-erp/deploy/nginx/7a_school_erp.conf ]; then
     mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled /var/www/certbot
+    
+    # Ensure SSL certificate directory & fallback exists so nginx -t does not fail on clean servers
+    if [ ! -f /etc/letsencrypt/live/school.7adigitalsolution.com/fullchain.pem ]; then
+        echo -e "${YELLOW}⚠️ Let's Encrypt certificates not found. Creating temporary self-signed cert for nginx -t...${NC}"
+        mkdir -p /etc/letsencrypt/live/school.7adigitalsolution.com
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+            -keyout /etc/letsencrypt/live/school.7adigitalsolution.com/privkey.pem \
+            -out /etc/letsencrypt/live/school.7adigitalsolution.com/fullchain.pem \
+            -subj "/CN=school.7adigitalsolution.com" 2>/dev/null || true
+    fi
+
     cp /var/www/school-erp/deploy/nginx/7a_school_erp.conf /etc/nginx/sites-available/school-erp.conf
     ln -sf /etc/nginx/sites-available/school-erp.conf /etc/nginx/sites-enabled/school-erp.conf
-    rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+fi
+
+if [ -f /var/www/school-erp/deploy/nginx/laravel_commerce_8080.conf ]; then
+    # Dynamically detect installed PHP-FPM socket version (8.3, 8.2, 8.1)
+    PHP_SOCK=$(ls /run/php/php*-fpm.sock 2>/dev/null | head -n 1 || echo "/run/php/php8.3-fpm.sock")
+    sed -i "s|unix:/run/php/php[0-9.]*-fpm.sock|unix:$PHP_SOCK|g" /var/www/school-erp/deploy/nginx/laravel_commerce_8080.conf 2>/dev/null || true
+
+    cp /var/www/school-erp/deploy/nginx/laravel_commerce_8080.conf /etc/nginx/sites-available/laravel-commerce.conf
+    ln -sf /etc/nginx/sites-available/laravel-commerce.conf /etc/nginx/sites-enabled/laravel-commerce.conf
 fi
 
 nginx -t

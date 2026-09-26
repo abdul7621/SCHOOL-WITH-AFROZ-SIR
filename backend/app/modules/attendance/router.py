@@ -1,6 +1,7 @@
 from datetime import date
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_tenant_db
 from app.shared.responses import success_response
@@ -42,7 +43,37 @@ async def submit_daily_attendance(
     """
     Fast Grid Submission: Teacher/Staff submits bulk attendance for the class.
     Atomically inserts or updates records.
+    Enforces assigned class-teacher lock with administrative proxy bypass.
     """
+    is_admin_or_manager = (
+        "attendance:manage" in current_user.permissions
+        or any(r in ["ADMIN", "SUPERADMIN", "PRINCIPAL"] for r in current_user.roles)
+    )
+    if not is_admin_or_manager:
+        from app.modules.academics.models import ClassTeacher
+        from app.core.exceptions import PermissionDeniedException
+
+        # Check if teacher is assigned to any class in this session
+        teacher_assigned_any_stmt = select(ClassTeacher).where(
+            ClassTeacher.academic_year_id == req.academic_year_id,
+            ClassTeacher.teacher_user_id == current_user.id,
+        )
+        has_any_assignment = (await db.execute(teacher_assigned_any_stmt)).scalar_one_or_none() is not None
+
+        if has_any_assignment:
+            # Teacher has designated class(es); enforce strict match
+            ct_stmt = select(ClassTeacher).where(
+                ClassTeacher.academic_year_id == req.academic_year_id,
+                ClassTeacher.class_id == req.class_id,
+                ClassTeacher.section_id == req.section_id,
+                ClassTeacher.teacher_user_id == current_user.id,
+            )
+            ct_res = await db.execute(ct_stmt)
+            if not ct_res.scalar_one_or_none():
+                raise PermissionDeniedException(
+                    "You are only authorized to mark attendance for your assigned class and section."
+                )
+
     session = await AttendanceService.submit_attendance(
         req=req,
         marked_by_user_id=current_user.id,

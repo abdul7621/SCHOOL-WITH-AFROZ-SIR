@@ -29,7 +29,9 @@ export const ExcelMigration = () => {
 
   const handleDownloadTemplate = async () => {
     try {
-      window.open('/api/v1/excel/template/students', '_blank');
+      const token = encodeURIComponent(localStorage.getItem('token') || '');
+      const tenant = encodeURIComponent(localStorage.getItem('tenant_slug') || '7aschoolerpuat');
+      window.open(`/api/v1/excel/template/students?token=${token}&tenant_slug=${tenant}`, '_blank');
     } catch (e) {
       alert('Error downloading template: ' + e.message);
     }

@@ -31,6 +31,7 @@ from app.modules.fees.schemas import (
     ReverseFeeReceiptRequest,
     FeeRefundCreate,
     FeeRefundResponse,
+    WaiveFeeDemandsRequest,
 )
 from app.modules.fees.services import FeeService
 
@@ -327,6 +328,28 @@ async def generate_bulk_demands(req: GenerateBulkFeeDemandsRequest, db: AsyncSes
     )
 
 
+@router.post("/demands/waive", dependencies=[Depends(RequirePermission("fees:waive"))])
+async def waive_fee_demands(
+    req: WaiveFeeDemandsRequest,
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """
+    Principal Fee Waiver Authorization (FIX-08):
+    Authorizes zeroing of outstanding fee demands (e.g., EWS hardship or Transfer Certificate clearance).
+    Restricted to School Principal, SuperAdmin, and Management.
+    """
+    result = await FeeService.waive_fee_demands(
+        req=req,
+        principal_user_id=current_user.id,
+        db=db,
+    )
+    return success_response(
+        data=result,
+        message=f"Successfully waived {result['waived_count']} demand(s) totaling ₹{result['total_waived_amount']:.2f}",
+    )
+
+
 # ==========================================
 # 4. Penny-Perfect Fee Collection & Reversal
 # ==========================================
@@ -393,6 +416,16 @@ async def get_student_fee_ledger(
         db=db,
     )
     return success_response(data=ledger)
+
+
+@router.get("/wallet/{student_id}", dependencies=[Depends(RequirePermission("fees:view"))])
+async def get_student_fee_wallet(
+    student_id: str,
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Retrieves student's advance fee wallet balance and transaction ledger."""
+    wallet_data = await FeeService.get_student_wallet(student_id=student_id, db=db)
+    return success_response(data=wallet_data)
 
 
 # ==========================================

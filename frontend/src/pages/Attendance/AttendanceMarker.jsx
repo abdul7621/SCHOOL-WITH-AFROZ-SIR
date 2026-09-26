@@ -17,6 +17,17 @@ export const AttendanceMarker = () => {
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 
+  const [currentUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [isTeacherLocked, setIsTeacherLocked] = useState(false);
+  const [assignedInfo, setAssignedInfo] = useState(null);
+
   // Leave Requests State
   const [leaves, setLeaves] = useState([]);
   const [loadingLeaves, setLoadingLeaves] = useState(false);
@@ -35,11 +46,39 @@ export const AttendanceMarker = () => {
 
         if (clsRes.data && clsRes.data.length > 0) {
           setClasses(clsRes.data);
-          const classWithStudents = clsRes.data.find((c) => c.sections?.some((s) => (s.enrolled_count || 0) > 0)) || clsRes.data[0];
-          setSelectedClass(classWithStudents.id);
-          if (classWithStudents.sections?.length > 0) {
-            const secWithStudents = classWithStudents.sections.find((s) => (s.enrolled_count || 0) > 0) || classWithStudents.sections[0];
-            setSelectedSection(secWithStudents.id);
+
+          const isAdminOrPrincipal =
+            currentUser?.roles?.some((r) => ['ADMIN', 'SUPERADMIN', 'PRINCIPAL'].includes(r)) ||
+            currentUser?.permissions?.includes('attendance:manage');
+
+          let teacherAssignedClass = null;
+          let teacherAssignedSection = null;
+
+          if (!isAdminOrPrincipal && currentUser) {
+            for (const c of clsRes.data) {
+              for (const s of (c.sections || [])) {
+                if (s.class_teacher?.teacher_user_id === currentUser.id || s.class_teacher?.teacher_user_id === currentUser.user_id) {
+                  teacherAssignedClass = c.id;
+                  teacherAssignedSection = s.id;
+                  setAssignedInfo({ className: c.name, sectionName: s.name });
+                  setIsTeacherLocked(true);
+                  break;
+                }
+              }
+              if (teacherAssignedClass) break;
+            }
+          }
+
+          if (teacherAssignedClass) {
+            setSelectedClass(teacherAssignedClass);
+            setSelectedSection(teacherAssignedSection);
+          } else {
+            const classWithStudents = clsRes.data.find((c) => c.sections?.some((s) => (s.enrolled_count || 0) > 0)) || clsRes.data[0];
+            setSelectedClass(classWithStudents.id);
+            if (classWithStudents.sections?.length > 0) {
+              const secWithStudents = classWithStudents.sections.find((s) => (s.enrolled_count || 0) > 0) || classWithStudents.sections[0];
+              setSelectedSection(secWithStudents.id);
+            }
           }
         }
 
@@ -282,11 +321,19 @@ export const AttendanceMarker = () => {
             </div>
 
             <div>
-              <label className="block text-slate-500 mb-1">Class</label>
+              <label className="block text-slate-500 mb-1 flex items-center gap-1">
+                Class
+                {isTeacherLocked && (
+                  <span className="text-[10px] text-amber-600 bg-amber-50 px-1 rounded border border-amber-200">Locked</span>
+                )}
+              </label>
               <select
                 value={selectedClass}
+                disabled={isTeacherLocked}
                 onChange={(e) => handleClassChange(e.target.value)}
-                className="border border-slate-200 rounded-lg px-3 py-1.5 bg-slate-50 font-semibold text-slate-800"
+                className={`border border-slate-200 rounded-lg px-3 py-1.5 font-semibold text-slate-800 ${
+                  isTeacherLocked ? 'bg-slate-100 cursor-not-allowed opacity-80' : 'bg-slate-50'
+                }`}
               >
                 {classes.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
@@ -295,11 +342,19 @@ export const AttendanceMarker = () => {
             </div>
 
             <div>
-              <label className="block text-slate-500 mb-1">Section</label>
+              <label className="block text-slate-500 mb-1 flex items-center gap-1">
+                Section
+                {isTeacherLocked && (
+                  <span className="text-[10px] text-blue-600 bg-blue-50 px-1 rounded border border-blue-200">Assigned</span>
+                )}
+              </label>
               <select
                 value={selectedSection}
+                disabled={isTeacherLocked}
                 onChange={(e) => setSelectedSection(e.target.value)}
-                className="border border-slate-200 rounded-lg px-3 py-1.5 bg-slate-50 font-semibold text-slate-800"
+                className={`border border-slate-200 rounded-lg px-3 py-1.5 font-semibold text-slate-800 ${
+                  isTeacherLocked ? 'bg-slate-100 cursor-not-allowed opacity-80' : 'bg-slate-50'
+                }`}
               >
                 {(classes.find((c) => c.id === selectedClass)?.sections || []).map((s) => (
                   <option key={s.id} value={s.id}>
@@ -308,6 +363,12 @@ export const AttendanceMarker = () => {
                 ))}
               </select>
             </div>
+
+            {isTeacherLocked && assignedInfo && (
+              <div className="flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1.5 rounded-lg self-end">
+                <span>🔒 Class Teacher: {assignedInfo.className} ({assignedInfo.sectionName})</span>
+              </div>
+            )}
 
             <div className="flex items-end gap-2 ml-auto">
               <button

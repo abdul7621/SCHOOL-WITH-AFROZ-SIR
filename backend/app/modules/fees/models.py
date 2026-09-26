@@ -95,9 +95,15 @@ class StudentFeeDemand(BaseTenantModel):
     balance_amount = Column(Numeric(10, 2), nullable=False)
     status = Column(String(30), default="UNPAID", nullable=False, index=True) # 'UNPAID', 'PARTIALLY_PAID', 'PAID', 'WAIVED'
 
+    # Waiver Audit Stamps (FIX-08)
+    waived_by_user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    waived_at = Column(DateTime, nullable=True)
+    waiver_reason = Column(Text, nullable=True)
+
     student = relationship("app.modules.students.models.Student")
     installment_schedule = relationship("FeeInstallmentSchedule")
     fee_head = relationship("FeeHead")
+    waived_by = relationship("app.modules.users_rbac.models.User", foreign_keys=[waived_by_user_id])
 
     __table_args__ = (
         UniqueConstraint("student_id", "installment_schedule_id", "fee_head_id", name="uk_student_schedule_head_demand"),
@@ -158,4 +164,31 @@ class FeeRefund(BaseTenantModel):
     collection = relationship("FeeCollection")
     payment_mode = relationship("app.modules.lookups.models.PaymentMode")
     authorized_by = relationship("app.modules.users_rbac.models.User", foreign_keys=[authorized_by_user_id])
+
+
+class StudentAdvanceWallet(BaseTenantModel):
+    __tablename__ = "student_advance_wallets"
+
+    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    credit_balance = Column(Numeric(10, 2), default=0.00, nullable=False)
+
+    student = relationship("app.modules.students.models.Student")
+    transactions = relationship("StudentAdvanceWalletTransaction", back_populates="wallet", cascade="all, delete-orphan")
+
+
+class StudentAdvanceWalletTransaction(BaseTenantModel):
+    __tablename__ = "student_advance_wallet_transactions"
+
+    wallet_id = Column(String(36), ForeignKey("student_advance_wallets.id", ondelete="CASCADE"), nullable=False, index=True)
+    transaction_type = Column(String(30), nullable=False)  # 'CREDIT_ADDED', 'CREDIT_OFFSET'
+    amount = Column(Numeric(10, 2), nullable=False)
+    running_balance = Column(Numeric(10, 2), nullable=False)
+    fee_collection_id = Column(String(36), ForeignKey("fee_collections.id"), nullable=True, index=True)
+    student_fee_demand_id = Column(String(36), ForeignKey("student_fee_demands.id"), nullable=True, index=True)
+    notes = Column(String(255), nullable=True)
+
+    wallet = relationship("StudentAdvanceWallet", back_populates="transactions")
+    fee_collection = relationship("FeeCollection")
+    demand = relationship("StudentFeeDemand")
+
 

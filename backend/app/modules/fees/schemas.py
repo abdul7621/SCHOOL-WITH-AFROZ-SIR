@@ -152,3 +152,10 @@ class FeeRefundResponse(BaseModel):
     reason: str
     authorized_by_name: str
 
+
+class WaiveFeeDemandsRequest(BaseModel):
+    student_id: str
+    demand_ids: Optional[List[str]] = None
+    waiver_reason: str = Field(..., min_length=5, example="Principal fee waiver approved for Transfer Certificate clearance")
+    supporting_doc_ref: Optional[str] = None
+

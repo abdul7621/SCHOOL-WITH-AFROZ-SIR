@@ -51,17 +51,60 @@ TENANT_SCHEMA_DDL = [
     """
     ALTER TABLE students MODIFY COLUMN profile_photo_url LONGTEXT;
     """,
+    # 4. Student advance fee wallets
+    """
+    CREATE TABLE IF NOT EXISTS student_advance_wallets (
+        id VARCHAR(36) PRIMARY KEY,
+        student_id VARCHAR(36) NOT NULL UNIQUE,
+        credit_balance DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+        INDEX idx_saw_student_id (student_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    """,
+    # 5. Student advance wallet transactions
+    """
+    CREATE TABLE IF NOT EXISTS student_advance_wallet_transactions (
+        id VARCHAR(36) PRIMARY KEY,
+        wallet_id VARCHAR(36) NOT NULL,
+        transaction_type VARCHAR(30) NOT NULL,
+        amount DECIMAL(10, 2) NOT NULL,
+        running_balance DECIMAL(10, 2) NOT NULL,
+        fee_collection_id VARCHAR(36) NULL,
+        student_fee_demand_id VARCHAR(36) NULL,
+        notes VARCHAR(255) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (wallet_id) REFERENCES student_advance_wallets(id) ON DELETE CASCADE,
+        FOREIGN KEY (fee_collection_id) REFERENCES fee_collections(id) ON DELETE SET NULL,
+        FOREIGN KEY (student_fee_demand_id) REFERENCES student_fee_demands(id) ON DELETE SET NULL,
+        INDEX idx_sawt_wallet_id (wallet_id),
+        INDEX idx_sawt_collection_id (fee_collection_id),
+        INDEX idx_sawt_demand_id (student_fee_demand_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    """,
+    # 6. Fee demand waiver tracking columns
+    """
+    ALTER TABLE student_fee_demands ADD COLUMN waived_by_user_id VARCHAR(36) NULL;
+    """,
+    """
+    ALTER TABLE student_fee_demands ADD COLUMN waived_at DATETIME NULL;
+    """,
+    """
+    ALTER TABLE student_fee_demands ADD COLUMN waiver_reason TEXT NULL;
+    """,
 ]
 
 DEFAULT_FINANCE_CATEGORIES = [
-    ("cat_tuition_fee", "Tuition Fee", "INCOME", "Academic tuition fee collections", True),
-    ("cat_admission_fee", "Admission Fee", "INCOME", "New admission registration fee", True),
-    ("cat_exam_fee", "Exam Fee", "INCOME", "Term and board examination fees", True),
-    ("cat_salaries", "Staff Salaries", "EXPENSE", "Monthly teacher and staff payroll", True),
-    ("cat_utilities", "Electricity & Water", "EXPENSE", "Campus utility bills", True),
-    ("cat_maintenance", "Campus Maintenance", "EXPENSE", "Building repairs, sanitation, cleaning", True),
-    ("cat_stationery", "Stationery & Printing", "EXPENSE", "Office supplies and exam paper printing", True),
-    ("cat_misc", "Miscellaneous Expense", "EXPENSE", "General petty cash operational expenses", True),
+    ("cat_tuition_fee", "Tuition Fee", "INCOME", "TUITION_FEE"),
+    ("cat_admission_fee", "Admission Fee", "INCOME", "ADMISSION_FEE"),
+    ("cat_exam_fee", "Exam Fee", "INCOME", "EXAM_FEE"),
+    ("cat_salaries", "Staff Salaries", "EXPENSE", "SALARIES"),
+    ("cat_utilities", "Electricity & Water", "EXPENSE", "UTILITIES"),
+    ("cat_maintenance", "Campus Maintenance", "EXPENSE", "MAINTENANCE"),
+    ("cat_stationery", "Stationery & Printing", "EXPENSE", "STATIONERY"),
+    ("cat_misc", "Miscellaneous Expense", "EXPENSE", "MISC_EXPENSE"),
 ]
 
 
@@ -72,8 +115,8 @@ def seed_finance_categories(cursor):
         if count == 0:
             logger.info("Seeding default finance categories...")
             insert_sql = """
-            INSERT INTO finance_categories (id, name, type, description, is_system)
-            VALUES (%s, %s, %s, %s, %s);
+            INSERT INTO finance_categories (id, name, category_type, code)
+            VALUES (%s, %s, %s, %s);
             """
             for cat in DEFAULT_FINANCE_CATEGORIES:
                 cursor.execute(insert_sql, cat)
