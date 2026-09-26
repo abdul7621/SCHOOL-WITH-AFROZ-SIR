@@ -423,13 +423,24 @@ export const Student360Drawer = ({ student, isOpen, onClose }) => {
                               <div className="font-mono font-bold text-blue-700">{r.receipt_no}</div>
                               <div className="text-slate-400 text-[10px]">{r.collection_date} &bull; {r.payment_mode || 'Cash'}</div>
                             </div>
-                            <div className="text-right">
-                              <div className="font-black text-emerald-600">₹{r.total_amount_paid?.toLocaleString()}</div>
-                              <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
-                                r.status === 'CONFIRMED' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                              }`}>
-                                {r.status}
-                              </span>
+                            <div className="flex items-center gap-3">
+                              <div className="text-right">
+                                <div className="font-black text-emerald-600">₹{r.total_amount_paid?.toLocaleString()}</div>
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                                  r.status === 'CONFIRMED' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                                }`}>
+                                  {r.status}
+                                </span>
+                              </div>
+                              <a
+                                href={`/api/v1/documents/fee-receipt/${r.receipt_no}/html?token=${encodeURIComponent(token)}&tenant_slug=${encodeURIComponent(tenantSlug)}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                title="Print / Download Receipt"
+                                className="p-1.5 bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 border border-slate-200 rounded-lg flex items-center gap-1 text-[11px] font-bold transition-colors"
+                              >
+                                <Printer size={13} />
+                              </a>
                             </div>
                           </div>
                         ))
@@ -480,15 +491,27 @@ export const Student360Drawer = ({ student, isOpen, onClose }) => {
                           Academic Session: {examReport.school_info?.session_name || 'Current'}
                         </div>
                       </div>
-                      <span className={`px-2.5 py-1 rounded-md font-bold text-[10px] ${
-                        examReport.summary?.result === 'PASSED'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : examReport.summary?.result === 'IN_PROGRESS'
-                          ? 'bg-amber-100 text-amber-800'
-                          : 'bg-rose-100 text-rose-800'
-                      }`}>
-                        {examReport.summary?.result || 'PENDING'} ({examReport.summary?.overall_percentage || 0}%)
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2.5 py-1 rounded-md font-bold text-[10px] ${
+                          examReport.summary?.result === 'PASSED'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : examReport.summary?.result === 'IN_PROGRESS'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-rose-100 text-rose-800'
+                        }`}>
+                          {examReport.summary?.result || 'PENDING'} ({examReport.summary?.overall_percentage || 0}%)
+                        </span>
+                        {selectedTermId && (
+                          <a
+                            href={`/api/v1/documents/report-card/${selectedTermId}/${student.id}/html?token=${encodeURIComponent(token)}&tenant_slug=${encodeURIComponent(tenantSlug)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-xs flex items-center gap-1 shadow transition-colors"
+                          >
+                            <Printer size={12} /> Print Report Card
+                          </a>
+                        )}
+                      </div>
                     </div>
 
                     {examReport.subject_scores?.length > 0 ? (
@@ -646,6 +669,24 @@ export const Student360Drawer = ({ student, isOpen, onClose }) => {
                   <Printer size={13} /> Print Fee Card
                 </a>
               </div>
+
+              {/* 4. Term Academic Report Card */}
+              {examTerms.length > 0 && (
+                <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-slate-900">Academic Progress Report Card</div>
+                    <div className="text-slate-400 text-[10px]">Official term transcript with grading rubric, marks distribution, and qualitative ratings</div>
+                  </div>
+                  <a
+                    href={`/api/v1/documents/report-card/${selectedTermId || examTerms[0]?.id}/${student.id}/html?token=${encodeURIComponent(token)}&tenant_slug=${encodeURIComponent(tenantSlug)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold flex items-center gap-1.5 shadow text-xs"
+                  >
+                    <Printer size={13} /> Print Report Card
+                  </a>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -137,65 +137,21 @@ async def view_fee_receipt_html(
         </tr>
         """
 
-    html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <title>Fee Receipt - {receipt.receipt_no}</title>
-        <style>
-            body {{ font-family: 'Segoe UI', Arial, sans-serif; padding: 25px; color: #1F2937; }}
-            .receipt-box {{ max-width: 600px; margin: 0 auto; border: 2px solid #1E40AF; padding: 25px; border-radius: 8px; }}
-            .header {{ text-align: center; border-bottom: 2px solid #1E40AF; padding-bottom: 10px; margin-bottom: 15px; }}
-            .title {{ font-size: 22px; font-weight: 800; color: #1E40AF; }}
-            .sub-title {{ font-size: 14px; font-weight: 600; color: #6B7280; }}
-            .info-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; font-size: 14px; background: #F9FAFB; padding: 12px; border-radius: 6px; }}
-            table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px; }}
-            th {{ background: #1E40AF; color: #fff; padding: 8px 12px; }}
-            .total-box {{ text-align: right; font-size: 18px; font-weight: 800; color: #1E40AF; padding: 10px 0; border-top: 2px solid #1E40AF; }}
-            .status-badge {{ display: inline-block; padding: 3px 8px; border-radius: 4px; font-weight: bold; background: {'#D1FAE5' if receipt.status == 'CONFIRMED' else '#FEE2E2'}; color: {'#065F46' if receipt.status == 'CONFIRMED' else '#991B1B'}; }}
-        </style>
-    </head>
-    <body>
-        <div class="receipt-box">
-            <div class="header">
-                <div class="title">OFFICIAL FEE RECEIPT</div>
-                <div class="sub-title">Receipt No: <strong>{receipt.receipt_no}</strong></div>
-            </div>
+    settings_res = await db.execute(select(SystemSetting))
+    settings_records = settings_res.scalars().all()
+    settings_dict = {
+        s.setting_key: (s.setting_value.strip('"') if isinstance(s.setting_value, str) else str(s.setting_value))
+        for s in settings_records
+    }
+    school_name = settings_dict.get("school_name", "7A Model Academy")
+    primary_color = settings_dict.get("theme_primary_color", "#1E40AF")
 
-            <div class="info-grid">
-                <div><strong>Student Name:</strong> {receipt.student.first_name} {receipt.student.last_name or ''}</div>
-                <div><strong>Admission No:</strong> {receipt.student.admission_no}</div>
-                <div><strong>Payment Date:</strong> {receipt.collection_date}</div>
-                <div><strong>Payment Mode:</strong> {receipt.payment_mode.name if receipt.payment_mode else 'Cash'}</div>
-                <div><strong>Status:</strong> <span class="status-badge">{receipt.status}</span></div>
-                <div><strong>Cashier:</strong> {receipt.collected_by.username if receipt.collected_by else 'Admin'}</div>
-            </div>
-
-            <table>
-                <thead>
-                    <tr>
-                        <th style="text-align: left;">Description</th>
-                        <th style="text-align: right;">Amount</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {item_rows}
-                </tbody>
-            </table>
-
-            <div class="total-box">
-                Total Paid: ₹{receipt.total_amount_paid}
-            </div>
-
-            <div style="margin-top: 30px; display: flex; justify-content: space-between; font-size: 12px; color: #6B7280;">
-                <div>* This is a computer-generated official receipt.</div>
-                <div style="border-top: 1px solid #9CA3AF; width: 140px; text-align: center; padding-top: 4px;">Authorized Signature</div>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
+    html = DocumentGeneratorService.generate_fee_receipt_html(
+        receipt=receipt,
+        item_rows=item_rows,
+        school_name=school_name,
+        brand_color=primary_color,
+    )
     return HTMLResponse(content=html)
 
 
@@ -697,47 +653,6 @@ async def view_id_cards_batch_html(
     )
     return HTMLResponse(content=html)
 
-
-@router.get("/fee-card/{student_id}/html", response_class=HTMLResponse)
-async def view_fee_card_html(
-    student_id: str,
-    academic_year_id: str = None,
-    current_user: CurrentTenantUser = Depends(get_current_user_or_token),
-    db: AsyncSession = Depends(get_tenant_db),
-):
-    """
-    Renders comprehensive, print-ready Student Cumulative Fee Card / Statement of Account.
-    """
-    from app.modules.fees.services import FeeService
-    from app.modules.academics.models import AcademicYear
-
-    if not academic_year_id:
-        ay_res = await db.execute(select(AcademicYear).where(AcademicYear.is_current == True))
-        active_ay = ay_res.scalar_one_or_none()
-        if active_ay:
-            academic_year_id = active_ay.id
-        else:
-            ay_any = await db.execute(select(AcademicYear).limit(1))
-            first_ay = ay_any.scalar_one_or_none()
-            academic_year_id = first_ay.id if first_ay else None
-
-    ledger_data = await FeeService.get_student_ledger(
-        student_id=student_id,
-        academic_year_id=academic_year_id,
-        db=db,
-    )
-
-    settings_res = await db.execute(select(SystemSetting))
-    settings_dict = {s.setting_key: (s.setting_value.strip('"') if isinstance(s.setting_value, str) else str(s.setting_value)) for s in settings_res.scalars().all()}
-    school_name = settings_dict.get("school_name", "7A Model Academy")
-    primary_color = settings_dict.get("theme_primary_color", "#1E40AF")
-
-    html = DocumentGeneratorService.generate_fee_card_html(
-        data=ledger_data,
-        school_name=school_name,
-        brand_color=primary_color,
-    )
-    return HTMLResponse(content=html)
 
 
 @router.get("/warning-letter/{incident_id}/html", response_class=HTMLResponse)

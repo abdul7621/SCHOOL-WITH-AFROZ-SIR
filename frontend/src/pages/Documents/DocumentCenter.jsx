@@ -8,23 +8,33 @@ export const DocumentCenter = () => {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClass, setSelectedClass] = useState('');
+  const [examTerms, setExamTerms] = useState([]);
+  const [selectedTermId, setSelectedTermId] = useState('');
   const [leavingReason, setLeavingReason] = useState('Parent Relocation / Transferred to another city');
   const [conduct, setConduct] = useState('EXCELLENT');
 
-  // Load Classes
+  // Load Classes and Exam Terms
   useEffect(() => {
-    const fetchClasses = async () => {
+    const fetchInitial = async () => {
       try {
-        const res = await api.get('/academics/classes');
-        if (res.data) {
-          setClasses(res.data);
-          if (res.data.length > 0) setSelectedClass(res.data[0].id);
+        const [clsRes, termRes] = await Promise.all([
+          api.get('/academics/classes'),
+          api.get('/exams/terms').catch(() => ({ data: [] })),
+        ]);
+        if (clsRes.data) {
+          setClasses(clsRes.data);
+          if (clsRes.data.length > 0) setSelectedClass(clsRes.data[0].id);
+        }
+        const tList = termRes?.data?.data || termRes?.data || [];
+        if (Array.isArray(tList) && tList.length > 0) {
+          setExamTerms(tList);
+          setSelectedTermId(tList[0].id);
         }
       } catch (e) {
         console.log(e);
       }
     };
-    fetchClasses();
+    fetchInitial();
   }, []);
 
   // Search Students
@@ -202,6 +212,55 @@ export const DocumentCenter = () => {
             ) : (
               <div className="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-slate-500">
                 Please search and select a student in Card 1 to preview and print their cumulative Fee Card.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Card 4: Academic Progress Report Card */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+          <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+            <Award size={18} className="text-purple-600" />
+            <h3 className="font-bold text-slate-900 text-sm">Academic Progress Report Card</h3>
+          </div>
+
+          <div className="space-y-4 text-xs">
+            <p className="text-slate-600 leading-relaxed">
+              Generates official student examination progress report and transcript with grading breakdown, subject marks, qualitative development ratings, and pass/fail summary.
+            </p>
+
+            {examTerms.length > 0 && (
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Select Exam Term</label>
+                <select
+                  value={selectedTermId}
+                  onChange={(e) => setSelectedTermId(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-semibold text-slate-800"
+                >
+                  {examTerms.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {selectedStudent ? (
+              <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl space-y-2">
+                <div className="font-bold text-purple-900">{selectedStudent.full_name}</div>
+                <div className="text-slate-600">Admission No: {selectedStudent.admission_no} | Class: {selectedStudent.class_name}</div>
+                <a
+                  href={`/api/v1/documents/report-card/${selectedTermId || examTerms[0]?.id}/${selectedStudent.id}/html?token=${encodeURIComponent(localStorage.getItem('token') || '')}&tenant_slug=${encodeURIComponent(localStorage.getItem('tenant_slug') || '7aschoolerpuat')}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full flex items-center justify-center gap-2 mt-2 bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 rounded-lg transition-colors shadow"
+                >
+                  <Printer size={14} />
+                  <span>Generate Printable Report Card</span>
+                </a>
+              </div>
+            ) : (
+              <div className="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-slate-500">
+                Please search and select a student in Card 1 to preview and print their Academic Report Card.
               </div>
             )}
           </div>

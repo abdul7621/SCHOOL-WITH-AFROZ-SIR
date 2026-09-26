@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart3, Download, Search, DollarSign, CalendarCheck, AlertTriangle, Filter } from 'lucide-react';
+import { BarChart3, Download, Search, DollarSign, CalendarCheck, AlertTriangle, Filter, Printer } from 'lucide-react';
 import api from '../../api/client';
 
 export const ReportsCenter = () => {
@@ -141,14 +141,23 @@ export const ReportsCenter = () => {
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-4 border-b border-slate-100 font-bold text-xs text-slate-800 flex justify-between items-center">
               <span>Overdue Fee Defaulters Roster</span>
-              <a
-                href={`/api/v1/excel/export/students?token=${encodeURIComponent(localStorage.getItem('token') || '')}&tenant_slug=${encodeURIComponent(localStorage.getItem('tenant_slug') || '7aschoolerpuat')}`}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1 text-emerald-700 hover:underline font-semibold"
-              >
-                <Download size={14} /> Export to Excel
-              </a>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold transition-colors shadow-sm"
+                >
+                  <Printer size={13} /> Print Roster
+                </button>
+                <a
+                  href={`/api/v1/excel/export/students?token=${encodeURIComponent(localStorage.getItem('token') || '')}&tenant_slug=${encodeURIComponent(localStorage.getItem('tenant_slug') || '7aschoolerpuat')}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1 text-emerald-700 hover:underline font-semibold"
+                >
+                  <Download size={14} /> Export to Excel
+                </a>
+              </div>
             </div>
             <table className="w-full text-left border-collapse text-xs">
               <thead>
@@ -216,8 +225,17 @@ export const ReportsCenter = () => {
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-slate-100 font-bold text-xs text-slate-800">
-              Total Inflow Collected: <span className="text-emerald-700 text-sm">₹{collectionsData?.total_amount_collected?.toLocaleString() || 0}</span> ({collectionsData?.total_collections_count || 0} Receipts)
+            <div className="p-4 border-b border-slate-100 font-bold text-xs text-slate-800 flex justify-between items-center">
+              <div>
+                Total Inflow Collected: <span className="text-emerald-700 text-sm">₹{collectionsData?.total_amount_collected?.toLocaleString() || 0}</span> ({collectionsData?.total_collections_count || 0} Receipts)
+              </div>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold transition-colors shadow-sm"
+              >
+                <Printer size={13} /> Print Register
+              </button>
             </div>
             <table className="w-full text-left border-collapse text-xs">
               <thead>
@@ -235,7 +253,20 @@ export const ReportsCenter = () => {
                 {collectionsData?.records?.length > 0 ? (
                   collectionsData.records.map((c) => (
                     <tr key={c.receipt_no} className="hover:bg-slate-50/80">
-                      <td className="py-3 px-4 font-mono font-bold text-blue-700">{c.receipt_no}</td>
+                      <td className="py-3 px-4 font-mono font-bold text-blue-700">
+                        <div className="flex items-center gap-1.5">
+                          <span>{c.receipt_no}</span>
+                          <a
+                            href={`/api/v1/documents/fee-receipt/${c.receipt_no}/html?token=${encodeURIComponent(localStorage.getItem('token') || '')}&tenant_slug=${encodeURIComponent(localStorage.getItem('tenant_slug') || '7aschoolerpuat')}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Print / View Receipt"
+                            className="p-1 bg-slate-100 hover:bg-emerald-50 text-slate-500 hover:text-emerald-700 rounded transition-colors"
+                          >
+                            <Printer size={11} />
+                          </a>
+                        </div>
+                      </td>
                       <td className="py-3 px-4 text-slate-500">{c.collection_date}</td>
                       <td className="py-3 px-4 font-bold text-slate-900">{c.student_name}</td>
                       <td className="py-3 px-4">{c.admission_no}</td>

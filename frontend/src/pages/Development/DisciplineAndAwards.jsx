@@ -548,7 +548,7 @@ export const DisciplineAndAwards = () => {
                       <td className="py-3 px-4 text-slate-500">{inc.reported_by}</td>
                       <td className="py-3 px-4 text-right">
                         <a
-                          href={`/api/v1/documents/warning-letter/${inc.id}/html?tenant_slug=${localStorage.getItem('tenant_slug') || 'sample'}`}
+                          href={`/api/v1/documents/warning-letter/${inc.id}/html?token=${encodeURIComponent(localStorage.getItem('token') || '')}&tenant_slug=${encodeURIComponent(localStorage.getItem('tenant_slug') || '7aschoolerpuat')}`}
                           target="_blank"
                           rel="noreferrer"
                           className="inline-flex items-center gap-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors whitespace-nowrap"
@@ -618,7 +618,7 @@ export const DisciplineAndAwards = () => {
                   <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] text-slate-500">
                     <span>Awarded by: <strong>{aw.awarded_by}</strong></span>
                     <a
-                      href={`/api/v1/documents/award-certificate/${aw.id}/html?tenant_slug=${localStorage.getItem('tenant_slug') || 'sample'}`}
+                      href={`/api/v1/documents/award-certificate/${aw.id}/html?token=${encodeURIComponent(localStorage.getItem('token') || '')}&tenant_slug=${encodeURIComponent(localStorage.getItem('tenant_slug') || '7aschoolerpuat')}`}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center gap-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors shadow-sm"

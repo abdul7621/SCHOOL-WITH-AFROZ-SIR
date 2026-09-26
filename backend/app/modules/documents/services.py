@@ -5,6 +5,396 @@ from app.modules.exams.services import ExamService
 
 class DocumentGeneratorService:
     @staticmethod
+    def get_toolbar_component(
+        doc_title: str,
+        doc_badge: str = "OFFICIAL RECORD",
+        brand_color: str = "#1E40AF",
+        orientation: str = "portrait",
+    ) -> Dict[str, str]:
+        """
+        Returns enterprise-grade head CSS, floating action toolbar HTML,
+        and keyboard/zoom JavaScript for all printable documents.
+        """
+        css = f"""
+        @page {{
+            size: A4 {orientation};
+            margin: 10mm;
+        }}
+        * {{ -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }}
+        body {{
+            background: #F1F5F9;
+            margin: 0;
+            padding: 0;
+            color: #0F172A;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }}
+        .document-toolbar {{
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 56px;
+            background: rgba(15, 23, 42, 0.94);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            z-index: 999999;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+        }}
+        .toolbar-brand {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            overflow: hidden;
+        }}
+        .toolbar-badge {{
+            background: rgba(59, 130, 246, 0.2);
+            border: 1px solid rgba(59, 130, 246, 0.4);
+            color: #93C5FD;
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            white-space: nowrap;
+        }}
+        .toolbar-title {{
+            color: #FFFFFF;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }}
+        .toolbar-actions {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+        }}
+        .zoom-group {{
+            display: flex;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 8px;
+            padding: 2px 4px;
+            gap: 2px;
+        }}
+        .btn-tool {{
+            background: transparent;
+            border: none;
+            color: #E2E8F0;
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s ease;
+        }}
+        .btn-tool:hover {{
+            background: rgba(255, 255, 255, 0.15);
+            color: #FFFFFF;
+        }}
+        .zoom-text {{
+            color: #94A3B8;
+            font-size: 11px;
+            font-weight: 700;
+            min-width: 42px;
+            text-align: center;
+            user-select: none;
+        }}
+        .btn-print {{
+            background: linear-gradient(135deg, #2563EB, #1D4ED8);
+            color: #FFFFFF;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 13px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+            transition: all 0.15s ease;
+        }}
+        .btn-print:hover {{
+            background: linear-gradient(135deg, #1D4ED8, #1E40AF);
+            box-shadow: 0 6px 18px rgba(37, 99, 235, 0.5);
+            transform: translateY(-1px);
+        }}
+        .btn-close {{
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #CBD5E1;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }}
+        .btn-close:hover {{
+            background: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.4);
+            color: #FCA5A5;
+        }}
+        .document-toolbar-spacer {{
+            height: 72px;
+        }}
+        .printable-content {{
+            transition: transform 0.15s ease;
+            transform-origin: top center;
+            padding: 10px 15px 30px 15px;
+        }}
+        @media print {{
+            .no-print, .document-toolbar, .document-toolbar-spacer {{
+                display: none !important;
+            }}
+            body {{
+                background: #FFFFFF !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }}
+            .printable-content {{
+                transform: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 100% !important;
+                max-width: 100% !important;
+            }}
+        }}
+        """
+
+        html = f"""
+        <div class="document-toolbar no-print">
+            <div class="toolbar-brand">
+                <span class="toolbar-badge">{doc_badge}</span>
+                <span class="toolbar-title">{doc_title}</span>
+            </div>
+            <div class="toolbar-actions">
+                <div class="zoom-group">
+                    <button type="button" class="btn-tool" onclick="changeDocZoom(-0.1)" title="Zoom Out (Ctrl -)">−</button>
+                    <span id="doc-zoom-val" class="zoom-text">100%</span>
+                    <button type="button" class="btn-tool" onclick="changeDocZoom(0.1)" title="Zoom In (Ctrl +)">+</button>
+                    <button type="button" class="btn-tool" onclick="resetDocZoom()" title="Reset Zoom" style="font-size:10px; width:34px;">FIT</button>
+                </div>
+                <button type="button" class="btn-print" onclick="window.print()" title="Print / Save PDF (Ctrl + P)">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                        <rect x="6" y="14" width="12" height="8"></rect>
+                    </svg>
+                    <span>Print / Save PDF</span>
+                </button>
+                <button type="button" class="btn-close" onclick="window.close()" title="Close Tab (Esc)">
+                    ✕ Close
+                </button>
+            </div>
+        </div>
+        <div class="document-toolbar-spacer no-print"></div>
+
+        <script>
+            var docCurrentZoom = 1.0;
+            function changeDocZoom(delta) {{
+                docCurrentZoom = Math.min(2.0, Math.max(0.5, Math.round((docCurrentZoom + delta) * 10) / 10));
+                var target = document.querySelector('.printable-content') || document.body;
+                target.style.transform = 'scale(' + docCurrentZoom + ')';
+                var indicator = document.getElementById('doc-zoom-val');
+                if (indicator) indicator.textContent = Math.round(docCurrentZoom * 100) + '%';
+            }}
+            function resetDocZoom() {{
+                docCurrentZoom = 1.0;
+                var target = document.querySelector('.printable-content') || document.body;
+                target.style.transform = 'scale(1.0)';
+                var indicator = document.getElementById('doc-zoom-val');
+                if (indicator) indicator.textContent = '100%';
+            }}
+            document.addEventListener('keydown', function(e) {{
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {{
+                    e.preventDefault();
+                    window.print();
+                }} else if (e.key === 'Escape') {{
+                    window.close();
+                }}
+            }});
+            window.addEventListener('DOMContentLoaded', function() {{
+                var params = new URLSearchParams(window.location.search);
+                if (params.get('autoprint') === '1' || params.get('print') === 'true' || params.get('print') === '1') {{
+                    setTimeout(function() {{ window.print(); }}, 400);
+                }}
+            }});
+        </script>
+        """
+
+        return {"css": css, "html": html}
+
+    @staticmethod
+    def generate_fee_receipt_html(
+        receipt: Any,
+        item_rows: str,
+        school_name: str = "7A Model Academy",
+        brand_color: str = "#1E40AF",
+    ) -> str:
+        """
+        Renders styled official Fee Receipt with universal print toolbar.
+        """
+        st_name = f"{receipt.student.first_name} {receipt.student.last_name or ''}".strip() if receipt.student else "Student"
+        adm_no = receipt.student.admission_no if receipt.student else "-"
+        toolbar = DocumentGeneratorService.get_toolbar_component(
+            doc_title=f"Fee Receipt — {receipt.receipt_no} ({st_name})",
+            doc_badge="OFFICIAL FEE RECEIPT",
+            brand_color=brand_color,
+            orientation="portrait",
+        )
+
+        html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Fee Receipt - {receipt.receipt_no}</title>
+    <style>
+        {toolbar['css']}
+        .receipt-box {{
+            max-width: 640px;
+            margin: 0 auto;
+            border: 2px solid {brand_color};
+            padding: 25px;
+            border-radius: 8px;
+            background: #ffffff;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.06);
+        }}
+        .header {{
+            text-align: center;
+            border-bottom: 2px solid {brand_color};
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }}
+        .school-banner {{
+            font-size: 13px;
+            font-weight: 700;
+            color: #64748B;
+            text-transform: uppercase;
+            margin-bottom: 2px;
+            letter-spacing: 0.5px;
+        }}
+        .title {{
+            font-size: 22px;
+            font-weight: 800;
+            color: {brand_color};
+            text-transform: uppercase;
+        }}
+        .sub-title {{
+            font-size: 14px;
+            font-weight: 600;
+            color: #6B7280;
+            margin-top: 3px;
+        }}
+        .info-grid {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 15px;
+            font-size: 13px;
+            background: #F8FAFC;
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid #E2E8F0;
+        }}
+        table.receipt-table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            font-size: 13px;
+        }}
+        table.receipt-table th {{
+            background: {brand_color};
+            color: #fff;
+            padding: 8px 12px;
+            border: 1px solid {brand_color};
+        }}
+        .total-box {{
+            text-align: right;
+            font-size: 18px;
+            font-weight: 800;
+            color: {brand_color};
+            padding: 10px 0;
+            border-top: 2px solid {brand_color};
+        }}
+        .status-badge {{
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            background: {'#D1FAE5' if receipt.status == 'CONFIRMED' else '#FEE2E2'};
+            color: {'#065F46' if receipt.status == 'CONFIRMED' else '#991B1B'};
+            font-size: 11px;
+        }}
+        @media print {{
+            .receipt-box {{
+                border: 2px solid {brand_color} !important;
+                box-shadow: none !important;
+                padding: 15px !important;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    {toolbar['html']}
+    <div class="printable-content">
+        <div class="receipt-box">
+            <div class="header">
+                <div class="school-banner">{school_name}</div>
+                <div class="title">OFFICIAL FEE RECEIPT</div>
+                <div class="sub-title">Receipt No: <strong>{receipt.receipt_no}</strong></div>
+            </div>
+
+            <div class="info-grid">
+                <div><strong>Student Name:</strong> {st_name}</div>
+                <div><strong>Admission No:</strong> {adm_no}</div>
+                <div><strong>Payment Date:</strong> {receipt.collection_date}</div>
+                <div><strong>Payment Mode:</strong> {receipt.payment_mode.name if receipt.payment_mode else 'Cash'}</div>
+                <div><strong>Status:</strong> <span class="status-badge">{receipt.status}</span></div>
+                <div><strong>Cashier:</strong> {receipt.collected_by.username if receipt.collected_by else 'Admin'}</div>
+            </div>
+
+            <table class="receipt-table">
+                <thead>
+                    <tr>
+                        <th style="text-align: left;">Description</th>
+                        <th style="text-align: right;">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {item_rows}
+                </tbody>
+            </table>
+
+            <div class="total-box">
+                Total Paid: ₹{receipt.total_amount_paid}
+            </div>
+
+            <div style="margin-top: 30px; display: flex; justify-content: space-between; font-size: 12px; color: #6B7280;">
+                <div>* Computer-generated official transaction receipt.</div>
+                <div style="border-top: 1px solid #9CA3AF; width: 140px; text-align: center; padding-top: 4px;">Authorized Signature</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+"""
+        return html
     def generate_report_card_html(data: Dict[str, Any], school_name: str = "7A Model Academy", brand_color: str = "#1E40AF") -> str:
         """
         Renders a pixel-perfect, print-ready HTML Report Card
@@ -45,99 +435,123 @@ class DocumentGeneratorService:
             </tr>
             """
 
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>Report Card - {student.get('student_name', 'Student')}</title>
-            <style>
-                @page {{ size: A4; margin: 15mm; }}
-                body {{ font-family: 'Segoe UI', Arial, sans-serif; color: #1F2937; margin: 0; padding: 20px; background: #fff; }}
-                .report-card-container {{ max-width: 800px; margin: 0 auto; border: 3px double {brand_color}; padding: 25px; border-radius: 8px; }}
-                .header {{ text-align: center; border-bottom: 2px solid {brand_color}; padding-bottom: 12px; margin-bottom: 20px; }}
-                .school-title {{ font-size: 26px; font-weight: 800; color: {brand_color}; margin: 0; text-transform: uppercase; }}
-                .term-title {{ font-size: 16px; font-weight: 600; color: #4B5563; margin-top: 4px; }}
-                .student-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: #F9FAFB; padding: 12px; border-radius: 6px; margin-bottom: 20px; border: 1px solid #E5E7EB; }}
-                .info-item {{ font-size: 14px; }}
-                .info-label {{ font-weight: 600; color: #374151; }}
-                table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px; }}
-                th {{ background-color: {brand_color}; color: #ffffff; padding: 10px 12px; border: 1px solid {brand_color}; text-align: center; }}
-                .section-header {{ font-size: 16px; font-weight: 700; color: {brand_color}; margin: 20px 0 10px 0; border-left: 4px solid {brand_color}; padding-left: 8px; }}
-                .summary-box {{ display: flex; justify-content: space-between; background: #EEF2FF; padding: 15px; border-radius: 6px; border: 1px solid #C7D2FE; margin-bottom: 25px; }}
-                .stat-item {{ text-align: center; }}
-                .stat-val {{ font-size: 20px; font-weight: 800; color: {brand_color}; }}
-                .stat-lbl {{ font-size: 12px; color: #4B5563; text-transform: uppercase; font-weight: 600; }}
-                .signatures {{ display: flex; justify-content: space-between; margin-top: 40px; padding-top: 20px; }}
-                .sig-box {{ text-align: center; border-top: 1px solid #9CA3AF; width: 180px; padding-top: 6px; font-size: 13px; font-weight: 600; }}
-            </style>
-        </head>
-        <body>
-            <div class="report-card-container">
-                <div class="header">
-                    <h1 class="school-title">{school_name}</h1>
-                    <div class="term-title">PROGRESS REPORT — {school_info.get('term_name', 'Annual Term')} ({school_info.get('session_name', '2026-2027')})</div>
+        st_name = student.get('student_name', 'Student')
+        toolbar = DocumentGeneratorService.get_toolbar_component(
+            doc_title=f"Report Card — {st_name} ({student.get('class_name', '')})",
+            doc_badge="ACADEMIC REPORT CARD",
+            brand_color=brand_color,
+            orientation="portrait",
+        )
+
+        html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Report Card - {st_name}</title>
+    <style>
+        {toolbar['css']}
+        .report-card-container {{
+            max-width: 820px;
+            margin: 0 auto;
+            border: 3px double {brand_color};
+            padding: 25px;
+            border-radius: 8px;
+            background: #ffffff;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.06);
+        }}
+        .header {{ text-align: center; border-bottom: 2px solid {brand_color}; padding-bottom: 12px; margin-bottom: 20px; }}
+        .school-title {{ font-size: 26px; font-weight: 800; color: {brand_color}; margin: 0; text-transform: uppercase; }}
+        .term-title {{ font-size: 16px; font-weight: 600; color: #4B5563; margin-top: 4px; }}
+        .student-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: #F9FAFB; padding: 12px; border-radius: 6px; margin-bottom: 20px; border: 1px solid #E5E7EB; }}
+        .info-item {{ font-size: 14px; }}
+        .info-label {{ font-weight: 600; color: #374151; }}
+        table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px; }}
+        th {{ background-color: {brand_color}; color: #ffffff; padding: 10px 12px; border: 1px solid {brand_color}; text-align: center; }}
+        .section-header {{ font-size: 16px; font-weight: 700; color: {brand_color}; margin: 20px 0 10px 0; border-left: 4px solid {brand_color}; padding-left: 8px; }}
+        .summary-box {{ display: flex; justify-content: space-between; background: #EEF2FF; padding: 15px; border-radius: 6px; border: 1px solid #C7D2FE; margin-bottom: 25px; }}
+        .stat-item {{ text-align: center; }}
+        .stat-val {{ font-size: 20px; font-weight: 800; color: {brand_color}; }}
+        .stat-lbl {{ font-size: 12px; color: #4B5563; text-transform: uppercase; font-weight: 600; }}
+        .signatures {{ display: flex; justify-content: space-between; margin-top: 40px; padding-top: 20px; }}
+        .sig-box {{ text-align: center; border-top: 1px solid #9CA3AF; width: 180px; padding-top: 6px; font-size: 13px; font-weight: 600; }}
+        @media print {{
+            .report-card-container {{
+                border: 3px double {brand_color} !important;
+                box-shadow: none !important;
+                padding: 15px !important;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    {toolbar['html']}
+    <div class="printable-content">
+        <div class="report-card-container">
+            <div class="header">
+                <h1 class="school-title">{school_name}</h1>
+                <div class="term-title">PROGRESS REPORT — {school_info.get('term_name', 'Annual Term')} ({school_info.get('session_name', '2026-2027')})</div>
+            </div>
+
+            <div class="student-grid">
+                <div class="info-item"><span class="info-label">Student Name:</span> {student.get('student_name')}</div>
+                <div class="info-item"><span class="info-label">Admission No:</span> {student.get('admission_no')}</div>
+                <div class="info-item"><span class="info-label">Class & Section:</span> {student.get('class_name')} - {student.get('section_name')}</div>
+                <div class="info-item"><span class="info-label">Roll Number:</span> {student.get('roll_no') or '-'}</div>
+                <div class="info-item"><span class="info-label">Father's Name:</span> {student.get('father_name')}</div>
+                <div class="info-item"><span class="info-label">Date of Birth:</span> {student.get('dob')}</div>
+            </div>
+
+            <div class="section-header">ACADEMIC PERFORMANCE</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="text-align: left;">Subject</th>
+                        <th>Max Marks</th>
+                        <th>Pass Marks</th>
+                        <th>Marks Obtained</th>
+                        <th>Grade</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {subject_rows}
+                </tbody>
+            </table>
+
+            <div class="summary-box">
+                <div class="stat-item">
+                    <div class="stat-val">{summary.get('total_obtained_marks')} / {summary.get('total_max_marks')}</div>
+                    <div class="stat-lbl">Grand Total</div>
                 </div>
-
-                <div class="student-grid">
-                    <div class="info-item"><span class="info-label">Student Name:</span> {student.get('student_name')}</div>
-                    <div class="info-item"><span class="info-label">Admission No:</span> {student.get('admission_no')}</div>
-                    <div class="info-item"><span class="info-label">Class & Section:</span> {student.get('class_name')} - {student.get('section_name')}</div>
-                    <div class="info-item"><span class="info-label">Roll Number:</span> {student.get('roll_no') or '-'}</div>
-                    <div class="info-item"><span class="info-label">Father's Name:</span> {student.get('father_name')}</div>
-                    <div class="info-item"><span class="info-label">Date of Birth:</span> {student.get('dob')}</div>
+                <div class="stat-item">
+                    <div class="stat-val">{summary.get('overall_percentage')}%</div>
+                    <div class="stat-lbl">Percentage</div>
                 </div>
-
-                <div class="section-header">ACADEMIC PERFORMANCE</div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="text-align: left;">Subject</th>
-                            <th>Max Marks</th>
-                            <th>Pass Marks</th>
-                            <th>Marks Obtained</th>
-                            <th>Grade</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {subject_rows}
-                    </tbody>
-                </table>
-
-                <div class="summary-box">
-                    <div class="stat-item">
-                        <div class="stat-val">{summary.get('total_obtained_marks')} / {summary.get('total_max_marks')}</div>
-                        <div class="stat-lbl">Grand Total</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-val">{summary.get('overall_percentage')}%</div>
-                        <div class="stat-lbl">Percentage</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-val" style="color: {'#10B981' if summary.get('result') == 'PASSED' else '#EF4444'};">{summary.get('result')}</div>
-                        <div class="stat-lbl">Final Result</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-val">{attendance.get('attendance_percentage')}%</div>
-                        <div class="stat-lbl">Attendance ({attendance.get('present_days')}/{attendance.get('total_working_days')} Days)</div>
-                    </div>
+                <div class="stat-item">
+                    <div class="stat-val" style="color: {'#10B981' if summary.get('result') == 'PASSED' else '#EF4444'};">{summary.get('result')}</div>
+                    <div class="stat-lbl">Final Result</div>
                 </div>
-
-                {f'<div class="section-header">QUALITATIVE & BEHAVIORAL DEVELOPMENT</div><table><thead><tr><th style="text-align: left;">Evaluation Metric</th><th>Rating</th><th style="text-align: left;">Remarks</th></tr></thead><tbody>{qualitative_rows}</tbody></table>' if qualitative else ''}
-
-                <div class="signatures">
-                    <div class="sig-box">Class Teacher</div>
-                    <div class="sig-box">Parent / Guardian</div>
-                    <div class="sig-box" style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;">
-                        {f'<img src="{data.get("principal_signature_image")}" alt="Principal Signature" style="max-height:30px;margin-bottom:2px;object-fit:contain;"/>' if data.get("principal_signature_image") else ''}
-                        <span>Principal</span>
-                    </div>
+                <div class="stat-item">
+                    <div class="stat-val">{attendance.get('attendance_percentage')}%</div>
+                    <div class="stat-lbl">Attendance ({attendance.get('present_days')}/{attendance.get('total_working_days')} Days)</div>
                 </div>
             </div>
-        </body>
-        </html>
-        """
+
+            {f'<div class="section-header">QUALITATIVE & BEHAVIORAL DEVELOPMENT</div><table><thead><tr><th style="text-align: left;">Evaluation Metric</th><th>Rating</th><th style="text-align: left;">Remarks</th></tr></thead><tbody>{qualitative_rows}</tbody></table>' if qualitative else ''}
+
+            <div class="signatures">
+                <div class="sig-box">Class Teacher</div>
+                <div class="sig-box">Parent / Guardian</div>
+                <div class="sig-box" style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;">
+                    {f'<img src="{data.get("principal_signature_image")}" alt="Principal Signature" style="max-height:30px;margin-bottom:2px;object-fit:contain;"/>' if data.get("principal_signature_image") else ''}
+                    <span>Principal</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+"""
         return html_content
 
     @staticmethod
@@ -156,82 +570,106 @@ class DocumentGeneratorService:
         leaving_reason = data.get("leaving_reason", "Parent Relocation / Transferred")
         conduct = data.get("conduct", "GOOD")
 
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>Transfer Certificate - {tc_no}</title>
-            <style>
-                @page {{ size: A4; margin: 15mm; }}
-                body {{ font-family: 'Times New Roman', serif; color: #111827; padding: 20px; background: #fff; }}
-                .tc-border {{ border: 4px double {brand_color}; padding: 30px; border-radius: 6px; }}
-                .header {{ text-align: center; border-bottom: 2px solid {brand_color}; padding-bottom: 12px; margin-bottom: 25px; }}
-                .school-name {{ font-size: 26px; font-weight: bold; color: {brand_color}; text-transform: uppercase; }}
-                .school-sub {{ font-size: 13px; color: #4B5563; margin-top: 4px; }}
-                .doc-title {{ font-size: 18px; font-weight: bold; letter-spacing: 2px; text-decoration: underline; margin-top: 15px; }}
-                .tc-number {{ display: flex; justify-content: space-between; font-size: 13px; font-weight: bold; margin-bottom: 20px; }}
-                .tc-grid {{ font-size: 15px; line-height: 2.2; }}
-                .tc-field {{ display: flex; border-bottom: 1px dotted #9CA3AF; }}
-                .tc-label {{ width: 320px; font-weight: bold; }}
-                .tc-val {{ flex: 1; color: #1F2937; }}
-                .qr-zone {{ display: flex; justify-content: space-between; align-items: flex-end; margin-top: 50px; }}
-                .qr-box {{ border: 1px solid #9CA3AF; padding: 6px; font-size: 10px; text-align: center; width: 100px; }}
-                .signatures {{ display: flex; gap: 40px; text-align: center; font-size: 13px; font-weight: bold; }}
-                .sig {{ width: 140px; border-top: 1px solid #374151; padding-top: 4px; }}
-            </style>
-        </head>
-        <body>
-            <div class="tc-border">
-                <div class="header">
-                    <div class="school-name">{school_name}</div>
-                    <div class="school-sub">{school_address}</div>
-                    <div class="doc-title">SCHOOL LEAVING / TRANSFER CERTIFICATE</div>
-                </div>
+        st_name = student.get('full_name') or "Student"
+        toolbar = DocumentGeneratorService.get_toolbar_component(
+            doc_title=f"Transfer Certificate — {tc_no} ({st_name})",
+            doc_badge="SCHOOL LEAVING CERTIFICATE",
+            brand_color=brand_color,
+            orientation="portrait",
+        )
 
-                <div class="tc-number">
-                    <div>TC Serial No: <span style="color:{brand_color};">{tc_no}</span></div>
-                    <div>Admission No: <span>{student.get('admission_no', 'ADM-001')}</span></div>
-                    <div>Issue Date: <span>{issue_date}</span></div>
-                </div>
+        html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Transfer Certificate - {tc_no}</title>
+    <style>
+        {toolbar['css']}
+        .tc-border {{
+            max-width: 820px;
+            margin: 0 auto;
+            border: 4px double {brand_color};
+            padding: 30px;
+            border-radius: 6px;
+            background: #ffffff;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.06);
+        }}
+        .header {{ text-align: center; border-bottom: 2px solid {brand_color}; padding-bottom: 12px; margin-bottom: 25px; }}
+        .school-name {{ font-size: 26px; font-weight: bold; color: {brand_color}; text-transform: uppercase; }}
+        .school-sub {{ font-size: 13px; color: #4B5563; margin-top: 4px; }}
+        .doc-title {{ font-size: 18px; font-weight: bold; letter-spacing: 2px; text-decoration: underline; margin-top: 15px; }}
+        .tc-number {{ display: flex; justify-content: space-between; font-size: 13px; font-weight: bold; margin-bottom: 20px; }}
+        .tc-grid {{ font-size: 15px; line-height: 2.2; }}
+        .tc-field {{ display: flex; border-bottom: 1px dotted #9CA3AF; }}
+        .tc-label {{ width: 320px; font-weight: bold; }}
+        .tc-val {{ flex: 1; color: #1F2937; }}
+        .qr-zone {{ display: flex; justify-content: space-between; align-items: flex-end; margin-top: 50px; }}
+        .qr-box {{ border: 1px solid #9CA3AF; padding: 6px; font-size: 10px; text-align: center; width: 100px; }}
+        .signatures {{ display: flex; gap: 40px; text-align: center; font-size: 13px; font-weight: bold; }}
+        .sig {{ width: 140px; border-top: 1px solid #374151; padding-top: 4px; }}
+        @media print {{
+            .tc-border {{
+                border: 4px double {brand_color} !important;
+                box-shadow: none !important;
+                padding: 20px !important;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    {toolbar['html']}
+    <div class="printable-content">
+        <div class="tc-border">
+            <div class="header">
+                <div class="school-name">{school_name}</div>
+                <div class="school-sub">{school_address}</div>
+                <div class="doc-title">SCHOOL LEAVING / TRANSFER CERTIFICATE</div>
+            </div>
 
-                <div class="tc-grid">
-                    <div class="tc-field"><div class="tc-label">1. Name of the Pupil:</div><div class="tc-val"><strong>{student.get('full_name')}</strong></div></div>
-                    <div class="tc-field"><div class="tc-label">2. Father's / Guardian's Name:</div><div class="tc-val">{student.get('father_name')}</div></div>
-                    <div class="tc-field"><div class="tc-label">3. Mother's Name:</div><div class="tc-val">{student.get('mother_name', 'N/A')}</div></div>
-                    <div class="tc-field"><div class="tc-label">4. Nationality & Religion:</div><div class="tc-val">Indian</div></div>
-                    <div class="tc-field"><div class="tc-label">5. Date of Birth (in figures & words):</div><div class="tc-val">{student.get('dob')}</div></div>
-                    <div class="tc-field"><div class="tc-label">6. Class in which the pupil last studied:</div><div class="tc-val"><strong>{student.get('class_name')} ({student.get('section_name')})</strong></div></div>
-                    <div class="tc-field"><div class="tc-label">7. School / Board Annual Exam Last Taken:</div><div class="tc-val">Passed & Promoted</div></div>
-                    <div class="tc-field"><div class="tc-label">8. Whether Failed (if so, once/twice):</div><div class="tc-val">No</div></div>
-                    <div class="tc-field"><div class="tc-label">9. Month up to which School Dues Paid:</div><div class="tc-val"><strong>{data.get('dues_status', 'All Clear (Verified)')}</strong></div></div>
-                    <div class="tc-field"><div class="tc-label">10. Total No. of Working Days in Session:</div><div class="tc-val">220 Days</div></div>
-                    <div class="tc-field"><div class="tc-label">11. Total No. of Days Present:</div><div class="tc-val">208 Days</div></div>
-                    <div class="tc-field"><div class="tc-label">12. Reason for Leaving the School:</div><div class="tc-val"><strong>{leaving_reason}</strong></div></div>
-                    <div class="tc-field"><div class="tc-label">13. General Conduct & Character:</div><div class="tc-val"><strong>{conduct}</strong></div></div>
-                </div>
+            <div class="tc-number">
+                <div>TC Serial No: <span style="color:{brand_color};">{tc_no}</span></div>
+                <div>Admission No: <span>{student.get('admission_no', 'ADM-001')}</span></div>
+                <div>Issue Date: <span>{issue_date}</span></div>
+            </div>
 
-                <div class="qr-zone">
-                    <div style="display:flex;align-items:center;gap:15px;">
-                        <div class="qr-box">
-                            <div style="font-size:32px;line-height:1;">📱</div>
-                            Scan to Verify
-                        </div>
-                        {f'<img src="{data.get("school_seal_image")}" alt="School Seal" style="width:75px;height:75px;object-fit:contain;"/>' if data.get("school_seal_image") else ''}
+            <div class="tc-grid">
+                <div class="tc-field"><div class="tc-label">1. Name of the Pupil:</div><div class="tc-val"><strong>{student.get('full_name')}</strong></div></div>
+                <div class="tc-field"><div class="tc-label">2. Father's / Guardian's Name:</div><div class="tc-val">{student.get('father_name')}</div></div>
+                <div class="tc-field"><div class="tc-label">3. Mother's Name:</div><div class="tc-val">{student.get('mother_name', 'N/A')}</div></div>
+                <div class="tc-field"><div class="tc-label">4. Nationality & Religion:</div><div class="tc-val">Indian</div></div>
+                <div class="tc-field"><div class="tc-label">5. Date of Birth (in figures & words):</div><div class="tc-val">{student.get('dob')}</div></div>
+                <div class="tc-field"><div class="tc-label">6. Class in which the pupil last studied:</div><div class="tc-val"><strong>{student.get('class_name')} ({student.get('section_name')})</strong></div></div>
+                <div class="tc-field"><div class="tc-label">7. School / Board Annual Exam Last Taken:</div><div class="tc-val">Passed & Promoted</div></div>
+                <div class="tc-field"><div class="tc-label">8. Whether Failed (if so, once/twice):</div><div class="tc-val">No</div></div>
+                <div class="tc-field"><div class="tc-label">9. Month up to which School Dues Paid:</div><div class="tc-val"><strong>{data.get('dues_status', 'All Clear (Verified)')}</strong></div></div>
+                <div class="tc-field"><div class="tc-label">10. Total No. of Working Days in Session:</div><div class="tc-val">220 Days</div></div>
+                <div class="tc-field"><div class="tc-label">11. Total No. of Days Present:</div><div class="tc-val">208 Days</div></div>
+                <div class="tc-field"><div class="tc-label">12. Reason for Leaving the School:</div><div class="tc-val"><strong>{leaving_reason}</strong></div></div>
+                <div class="tc-field"><div class="tc-label">13. General Conduct & Character:</div><div class="tc-val"><strong>{conduct}</strong></div></div>
+            </div>
+
+            <div class="qr-zone">
+                <div style="display:flex;align-items:center;gap:15px;">
+                    <div class="qr-box">
+                        <div style="font-size:32px;line-height:1;">📱</div>
+                        Scan to Verify
                     </div>
-                    <div class="signatures">
-                        <div class="sig">Class Teacher</div>
-                        <div class="sig">Checked By (Clerk)</div>
-                        <div class="sig" style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;">
-                            {f'<img src="{data.get("principal_signature_image")}" alt="Principal Signature" style="max-height:36px;margin-bottom:2px;object-fit:contain;"/>' if data.get("principal_signature_image") else ''}
-                            <span>Principal (Seal)</span>
-                        </div>
+                    {f'<img src="{data.get("school_seal_image")}" alt="School Seal" style="width:75px;height:75px;object-fit:contain;"/>' if data.get("school_seal_image") else ''}
+                </div>
+                <div class="signatures">
+                    <div class="sig">Class Teacher</div>
+                    <div class="sig">Checked By (Clerk)</div>
+                    <div class="sig" style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;">
+                        {f'<img src="{data.get("principal_signature_image")}" alt="Principal Signature" style="max-height:36px;margin-bottom:2px;object-fit:contain;"/>' if data.get("principal_signature_image") else ''}
+                        <span>Principal (Seal)</span>
                     </div>
                 </div>
             </div>
-        </body>
-        </html>
-        """
+        </div>
+    </div>
+</body>
+</html>
+"""
         return html_content
 
     @staticmethod
@@ -272,37 +710,71 @@ class DocumentGeneratorService:
             </div>
             """
 
-        return f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>Batch Student ID Cards</title>
-            <style>
-                @page {{ size: A4; margin: 10mm; }}
-                body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #f3f4f6; margin: 0; padding: 10px; }}
-                .sheet-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }}
-                .id-card {{ width: 340px; height: 215px; background: #ffffff; border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; }}
-                .id-header {{ background: {brand_color}; color: #ffffff; text-align: center; padding: 6px; }}
-                .id-school {{ font-size: 13px; font-weight: 800; text-transform: uppercase; }}
-                .id-sub {{ font-size: 9px; letter-spacing: 1px; color: #e0e7ff; }}
-                .id-body {{ flex: 1; display: flex; padding: 8px; gap: 10px; align-items: center; }}
-                .photo-box {{ width: 75px; height: 95px; border: 1px solid #cbd5e1; border-radius: 4px; background: #f8fafc; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }}
-                .photo-placeholder {{ font-size: 10px; color: #94a3b8; font-weight: bold; }}
-                .student-photo {{ width: 100%; height: 100%; object-fit: cover; }}
-                .id-info {{ flex: 1; font-size: 11px; }}
-                .id-name {{ font-size: 13px; font-weight: 800; color: {brand_color}; margin-bottom: 4px; }}
-                .info-row {{ margin-bottom: 2px; color: #374151; }}
-                .id-footer {{ background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 8px; display: flex; justify-content: space-between; font-size: 9px; color: #64748b; font-weight: 600; }}
-            </style>
-        </head>
-        <body>
-            <div class="sheet-grid">
-                {cards_html}
-            </div>
-        </body>
-        </html>
-        """
+        toolbar = DocumentGeneratorService.get_toolbar_component(
+            doc_title=f"Batch Student ID Cards ({len(students)} Students)",
+            doc_badge="IDENTITY CARDS (CR-80)",
+            brand_color=brand_color,
+            orientation="portrait",
+        )
+
+        return f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Batch Student ID Cards</title>
+    <style>
+        {toolbar['css']}
+        .sheet-grid {{
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            max-width: 760px;
+            margin: 0 auto;
+        }}
+        .id-card {{
+            width: 350px;
+            height: 220px;
+            background: #ffffff;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+        }}
+        .id-header {{ background: {brand_color}; color: #ffffff; text-align: center; padding: 6px; }}
+        .id-school {{ font-size: 13px; font-weight: 800; text-transform: uppercase; }}
+        .id-sub {{ font-size: 9px; letter-spacing: 1px; color: #e0e7ff; }}
+        .id-body {{ flex: 1; display: flex; padding: 8px; gap: 10px; align-items: center; }}
+        .photo-box {{ width: 75px; height: 95px; border: 1px solid #cbd5e1; border-radius: 4px; background: #f8fafc; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }}
+        .photo-placeholder {{ font-size: 10px; color: #94a3b8; font-weight: bold; }}
+        .student-photo {{ width: 100%; height: 100%; object-fit: cover; }}
+        .id-info {{ flex: 1; font-size: 11px; }}
+        .id-name {{ font-size: 13px; font-weight: 800; color: {brand_color}; margin-bottom: 4px; }}
+        .info-row {{ margin-bottom: 2px; color: #374151; }}
+        .id-footer {{ background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 8px; display: flex; justify-content: space-between; font-size: 9px; color: #64748b; font-weight: 600; }}
+        @media print {{
+            .sheet-grid {{
+                max-width: 100% !important;
+                margin: 0 !important;
+            }}
+            .id-card {{
+                box-shadow: none !important;
+                page-break-inside: avoid;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    {toolbar['html']}
+    <div class="printable-content">
+        <div class="sheet-grid">
+            {cards_html}
+        </div>
+    </div>
+</body>
+</html>
+"""
 
     @staticmethod
     def generate_fee_card_html(
@@ -473,78 +945,104 @@ class DocumentGeneratorService:
         desc = incident_data.get("description", "Infraction of school code of conduct.")
         inc_date = incident_data.get("incident_date", str(date.today()))
 
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>Disciplinary Notice - {ref_no}</title>
-            <style>
-                @page {{ size: A4; margin: 20mm; }}
-                body {{ font-family: 'Times New Roman', serif; color: #1F2937; margin: 0; padding: 25px; background: #fff; line-height: 1.6; font-size: 15px; }}
-                .notice-border {{ border: 3px double {brand_color}; padding: 35px; border-radius: 6px; }}
-                .header {{ text-align: center; border-bottom: 2px solid {brand_color}; padding-bottom: 12px; margin-bottom: 25px; }}
-                .school-title {{ font-size: 26px; font-weight: bold; color: {brand_color}; text-transform: uppercase; margin: 0; }}
-                .letter-title {{ font-size: 18px; font-weight: bold; color: #111827; letter-spacing: 1px; margin-top: 10px; text-decoration: underline; }}
-                .meta-bar {{ display: flex; justify-content: space-between; font-size: 14px; font-weight: bold; margin-bottom: 25px; }}
-                .student-box {{ background: #FEF2F2; border: 1px solid #FECACA; padding: 15px; border-radius: 6px; margin-bottom: 20px; font-size: 14px; }}
-                .student-box strong {{ color: #991B1B; }}
-                .severity-tag {{ display: inline-block; padding: 3px 10px; border-radius: 4px; background: #DC2626; color: white; font-weight: bold; font-size: 12px; }}
-                .content-section {{ margin-bottom: 25px; }}
-                .directive-box {{ border-left: 4px solid {brand_color}; background: #FFFBEB; padding: 12px 16px; margin: 20px 0; font-style: italic; }}
-                .signatures {{ display: flex; justify-content: space-between; margin-top: 55px; }}
-                .sig-box {{ text-align: center; border-top: 1px solid #374151; width: 170px; padding-top: 6px; font-size: 13px; font-weight: bold; }}
-            </style>
-        </head>
-        <body>
-            <div class="notice-border">
-                <div class="header">
-                    <h1 class="school-title">{school_name}</h1>
-                    <div style="font-size: 13px; color: #4B5563; margin-top: 4px;">OFFICE OF THE DISCIPLINE COMMITTEE & STUDENT WELFARE</div>
-                    <div class="letter-title">OFFICIAL DISCIPLINARY WARNING & NOTIFICATION</div>
-                </div>
+        toolbar = DocumentGeneratorService.get_toolbar_component(
+            doc_title=f"Disciplinary Notice — {ref_no}",
+            doc_badge="OFFICIAL WARNING NOTICE",
+            brand_color=brand_color,
+            orientation="portrait",
+        )
 
-                <div class="meta-bar">
-                    <div>Reference: <span>{ref_no}</span></div>
-                    <div>Date of Issue: <span>{date.today()}</span></div>
-                </div>
-
-                <div class="student-box">
-                    <div><strong>To the Parent / Guardian of:</strong> {st.get('student_name', 'Student')} (Adm No: {st.get('admission_no', '-')})</div>
-                    <div><strong>Class & Section:</strong> {st.get('class_name', '-')} - {st.get('section_name', '-')} | <strong>Roll No:</strong> {st.get('roll_no', '-')}</div>
-                    <div><strong>Incident Date:</strong> {inc_date} | <strong>Infraction Category:</strong> {category}</div>
-                    <div style="margin-top: 6px;"><strong>Severity Level:</strong> <span class="severity-tag">{severity}</span></div>
-                </div>
-
-                <div class="content-section">
-                    <p>Dear Parent / Guardian,</p>
-                    <p>
-                        This official notice is issued to bring to your urgent attention an incident of unacceptable conduct involving your ward on <strong>{inc_date}</strong>. The school administration has thoroughly investigated the matter.
-                    </p>
-                    <p><strong>Incident Particulars & Findings:</strong></p>
-                    <div style="background: #F9FAFB; border: 1px solid #E5E7EB; padding: 12px 15px; border-radius: 4px; font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px;">
-                        {desc}
-                    </div>
-                    <p style="margin-top: 15px;">
-                        <strong>Action Imposed:</strong> <span style="font-weight: bold; color: {brand_color};">{action_taken}</span>
-                    </p>
-                    <div class="directive-box">
-                        <strong>Administrative Directive:</strong> As per the school's Code of Conduct, any further repeat of such behavior will lead to escalated administrative action, including mandatory parental counseling or formal suspension.
-                    </div>
-                    <p>
-                        Kindly acknowledge receipt of this warning letter and ensure remedial measures are undertaken at home to instill proper discipline.
-                    </p>
-                </div>
-
-                <div class="signatures">
-                    <div class="sig-box">Class Teacher</div>
-                    <div class="sig-box">Discipline In-Charge</div>
-                    <div class="sig-box">Principal</div>
-                </div>
+        html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Disciplinary Notice - {ref_no}</title>
+    <style>
+        {toolbar['css']}
+        .notice-border {{
+            max-width: 820px;
+            margin: 0 auto;
+            border: 3px double {brand_color};
+            padding: 35px;
+            border-radius: 6px;
+            background: #ffffff;
+            line-height: 1.6;
+            font-size: 15px;
+            font-family: 'Times New Roman', serif;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.06);
+        }}
+        .header {{ text-align: center; border-bottom: 2px solid {brand_color}; padding-bottom: 12px; margin-bottom: 25px; }}
+        .school-title {{ font-size: 26px; font-weight: bold; color: {brand_color}; text-transform: uppercase; margin: 0; }}
+        .letter-title {{ font-size: 18px; font-weight: bold; color: #111827; letter-spacing: 1px; margin-top: 10px; text-decoration: underline; }}
+        .meta-bar {{ display: flex; justify-content: space-between; font-size: 14px; font-weight: bold; margin-bottom: 25px; }}
+        .student-box {{ background: #FEF2F2; border: 1px solid #FECACA; padding: 15px; border-radius: 6px; margin-bottom: 20px; font-size: 14px; }}
+        .student-box strong {{ color: #991B1B; }}
+        .severity-tag {{ display: inline-block; padding: 3px 10px; border-radius: 4px; background: #DC2626; color: white; font-weight: bold; font-size: 12px; }}
+        .content-section {{ margin-bottom: 25px; }}
+        .directive-box {{ border-left: 4px solid {brand_color}; background: #FFFBEB; padding: 12px 16px; margin: 20px 0; font-style: italic; }}
+        .signatures {{ display: flex; justify-content: space-between; margin-top: 55px; }}
+        .sig-box {{ text-align: center; border-top: 1px solid #374151; width: 170px; padding-top: 6px; font-size: 13px; font-weight: bold; }}
+        @media print {{
+            .notice-border {{
+                border: 3px double {brand_color} !important;
+                box-shadow: none !important;
+                padding: 20px !important;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    {toolbar['html']}
+    <div class="printable-content">
+        <div class="notice-border">
+            <div class="header">
+                <h1 class="school-title">{school_name}</h1>
+                <div style="font-size: 13px; color: #4B5563; margin-top: 4px;">OFFICE OF THE DISCIPLINE COMMITTEE & STUDENT WELFARE</div>
+                <div class="letter-title">OFFICIAL DISCIPLINARY WARNING & NOTIFICATION</div>
             </div>
-        </body>
-        </html>
-        """
+
+            <div class="meta-bar">
+                <div>Reference: <span>{ref_no}</span></div>
+                <div>Date of Issue: <span>{date.today()}</span></div>
+            </div>
+
+            <div class="student-box">
+                <div><strong>To the Parent / Guardian of:</strong> {st.get('student_name', 'Student')} (Adm No: {st.get('admission_no', '-')})</div>
+                <div><strong>Class & Section:</strong> {st.get('class_name', '-')} - {st.get('section_name', '-')} | <strong>Roll No:</strong> {st.get('roll_no', '-')}</div>
+                <div><strong>Incident Date:</strong> {inc_date} | <strong>Infraction Category:</strong> {category}</div>
+                <div style="margin-top: 6px;"><strong>Severity Level:</strong> <span class="severity-tag">{severity}</span></div>
+            </div>
+
+            <div class="content-section">
+                <p>Dear Parent / Guardian,</p>
+                <p>
+                    This official notice is issued to bring to your urgent attention an incident of unacceptable conduct involving your ward on <strong>{inc_date}</strong>. The school administration has thoroughly investigated the matter.
+                </p>
+                <p><strong>Incident Particulars & Findings:</strong></p>
+                <div style="background: #F9FAFB; border: 1px solid #E5E7EB; padding: 12px 15px; border-radius: 4px; font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px;">
+                    {desc}
+                </div>
+                <p style="margin-top: 15px;">
+                    <strong>Action Imposed:</strong> <span style="font-weight: bold; color: {brand_color};">{action_taken}</span>
+                </p>
+                <div class="directive-box">
+                    <strong>Administrative Directive:</strong> As per the school's Code of Conduct, any further repeat of such behavior will lead to escalated administrative action, including mandatory parental counseling or formal suspension.
+                </div>
+                <p>
+                    Kindly acknowledge receipt of this warning letter and ensure remedial measures are undertaken at home to instill proper discipline.
+                </p>
+            </div>
+
+            <div class="signatures">
+                <div class="sig-box">Class Teacher</div>
+                <div class="sig-box">Discipline In-Charge</div>
+                <div class="sig-box">Principal</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+"""
         return html_content
 
     @staticmethod
@@ -562,61 +1060,87 @@ class DocumentGeneratorService:
         citation = award_data.get("description", "Demonstrating exemplary dedication, character, and scholastic excellence.")
         award_date = award_data.get("award_date", str(date.today()))
 
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>Certificate of Merit - {st.get('student_name', 'Student')}</title>
-            <style>
-                @page {{ size: landscape; margin: 15mm; }}
-                body {{ font-family: 'Georgia', 'Times New Roman', serif; color: #1F2937; margin: 0; padding: 25px; background: #FFFDF9; }}
-                .cert-container {{ border: 8px double {brand_color}; padding: 35px 50px; border-radius: 12px; text-align: center; position: relative; background: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }}
-                .cert-crest {{ font-size: 42px; margin-bottom: 5px; color: {brand_color}; }}
-                .school-title {{ font-size: 32px; font-weight: bold; color: {brand_color}; text-transform: uppercase; margin: 0; letter-spacing: 2px; }}
-                .cert-heading {{ font-size: 24px; font-weight: normal; font-style: italic; color: #4B5563; margin-top: 15px; text-transform: uppercase; letter-spacing: 3px; }}
-                .cert-subtitle {{ font-size: 16px; color: #6B7280; margin-top: 6px; }}
-                .student-name {{ font-size: 36px; font-weight: bold; color: #1E3A8A; margin: 20px 0 10px 0; border-bottom: 2px solid #E5E7EB; display: inline-block; padding: 0 40px 8px 40px; font-family: 'Times New Roman', serif; }}
-                .cert-details {{ font-size: 18px; line-height: 1.8; color: #374151; max-width: 750px; margin: 0 auto 20px auto; }}
-                .award-badge {{ display: inline-block; font-size: 22px; font-weight: bold; color: {brand_color}; padding: 6px 20px; background: #FEF3C7; border: 1px solid #FDE68A; border-radius: 30px; margin-top: 10px; }}
-                .citation-text {{ font-style: italic; color: #4B5563; font-size: 15px; margin-top: 10px; }}
-                .cert-footer {{ display: flex; justify-content: space-between; margin-top: 50px; padding-top: 20px; }}
-                .sig-box {{ text-align: center; border-top: 2px solid #9CA3AF; width: 220px; padding-top: 8px; font-size: 14px; font-weight: bold; color: #374151; }}
-                .seal-box {{ width: 90px; height: 90px; border-radius: 50%; border: 3px dashed {brand_color}; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; color: {brand_color}; margin: 0 auto; text-transform: uppercase; }}
-            </style>
-        </head>
-        <body>
-            <div class="cert-container">
-                <div class="cert-crest">★ 🎓 ★</div>
-                <h1 class="school-title">{school_name}</h1>
-                <div class="cert-heading">Certificate of Merit & Recognition</div>
-                <div class="cert-subtitle">This certificate is proudly awarded to</div>
+        toolbar = DocumentGeneratorService.get_toolbar_component(
+            doc_title=f"Certificate of Merit — {st.get('student_name', 'Student')}",
+            doc_badge="MERIT & HONORS",
+            brand_color=brand_color,
+            orientation="landscape",
+        )
 
-                <div class="student-name">{st.get('student_name', 'Student')}</div>
+        html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Certificate of Merit - {st.get('student_name', 'Student')}</title>
+    <style>
+        {toolbar['css']}
+        .cert-container {{
+            max-width: 950px;
+            margin: 0 auto;
+            border: 8px double {brand_color};
+            padding: 35px 50px;
+            border-radius: 12px;
+            text-align: center;
+            position: relative;
+            background: #ffffff;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            font-family: 'Georgia', 'Times New Roman', serif;
+        }}
+        .cert-crest {{ font-size: 42px; margin-bottom: 5px; color: {brand_color}; }}
+        .school-title {{ font-size: 32px; font-weight: bold; color: {brand_color}; text-transform: uppercase; margin: 0; letter-spacing: 2px; }}
+        .cert-heading {{ font-size: 24px; font-weight: normal; font-style: italic; color: #4B5563; margin-top: 15px; text-transform: uppercase; letter-spacing: 3px; }}
+        .cert-subtitle {{ font-size: 16px; color: #6B7280; margin-top: 6px; }}
+        .student-name {{ font-size: 36px; font-weight: bold; color: #1E3A8A; margin: 20px 0 10px 0; border-bottom: 2px solid #E5E7EB; display: inline-block; padding: 0 40px 8px 40px; font-family: 'Times New Roman', serif; }}
+        .cert-details {{ font-size: 18px; line-height: 1.8; color: #374151; max-width: 750px; margin: 0 auto 20px auto; }}
+        .award-badge {{ display: inline-block; font-size: 22px; font-weight: bold; color: {brand_color}; padding: 6px 20px; background: #FEF3C7; border: 1px solid #FDE68A; border-radius: 30px; margin-top: 10px; }}
+        .citation-text {{ font-style: italic; color: #4B5563; font-size: 15px; margin-top: 10px; }}
+        .cert-footer {{ display: flex; justify-content: space-between; margin-top: 50px; padding-top: 20px; }}
+        .sig-box {{ text-align: center; border-top: 2px solid #9CA3AF; width: 220px; padding-top: 8px; font-size: 14px; font-weight: bold; color: #374151; }}
+        .seal-box {{ width: 90px; height: 90px; border-radius: 50%; border: 3px dashed {brand_color}; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; color: {brand_color}; margin: 0 auto; text-transform: uppercase; }}
+        @media print {{
+            .cert-container {{
+                border: 8px double {brand_color} !important;
+                box-shadow: none !important;
+                padding: 25px !important;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    {toolbar['html']}
+    <div class="printable-content">
+        <div class="cert-container">
+            <div class="cert-crest">★ 🎓 ★</div>
+            <h1 class="school-title">{school_name}</h1>
+            <div class="cert-heading">Certificate of Merit & Recognition</div>
+            <div class="cert-subtitle">This certificate is proudly awarded to</div>
 
-                <div class="cert-details">
-                    of <strong>Class {st.get('class_name', '-')} - {st.get('section_name', '-')}</strong> (Admission No: <strong>{st.get('admission_no', '-')}</strong>) in sincere recognition of outstanding achievement in <strong>{category}</strong>:
-                    <br />
-                    <div class="award-badge">{award_name}</div>
-                    <div class="citation-text">"{citation}"</div>
+            <div class="student-name">{st.get('student_name', 'Student')}</div>
+
+            <div class="cert-details">
+                of <strong>Class {st.get('class_name', '-')} - {st.get('section_name', '-')}</strong> (Admission No: <strong>{st.get('admission_no', '-')}</strong>) in sincere recognition of outstanding achievement in <strong>{category}</strong>:
+                <br />
+                <div class="award-badge">{award_name}</div>
+                <div class="citation-text">"{citation}"</div>
+            </div>
+
+            <div class="cert-footer">
+                <div class="sig-box">
+                    <div>{award_date}</div>
+                    <div>Date of Award</div>
                 </div>
-
-                <div class="cert-footer">
-                    <div class="sig-box">
-                        <div>{award_date}</div>
-                        <div>Date of Award</div>
-                    </div>
-                    <div>
-                        <div class="seal-box">OFFICIAL<br/>SEAL</div>
-                    </div>
-                    <div class="sig-box">
-                        <div>Principal / Head of Institution</div>
-                    </div>
+                <div>
+                    <div class="seal-box">OFFICIAL<br/>SEAL</div>
+                </div>
+                <div class="sig-box">
+                    <div>Principal / Head of Institution</div>
                 </div>
             </div>
-        </body>
-        </html>
-        """
+        </div>
+    </div>
+</body>
+</html>
+"""
         return html_content
 
     @staticmethod
@@ -678,12 +1202,20 @@ class DocumentGeneratorService:
         balance_due = float(totals.get('balance_due', 0.0))
         balance_color = "#DC2626" if balance_due > 0 else "#16A34A"
 
+        toolbar = DocumentGeneratorService.get_toolbar_component(
+            doc_title=f"Fee Card — {student.get('full_name', 'Student')} ({student.get('admission_no', '')})",
+            doc_badge="STUDENT FEE CARD & LEDGER",
+            brand_color=brand_color,
+            orientation="portrait",
+        )
+
         html_content = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
     <title>Fee Card - {student.get('full_name', 'Student')} ({student.get('admission_no', '')})</title>
     <style>
+        {toolbar['css']}
         @page {{
             size: A4 portrait;
             margin: 10mm;
@@ -694,26 +1226,11 @@ class DocumentGeneratorService:
             color: #1E293B;
             background: #F8FAFC;
             margin: 0;
-            padding: 15px;
+            padding: 0;
             font-size: 12px;
-        }}
-        .print-btn {{
-            position: fixed;
-            top: 15px;
-            right: 15px;
-            background: {brand_color};
-            color: white;
-            padding: 8px 18px;
-            border-radius: 6px;
-            border: none;
-            cursor: pointer;
-            font-weight: bold;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.15);
-            z-index: 1000;
         }}
         @media print {{
             body {{ background: #fff; padding: 0; }}
-            .print-btn {{ display: none; }}
             .card-page {{ page-break-after: always; border: 2px solid {brand_color} !important; box-shadow: none !important; }}
             .card-page:last-child {{ page-break-after: auto; }}
         }}
@@ -894,9 +1411,9 @@ class DocumentGeneratorService:
     </style>
 </head>
 <body>
-    <button class="print-btn" onclick="window.print()">🖨️ Print Fee Card</button>
-
-    <!-- SIDE 1: FRONT -->
+    {toolbar['html']}
+    <div class="printable-content">
+        <!-- SIDE 1: FRONT -->
     <div class="card-page">
         <div class="watermark">{school_name}</div>
         <div class="school-header">
@@ -1034,6 +1551,7 @@ class DocumentGeneratorService:
             <div class="sign-col">Accountant / Office In-Charge</div>
             <div class="sign-col">Principal / Head of School</div>
         </div>
+    </div>
     </div>
 </body>
 </html>"""
