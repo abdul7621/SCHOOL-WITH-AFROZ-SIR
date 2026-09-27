@@ -199,9 +199,9 @@ async def view_fee_card_html(
     # 2. Determine enrollment and academic year
     enr_stmt = (
         select(StudentEnrollment, ClassLevel, Section, AcademicYear)
-        .join(ClassLevel, StudentEnrollment.class_id == ClassLevel.id)
-        .join(Section, StudentEnrollment.section_id == Section.id)
-        .join(AcademicYear, StudentEnrollment.academic_year_id == AcademicYear.id)
+        .outerjoin(ClassLevel, StudentEnrollment.class_id == ClassLevel.id)
+        .outerjoin(Section, StudentEnrollment.section_id == Section.id)
+        .outerjoin(AcademicYear, StudentEnrollment.academic_year_id == AcademicYear.id)
         .where(StudentEnrollment.student_id == student.id)
     )
     if academic_year_id:
@@ -220,7 +220,7 @@ async def view_fee_card_html(
     # Fallback to current year if enrollment wasn't active
     if not academic_year_obj:
         ay_res = await db.execute(select(AcademicYear).where(AcademicYear.is_current == True))
-        academic_year_obj = ay_res.scalar_one_or_none()
+        academic_year_obj = ay_res.scalars().first()
         if not academic_year_obj:
             ay_res = await db.execute(select(AcademicYear).order_by(AcademicYear.start_date.desc()))
             academic_year_obj = ay_res.scalars().first()
@@ -249,7 +249,7 @@ async def view_fee_card_html(
         coll_stmt = (
             select(FeeCollection)
             .options(
-                selectinload(FeeCollection.items).joinedload(FeeCollectionItem.demand),
+                selectinload(FeeCollection.items),
                 selectinload(FeeCollection.payment_mode),
             )
             .where(
@@ -348,23 +348,26 @@ async def view_fee_card_html(
     primary_color = settings_dict.get("theme_primary_color", "#1E40AF")
     currency = settings_dict.get("currency_symbol", "₹")
 
-    father_name = student.parent.father_name if student.parent else ""
-    mother_name = student.parent.mother_name if student.parent else ""
-    emergency_contact = student.emergency_contact_number or (student.parent.emergency_contact_phone if student.parent else "") or (student.parent.father_phone if student.parent else "")
+    parent_obj = getattr(student, "parent", None)
+    father_name = getattr(parent_obj, "father_name", "") or ""
+    mother_name = getattr(parent_obj, "mother_name", "") or ""
+    parent_phone = getattr(parent_obj, "primary_phone", "") or ""
+    parent_address = getattr(parent_obj, "address", "") or ""
+    emergency_contact = getattr(student, "emergency_contact", None) or parent_phone or "-"
 
     card_data = {
         "student": {
             "id": student.id,
             "admission_no": student.admission_no,
-            "roll_no": enrollment.roll_no if enrollment and enrollment.roll_no else "-",
+            "roll_no": getattr(enrollment, "roll_no", None) if enrollment else "-",
             "full_name": f"{student.first_name} {student.last_name or ''}".strip(),
             "class_name": class_obj.name if class_obj else "-",
             "section_name": section_obj.name if section_obj else "-",
             "father_name": father_name or "-",
             "mother_name": mother_name or "-",
-            "aadhar_no": getattr(student, "aadhar_number", None) or getattr(student, "aadhar_no", None) or "-",
+            "aadhar_no": getattr(student, "aadhar_number", None) or getattr(student, "aadhar_no", None) or (student.custom_attributes.get("aadhar_no") if getattr(student, "custom_attributes", None) and isinstance(student.custom_attributes, dict) else None) or "-",
             "emergency_contact": emergency_contact or "-",
-            "address": student.residential_address or getattr(student, "current_address", "-") or "-",
+            "address": parent_address or "-",
         },
         "academic_year": {
             "id": academic_year_obj.id if academic_year_obj else None,
@@ -410,10 +413,10 @@ async def view_transfer_certificate_html(
 
     stmt = (
         select(Student, StudentEnrollment, ClassLevel, Section, Parent)
-        .join(StudentEnrollment, Student.id == StudentEnrollment.student_id)
-        .join(ClassLevel, StudentEnrollment.class_id == ClassLevel.id)
-        .join(Section, StudentEnrollment.section_id == Section.id)
-        .join(Parent, Student.parent_id == Parent.id)
+        .outerjoin(StudentEnrollment, Student.id == StudentEnrollment.student_id)
+        .outerjoin(ClassLevel, StudentEnrollment.class_id == ClassLevel.id)
+        .outerjoin(Section, StudentEnrollment.section_id == Section.id)
+        .outerjoin(Parent, Student.parent_id == Parent.id)
         .where(Student.id == student_id)
     )
     res = await db.execute(stmt)
@@ -492,11 +495,11 @@ async def view_transfer_certificate_html(
         "student": {
             "admission_no": st.admission_no,
             "full_name": f"{st.first_name} {st.last_name or ''}".strip(),
-            "father_name": parent.father_name,
-            "mother_name": parent.mother_name,
-            "dob": str(st.dob),
-            "class_name": cls_lvl.name,
-            "section_name": sec.name,
+            "father_name": getattr(parent, "father_name", "-") if parent else "-",
+            "mother_name": getattr(parent, "mother_name", "-") if parent else "-",
+            "dob": str(st.dob) if getattr(st, "dob", None) else "-",
+            "class_name": getattr(cls_lvl, "name", "-") if cls_lvl else "-",
+            "section_name": getattr(sec, "name", "-") if sec else "-",
         },
         "tc_no": f"TC-{date.today().year}-{st.admission_no[-4:] if len(st.admission_no) >= 4 else '0001'}",
         "issue_date": str(date.today()),
@@ -615,9 +618,9 @@ async def view_id_cards_batch_html(
     stmt = (
         select(Student, StudentEnrollment, ClassLevel, Section, Parent)
         .join(StudentEnrollment, Student.id == StudentEnrollment.student_id)
-        .join(ClassLevel, StudentEnrollment.class_id == ClassLevel.id)
-        .join(Section, StudentEnrollment.section_id == Section.id)
-        .join(Parent, Student.parent_id == Parent.id)
+        .outerjoin(ClassLevel, StudentEnrollment.class_id == ClassLevel.id)
+        .outerjoin(Section, StudentEnrollment.section_id == Section.id)
+        .outerjoin(Parent, Student.parent_id == Parent.id)
         .where(StudentEnrollment.is_active == True)
     )
     if class_id:
@@ -630,13 +633,13 @@ async def view_id_cards_batch_html(
         {
             "admission_no": st.admission_no,
             "full_name": f"{st.first_name} {st.last_name or ''}".strip(),
-            "class_name": cls_lvl.name,
-            "section_name": sec.name,
-            "roll_no": enroll.roll_no,
-            "dob": str(st.dob),
+            "class_name": cls_lvl.name if cls_lvl else "-",
+            "section_name": sec.name if sec else "-",
+            "roll_no": getattr(enroll, "roll_no", None) or "-",
+            "dob": str(st.dob) if getattr(st, "dob", None) else "-",
             "blood_group": getattr(st, "blood_group", "O+"),
-            "primary_phone": parent.primary_phone,
-            "profile_photo_url": st.profile_photo_url,
+            "primary_phone": getattr(parent, "primary_phone", "-") if parent else "-",
+            "profile_photo_url": getattr(st, "profile_photo_url", None),
         }
         for st, enroll, cls_lvl, sec, parent in rows
     ]
