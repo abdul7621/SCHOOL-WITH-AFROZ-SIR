@@ -8,7 +8,14 @@ from sqlalchemy.orm import selectinload
 from app.modules.students.models import Student, StudentEnrollment, Parent
 from app.modules.academics.models import ClassLevel, Section, AcademicYear
 from app.modules.lookups.models import PaymentMode, LookupValue
-from app.modules.fees.models import FeeCollection, FeeCollectionItem, StudentFeeDemand, FeeHead
+from app.modules.fees.models import (
+    FeeCollection,
+    FeeCollectionItem,
+    StudentFeeDemand,
+    FeeHead,
+    FeeInstallmentSchedule,
+    StudentFeeFollowup,
+)
 from app.modules.finance.models import FinanceVoucher, FinanceCategory
 from app.modules.attendance.models import AttendanceSession, StudentDailyAttendance
 
@@ -115,12 +122,96 @@ class ReportsService:
         res = await db.execute(stmt)
         rows = res.all()
 
+        today = date.today()
+
+        # 1. Fetch demands breakdown per student for aging buckets
+        demand_stmt = (
+            select(
+                StudentFeeDemand.student_id,
+                StudentFeeDemand.balance_amount,
+                FeeInstallmentSchedule.due_date,
+            )
+            .join(FeeInstallmentSchedule, StudentFeeDemand.installment_schedule_id == FeeInstallmentSchedule.id)
+            .where(
+                StudentFeeDemand.academic_year_id == academic_year_id,
+                StudentFeeDemand.status.in_(["UNPAID", "PARTIALLY_PAID"]),
+            )
+        )
+        demand_res = await db.execute(demand_stmt)
+        demand_rows = demand_res.all()
+
+        student_aging_map = {}
+        for s_id, bal, d_date in demand_rows:
+            if s_id not in student_aging_map:
+                student_aging_map[s_id] = {
+                    "current": Decimal("0.00"),
+                    "aging_0_30": Decimal("0.00"),
+                    "aging_31_60": Decimal("0.00"),
+                    "aging_61_90": Decimal("0.00"),
+                    "aging_90_plus": Decimal("0.00"),
+                    "max_overdue_days": 0,
+                }
+            overdue_days = (today - d_date).days if d_date else 0
+            if overdue_days > student_aging_map[s_id]["max_overdue_days"]:
+                student_aging_map[s_id]["max_overdue_days"] = max(0, overdue_days)
+
+            if overdue_days <= 0:
+                student_aging_map[s_id]["current"] += (bal or Decimal("0.00"))
+            elif overdue_days <= 30:
+                student_aging_map[s_id]["aging_0_30"] += (bal or Decimal("0.00"))
+            elif overdue_days <= 60:
+                student_aging_map[s_id]["aging_31_60"] += (bal or Decimal("0.00"))
+            elif overdue_days <= 90:
+                student_aging_map[s_id]["aging_61_90"] += (bal or Decimal("0.00"))
+            else:
+                student_aging_map[s_id]["aging_90_plus"] += (bal or Decimal("0.00"))
+
+        # 2. Fetch latest follow-up for students
+        fup_stmt = (
+            select(StudentFeeFollowup)
+            .order_by(StudentFeeFollowup.followup_date.desc(), StudentFeeFollowup.created_at.desc())
+        )
+        fup_rows = (await db.execute(fup_stmt)).scalars().all()
+        latest_fup_map = {}
+        for f in fup_rows:
+            if f.student_id not in latest_fup_map:
+                latest_fup_map[f.student_id] = {
+                    "id": f.id,
+                    "followup_date": str(f.followup_date),
+                    "promise_date": str(f.promise_date) if f.promise_date else None,
+                    "promised_amount": float(f.promised_amount) if f.promised_amount else None,
+                    "outcome": f.outcome,
+                    "notes": f.notes,
+                    "contacted_phone": f.contacted_phone,
+                }
+
         total_outstanding = Decimal("0.00")
+        total_aging_0_30 = Decimal("0.00")
+        total_aging_31_60 = Decimal("0.00")
+        total_aging_61_90 = Decimal("0.00")
+        total_aging_90_plus = Decimal("0.00")
+        total_aging_current = Decimal("0.00")
         defaulters = []
 
         for st, enroll, cls_lvl, sec, parent, total_due, due_count in rows:
             due_val = total_due or Decimal("0.00")
             total_outstanding += due_val
+
+            aging = student_aging_map.get(st.id, {
+                "current": Decimal("0.00"),
+                "aging_0_30": Decimal("0.00"),
+                "aging_31_60": Decimal("0.00"),
+                "aging_61_90": Decimal("0.00"),
+                "aging_90_plus": due_val,
+                "max_overdue_days": 91,
+            })
+
+            total_aging_current += aging["current"]
+            total_aging_0_30 += aging["aging_0_30"]
+            total_aging_31_60 += aging["aging_31_60"]
+            total_aging_61_90 += aging["aging_61_90"]
+            total_aging_90_plus += aging["aging_90_plus"]
+
             defaulters.append({
                 "student_id": st.id,
                 "admission_no": st.admission_no,
@@ -132,11 +223,27 @@ class ReportsService:
                 "primary_phone": parent.primary_phone,
                 "total_outstanding_amount": float(due_val),
                 "unpaid_invoices_count": due_count,
+                "max_overdue_days": aging["max_overdue_days"],
+                "aging": {
+                    "current": float(aging["current"]),
+                    "0_30": float(aging["0_30"]),
+                    "31_60": float(aging["31_60"]),
+                    "61_90": float(aging["61_90"]),
+                    "90_plus": float(aging["90_plus"]),
+                },
+                "latest_followup": latest_fup_map.get(st.id, None),
             })
 
         return {
             "total_defaulters_count": len(defaulters),
             "total_outstanding_amount": float(total_outstanding),
+            "aging_summary": {
+                "current": float(total_aging_current),
+                "0_30": float(total_aging_0_30),
+                "31_60": float(total_aging_31_60),
+                "61_90": float(total_aging_61_90),
+                "90_plus": float(total_aging_90_plus),
+            },
             "defaulters": defaulters,
         }
 

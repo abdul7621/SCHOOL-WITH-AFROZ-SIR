@@ -1,5 +1,5 @@
-from datetime import date, time
-from sqlalchemy import Column, String, Integer, Boolean, Date, Time, ForeignKey, UniqueConstraint
+from datetime import date, time, datetime
+from sqlalchemy import Column, String, Integer, Boolean, Date, Time, DateTime, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.shared.base_models import BaseTenantModel
 
@@ -100,6 +100,32 @@ class ClassHomework(BaseTenantModel):
     section = relationship("Section")
     subject = relationship("Subject")
     assigned_by = relationship("app.modules.users_rbac.models.User")
+
+
+class StudentHomeworkSubmission(BaseTenantModel):
+    __tablename__ = "student_homework_submissions"
+
+    homework_id = Column(String(36), ForeignKey("class_homework.id", ondelete="CASCADE"), nullable=False, index=True)
+    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    submission_text = Column(Text, nullable=True)                              # Student notes, explanation, answers
+    attachment_url = Column(Text, nullable=True)                               # Uploaded image of notebook (Base64 data URI or storage URL)
+    submitted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    status = Column(String(30), default="SUBMITTED", nullable=False, index=True) # 'SUBMITTED', 'REVIEWED', 'RESUBMISSION_REQUESTED'
+    
+    # Teacher Review & Grading Fields
+    rating_stars = Column(Integer, default=0, nullable=False)                  # 1 to 5 Stars
+    teacher_feedback = Column(String(500), nullable=True)                      # Teacher comments
+    reviewed_by_teacher_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    
+    homework = relationship("ClassHomework", backref="submissions")
+    student = relationship("app.modules.students.models.Student")
+    reviewed_by = relationship("app.modules.users_rbac.models.User", foreign_keys=[reviewed_by_teacher_id])
+
+    __table_args__ = (
+        UniqueConstraint("homework_id", "student_id", name="uk_homework_student_sub"),
+    )
 
 
 class StudentLeaveRequest(BaseTenantModel):

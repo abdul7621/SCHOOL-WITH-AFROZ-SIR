@@ -192,3 +192,56 @@ class StudentAdvanceWalletTransaction(BaseTenantModel):
     demand = relationship("StudentFeeDemand")
 
 
+class StudentFeeFollowup(BaseTenantModel):
+    __tablename__ = "student_fee_followups"
+
+    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    contacted_phone = Column(String(30), nullable=True)
+    followup_date = Column(Date, nullable=False, index=True)
+    promise_date = Column(Date, nullable=True)
+    promised_amount = Column(Numeric(10, 2), nullable=True)
+    outcome = Column(String(50), default="PROMISED", nullable=False) # 'PROMISED', 'DISPUTED', 'WRONG_NUMBER', 'REFUSED', 'RESOLVED'
+    notes = Column(Text, nullable=True)
+    recorded_by_user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+
+    student = relationship("app.modules.students.models.Student")
+    recorded_by = relationship("app.modules.users_rbac.models.User")
+
+
+class TenantPaymentGatewayConfig(BaseTenantModel):
+    __tablename__ = "tenant_payment_gateway_configs"
+
+    provider = Column(String(50), unique=True, nullable=False, index=True)  # 'DIRECT_UPI_QR', 'RAZORPAY', 'CASHFREE', 'STRIPE'
+    is_active = Column(Boolean, default=False, nullable=False)
+    merchant_name = Column(String(150), nullable=True)
+    upi_vpa = Column(String(100), nullable=True)
+    upi_payee_name = Column(String(150), nullable=True)
+    key_id = Column(String(255), nullable=True)
+    key_secret = Column(String(255), nullable=True)
+    webhook_secret = Column(String(255), nullable=True)
+
+
+class OnlinePaymentOrder(BaseTenantModel):
+    __tablename__ = "online_payment_orders"
+
+    order_number = Column(String(60), unique=True, nullable=False, index=True)
+    student_id = Column(String(36), ForeignKey("students.id"), nullable=False, index=True)
+    academic_year_id = Column(String(36), ForeignKey("academic_years.id"), nullable=False, index=True)
+    amount = Column(Numeric(10, 2), nullable=False)
+    gateway_provider = Column(String(50), nullable=False)
+    gateway_order_id = Column(String(100), nullable=True, index=True)
+    gateway_payment_id = Column(String(100), nullable=True, index=True)
+    utr_number = Column(String(100), nullable=True, index=True)
+    status = Column(String(30), default="PENDING", nullable=False, index=True)  # 'PENDING', 'VERIFICATION_PENDING', 'SUCCESS', 'FAILED'
+    payment_response_payload = Column(Text, nullable=True)
+    verified_by_user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    verified_at = Column(DateTime, nullable=True)
+    fee_collection_id = Column(String(36), ForeignKey("fee_collections.id"), nullable=True)
+    receipt_no = Column(String(50), nullable=True)
+
+    student = relationship("app.modules.students.models.Student")
+    collection = relationship("FeeCollection")
+    academic_year = relationship("app.modules.academics.models.AcademicYear")
+
+
+

@@ -17,6 +17,7 @@ import {
   School,
   Briefcase,
   Award,
+  Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTenant } from '../context/TenantContext';
@@ -43,6 +44,7 @@ export const Sidebar = () => {
 
   const schoolNavItems = [
     { to: '/', label: 'Principal Dashboard', icon: LayoutDashboard, show: true },
+    { to: '/teacher-cockpit', label: 'Teacher Cockpit', icon: Sparkles, show: user?.roles?.includes('TEACHER') || user?.user_type === 'TEACHER' || hasPermission('academics:view') },
     { to: '/students', label: 'Students & 360° Profile', icon: Users, show: hasPermission('students:view') },
     { to: '/students/promotion', label: 'Annual Student Promotion', icon: GraduationCap, show: hasPermission('students:create') },
     { to: '/staff', label: 'Staff & Teachers', icon: Briefcase, show: hasPermission('users:manage') },

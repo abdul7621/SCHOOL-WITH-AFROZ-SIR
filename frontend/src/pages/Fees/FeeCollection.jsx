@@ -16,6 +16,11 @@ import {
   Check,
   AlertTriangle,
   ArrowRight,
+  QrCode,
+  CheckSquare,
+  ShieldCheck,
+  Smartphone,
+  Copy,
 } from 'lucide-react';
 import api from '../../api/client';
 
@@ -81,6 +86,132 @@ export const FeeCollection = () => {
   const [registerRows, setRegisterRows] = useState([]);
   const [registerLoading, setRegisterLoading] = useState(false);
 
+  // Tab 5: Online Approvals State
+  const [pendingApprovals, setPendingApprovals] = useState([]);
+  const [approvalsLoading, setApprovalsLoading] = useState(false);
+  const [approvingOrderId, setApprovingOrderId] = useState(null);
+
+  // Tab 6: Gateways Studio State
+  const [gatewayConfigs, setGatewayConfigs] = useState([]);
+  const [gatewaysLoading, setGatewaysLoading] = useState(false);
+  const [savingGateway, setSavingGateway] = useState(false);
+  const [directUpiForm, setDirectUpiForm] = useState({
+    provider: 'DIRECT_UPI_QR',
+    upi_vpa: '',
+    upi_payee_name: '',
+    is_active: false,
+  });
+  const [razorpayForm, setRazorpayForm] = useState({
+    provider: 'RAZORPAY',
+    key_id: '',
+    key_secret: '',
+    webhook_secret: '',
+    is_active: false,
+  });
+
+  const loadPendingApprovals = async () => {
+    setApprovalsLoading(true);
+    try {
+      const res = await api.get('/fees/online/pending-approvals');
+      setPendingApprovals(res.data || []);
+    } catch (err) {
+      console.error('Error loading pending approvals:', err);
+    } finally {
+      setApprovalsLoading(false);
+    }
+  };
+
+  const handleApproveUtr = async (order) => {
+    if (!window.confirm(`Verify and approve ₹${order.amount} for ${order.student_name} (UTR: ${order.utr_number})? This will generate the official sequential fee receipt.`)) return;
+    setApprovingOrderId(order.order_id);
+    try {
+      const res = await api.post(`/fees/online/orders/${order.order_id}/verify`, { action: 'APPROVE' });
+      alert(res.message || 'Payment verified successfully!');
+      loadPendingApprovals();
+    } catch (err) {
+      alert('Error approving payment: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setApprovingOrderId(null);
+    }
+  };
+
+  const handleRejectUtr = async (order) => {
+    const reason = window.prompt(`Enter reason for rejecting order #${order.order_number}:`, 'UTR not found in bank statement');
+    if (!reason) return;
+    setApprovingOrderId(order.order_id);
+    try {
+      await api.post(`/fees/online/orders/${order.order_id}/verify`, { action: 'REJECT', rejection_reason: reason });
+      alert('Payment rejected.');
+      loadPendingApprovals();
+    } catch (err) {
+      alert('Error rejecting payment: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setApprovingOrderId(null);
+    }
+  };
+
+  const loadGatewayConfigs = async () => {
+    setGatewaysLoading(true);
+    try {
+      const res = await api.get('/fees/gateways/configs');
+      const configs = res.data || [];
+      setGatewayConfigs(configs);
+
+      const upi = configs.find((c) => c.provider === 'DIRECT_UPI_QR');
+      if (upi) {
+        setDirectUpiForm({
+          provider: 'DIRECT_UPI_QR',
+          upi_vpa: upi.upi_vpa || '',
+          upi_payee_name: upi.upi_payee_name || '',
+          is_active: upi.is_active || false,
+        });
+      }
+
+      const rzp = configs.find((c) => c.provider === 'RAZORPAY');
+      if (rzp) {
+        setRazorpayForm({
+          provider: 'RAZORPAY',
+          key_id: rzp.key_id || '',
+          key_secret: rzp.key_secret_masked || '',
+          webhook_secret: '',
+          is_active: rzp.is_active || false,
+        });
+      }
+    } catch (err) {
+      console.error('Error loading gateway configs:', err);
+    } finally {
+      setGatewaysLoading(false);
+    }
+  };
+
+  const handleSaveUpiConfig = async (e) => {
+    e.preventDefault();
+    setSavingGateway(true);
+    try {
+      await api.post('/fees/gateways/configs', directUpiForm);
+      alert('Direct UPI Configuration saved successfully!');
+      loadGatewayConfigs();
+    } catch (err) {
+      alert('Failed to save UPI config: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setSavingGateway(false);
+    }
+  };
+
+  const handleSaveRazorpayConfig = async (e) => {
+    e.preventDefault();
+    setSavingGateway(true);
+    try {
+      await api.post('/fees/gateways/configs', razorpayForm);
+      alert('Razorpay Configuration saved successfully!');
+      loadGatewayConfigs();
+    } catch (err) {
+      alert('Failed to save Razorpay config: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setSavingGateway(false);
+    }
+  };
+
   // Load Initial Configurations
   useEffect(() => {
     const fetchInit = async () => {
@@ -111,6 +242,7 @@ export const FeeCollection = () => {
             setSectionId(clsRes.data[0].sections[0].id);
           }
         }
+        loadPendingApprovals();
       } catch (e) {
         console.error('Error loading initial fee data:', e);
       }
@@ -263,6 +395,8 @@ export const FeeCollection = () => {
     if (activeTab === 'setup') loadSetupData();
     if (activeTab === 'concessions') loadConcessionsData();
     if (activeTab === 'register') loadRegister();
+    if (activeTab === 'online_approvals') loadPendingApprovals();
+    if (activeTab === 'gateways') loadGatewayConfigs();
   }, [activeTab, academicYearId, classId, sectionId]);
 
   // Create Head
@@ -391,7 +525,7 @@ export const FeeCollection = () => {
         </div>
 
         {/* Tab Controls */}
-        <div className="flex bg-slate-200 p-1 rounded-xl text-xs font-bold">
+        <div className="flex flex-wrap bg-slate-200 p-1 rounded-xl text-xs font-bold gap-1">
           <button
             onClick={() => setActiveTab('pos')}
             className={`px-3 py-1.5 rounded-lg transition-all ${
@@ -399,6 +533,29 @@ export const FeeCollection = () => {
             }`}
           >
             Cashier POS
+          </button>
+          <button
+            onClick={() => setActiveTab('online_approvals')}
+            className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+              activeTab === 'online_approvals' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Smartphone size={13} />
+            <span>Online UPI Approvals</span>
+            {pendingApprovals.length > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-black">
+                {pendingApprovals.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('gateways')}
+            className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+              activeTab === 'gateways' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <QrCode size={13} />
+            <span>UPI & Gateway Studio</span>
           </button>
           <button
             onClick={() => setActiveTab('setup')}
@@ -683,6 +840,380 @@ export const FeeCollection = () => {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB: ONLINE UPI APPROVALS QUEUE */}
+      {/* ========================================================================= */}
+      {activeTab === 'online_approvals' && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-blue-50 text-blue-700 rounded-xl">
+                <Smartphone size={22} />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <span>Direct UPI & Online Payment Approvals Queue</span>
+                  <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-black">
+                    {pendingApprovals.length} Pending
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Verify 12-digit bank UTR numbers against your school bank account statement before approving. Approving an order clears student dues and generates an official sequential receipt.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={loadPendingApprovals}
+              disabled={approvalsLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+            >
+              <RefreshCcw size={13} className={approvalsLoading ? 'animate-spin' : ''} />
+              <span>Refresh Queue</span>
+            </button>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
+                    <th className="py-3 px-3 w-36">Order #</th>
+                    <th className="py-3 px-3 w-32">Date & Time</th>
+                    <th className="py-3 px-3">Student Info</th>
+                    <th className="py-3 px-3">Academic Year</th>
+                    <th className="py-3 px-3 text-right">Amount (₹)</th>
+                    <th className="py-3 px-3">Gateway</th>
+                    <th className="py-3 px-3">Bank UTR / Ref No</th>
+                    <th className="py-3 px-3 text-center w-48">Cashier Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {approvalsLoading ? (
+                    <tr>
+                      <td colSpan={8} className="text-center py-10 text-slate-400">
+                        <RefreshCcw size={18} className="animate-spin inline mr-2 text-blue-600" />
+                        Fetching pending online payment orders...
+                      </td>
+                    </tr>
+                  ) : pendingApprovals.length > 0 ? (
+                    pendingApprovals.map((order) => (
+                      <tr key={order.order_id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3 px-3 font-mono font-bold text-blue-700">
+                          {order.order_number}
+                        </td>
+                        <td className="py-3 px-3 text-slate-500 whitespace-nowrap">
+                          {order.created_at ? new Date(order.created_at).toLocaleString() : '-'}
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="font-bold text-slate-900">{order.student_name}</div>
+                          <div className="text-[11px] text-slate-500 font-mono">
+                            Adm: {order.admission_no} • {order.class_name}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 text-slate-600">
+                          {order.academic_year_name || '-'}
+                        </td>
+                        <td className="py-3 px-3 text-right font-black text-emerald-700 text-sm">
+                          ₹{Number(order.amount || 0).toLocaleString()}
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded font-semibold text-[11px]">
+                            {order.gateway_provider === 'DIRECT_UPI_QR' ? 'Direct UPI' : order.gateway_provider}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3">
+                          {order.utr_number ? (
+                            <span className="inline-block px-2.5 py-1 bg-amber-50 text-amber-900 font-mono font-black rounded border border-amber-200 tracking-wider">
+                              {order.utr_number}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 italic">Pending UTR</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => handleApproveUtr(order)}
+                              disabled={approvingOrderId === order.order_id}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-bold text-[11px] shadow-sm transition-all disabled:opacity-50"
+                              title="Verify against bank account and issue official receipt"
+                            >
+                              <CheckCircle2 size={12} />
+                              <span>{approvingOrderId === order.order_id ? 'Verifying...' : 'Approve & Issue'}</span>
+                            </button>
+                            <button
+                              onClick={() => handleRejectUtr(order)}
+                              disabled={approvingOrderId === order.order_id}
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded font-semibold text-[11px] border border-rose-200 transition-all disabled:opacity-50"
+                              title="Reject invalid or unverified UTR"
+                            >
+                              <X size={12} />
+                              <span>Reject</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={8} className="text-center py-12 text-slate-400">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                            <CheckCircle2 size={22} />
+                          </div>
+                          <div className="font-bold text-slate-700 text-sm">All Clear! No Pending Approvals</div>
+                          <p className="text-xs text-slate-400 max-w-sm">
+                            When parents make a payment via Direct UPI QR and enter their bank transaction UTR, it will appear here for verification.
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB: MULTI-TENANT GATEWAY & DIRECT UPI STUDIO */}
+      {/* ========================================================================= */}
+      {activeTab === 'gateways' && (
+        <div className="space-y-6">
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-purple-50 text-purple-700 rounded-xl">
+                <QrCode size={22} />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">
+                  Tenant Payment Gateway & Direct UPI Configuration Studio
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Direct Zero-Fee UPI routes payments directly to your school bank account. Optional merchant gateways provide instant automated webhook verification.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={loadGatewayConfigs}
+              disabled={gatewaysLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+            >
+              <RefreshCcw size={13} className={gatewaysLoading ? 'animate-spin' : ''} />
+              <span>Refresh Settings</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Card 1: Direct UPI QR (Zero MDR) */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-4">
+              <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-emerald-50 text-emerald-700 rounded-lg">
+                    <Smartphone size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <span>Direct School UPI QR</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                        Zero Fee (0% MDR)
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Funds settle instantly into your school bank account with no merchant deductions
+                    </p>
+                  </div>
+                </div>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                  directUpiForm.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                }`}>
+                  {directUpiForm.is_active ? 'Active' : 'Disabled'}
+                </span>
+              </div>
+
+              <form onSubmit={handleSaveUpiConfig} className="space-y-4 text-xs">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">
+                    School UPI ID / VPA <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. schooltrust@okhdfcbank or 9876543210@sbi"
+                    value={directUpiForm.upi_vpa}
+                    onChange={(e) => setDirectUpiForm({ ...directUpiForm, upi_vpa: e.target.value.trim() })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+                  />
+                  <span className="text-[10px] text-slate-400">
+                    Must be a valid VPA registered with your school or trust bank account.
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">
+                    School / Trust Legal Payee Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. AL-FALAH EDUCATIONAL TRUST"
+                    value={directUpiForm.upi_payee_name}
+                    onChange={(e) => setDirectUpiForm({ ...directUpiForm, upi_payee_name: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+                  />
+                  <span className="text-[10px] text-slate-400">
+                    Displayed inside parent UPI apps (Google Pay, PhonePe, Paytm, BHIM) during payment.
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-3 pt-1">
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={directUpiForm.is_active}
+                      onChange={(e) => setDirectUpiForm({ ...directUpiForm, is_active: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                  </label>
+                  <span className="text-xs font-semibold text-slate-700">
+                    Enable Direct UPI QR for Parents on Parent Portal
+                  </span>
+                </div>
+
+                {/* Live QR Preview Box */}
+                {directUpiForm.upi_vpa && (
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-4">
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(`upi://pay?pa=${directUpiForm.upi_vpa}&pn=${directUpiForm.upi_payee_name || 'School'}&cu=INR`)}`}
+                      alt="Sample UPI QR"
+                      className="w-20 h-20 rounded-lg border border-slate-200 bg-white p-1"
+                    />
+                    <div className="space-y-1 text-[11px]">
+                      <div className="font-bold text-slate-800">Live QR Preview</div>
+                      <div className="text-slate-500 font-mono text-[10px] truncate max-w-[200px]">
+                        upi://pay?pa={directUpiForm.upi_vpa}&pn={directUpiForm.upi_payee_name}
+                      </div>
+                      <div className="text-emerald-700 font-semibold text-[10px] flex items-center gap-1">
+                        <ShieldCheck size={12} /> NPCI UPI Standard Compliant
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    disabled={savingGateway || !directUpiForm.upi_vpa}
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-xs shadow-sm transition-all disabled:opacity-50"
+                  >
+                    {savingGateway ? 'Saving Configuration...' : 'Save Direct UPI Configuration'}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Card 2: Razorpay / Merchant Gateway */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-4">
+              <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-blue-50 text-blue-700 rounded-lg">
+                    <CreditCard size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <span>Razorpay Merchant Gateway</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800">
+                        Automated Webhooks
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Card / Netbanking / Wallet gateway with automatic instant verification
+                    </p>
+                  </div>
+                </div>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                  razorpayForm.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                }`}>
+                  {razorpayForm.is_active ? 'Active' : 'Disabled'}
+                </span>
+              </div>
+
+              <form onSubmit={handleSaveRazorpayConfig} className="space-y-4 text-xs">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">
+                    Razorpay Key ID <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="rzp_live_... or rzp_test_..."
+                    value={razorpayForm.key_id}
+                    onChange={(e) => setRazorpayForm({ ...razorpayForm, key_id: e.target.value.trim() })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">
+                    Razorpay Key Secret <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    placeholder={razorpayForm.key_secret ? '••••••••••••••••' : 'Enter Key Secret'}
+                    value={razorpayForm.key_secret}
+                    onChange={(e) => setRazorpayForm({ ...razorpayForm, key_secret: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono focus:outline-none focus:border-blue-500"
+                  />
+                  <span className="text-[10px] text-slate-400">
+                    Encrypted on save. Kept confidential and isolated to this school's schema.
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">
+                    Webhook Secret (Optional)
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="Webhook secret for signature validation"
+                    value={razorpayForm.webhook_secret}
+                    onChange={(e) => setRazorpayForm({ ...razorpayForm, webhook_secret: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="flex items-center gap-3 pt-1">
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={razorpayForm.is_active}
+                      onChange={(e) => setRazorpayForm({ ...razorpayForm, is_active: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                  <span className="text-xs font-semibold text-slate-700">
+                    Enable Razorpay Gateway for Parents
+                  </span>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    disabled={savingGateway || !razorpayForm.key_id}
+                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold text-xs shadow-sm transition-all disabled:opacity-50"
+                  >
+                    {savingGateway ? 'Saving Configuration...' : 'Save Razorpay Configuration'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
         </div>
       )}
 

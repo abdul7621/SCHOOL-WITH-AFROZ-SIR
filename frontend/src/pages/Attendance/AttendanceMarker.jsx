@@ -159,7 +159,9 @@ export const AttendanceMarker = () => {
   };
 
   const markAll = (status) => {
-    setRoster((prev) => prev.map((s) => ({ ...s, status_code: status })));
+    setRoster((prev) =>
+      prev.map((s) => (s.has_approved_leave && s.status_code === 'EXCUSED' ? s : { ...s, status_code: status }))
+    );
   };
 
   const saveAttendance = async () => {
@@ -410,38 +412,68 @@ export const AttendanceMarker = () => {
                     <tr key={st.student_id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3 px-4 font-bold text-slate-700">{st.roll_no || '-'}</td>
                       <td className="py-3 px-4 font-mono text-blue-700">{st.admission_no}</td>
-                      <td className="py-3 px-4 font-semibold text-slate-900">{st.full_name}</td>
+                      <td className="py-3 px-4 font-semibold text-slate-900">
+                        <div className="flex items-center gap-2">
+                          <span>{st.full_name}</span>
+                          {st.has_approved_leave && (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200"
+                              title={st.leave_reason || 'Approved Leave'}
+                            >
+                              🌴 On Leave
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="py-3 px-4">
-                        <div className="flex items-center justify-center gap-2">
+                        <div className="flex items-center justify-center gap-1.5">
                           <button
+                            type="button"
                             onClick={() => updateStudentStatus(st.student_id, 'PRESENT')}
-                            className={`px-3 py-1 rounded text-xs font-bold transition-all ${
+                            className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${
                               st.status_code === 'PRESENT'
                                 ? 'bg-emerald-600 text-white shadow-sm'
                                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                             }`}
+                            title="Present"
                           >
                             P
                           </button>
                           <button
+                            type="button"
                             onClick={() => updateStudentStatus(st.student_id, 'ABSENT')}
-                            className={`px-3 py-1 rounded text-xs font-bold transition-all ${
+                            className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${
                               st.status_code === 'ABSENT'
                                 ? 'bg-rose-600 text-white shadow-sm'
                                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                             }`}
+                            title="Absent"
                           >
                             A
                           </button>
                           <button
+                            type="button"
                             onClick={() => updateStudentStatus(st.student_id, 'LATE')}
-                            className={`px-3 py-1 rounded text-xs font-bold transition-all ${
+                            className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${
                               st.status_code === 'LATE'
                                 ? 'bg-amber-500 text-white shadow-sm'
                                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                             }`}
+                            title="Late"
                           >
                             L
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateStudentStatus(st.student_id, 'EXCUSED')}
+                            className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${
+                              st.status_code === 'EXCUSED'
+                                ? 'bg-purple-600 text-white shadow-sm'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                            title="Excused / Approved Leave"
+                          >
+                            E
                           </button>
                         </div>
                       </td>

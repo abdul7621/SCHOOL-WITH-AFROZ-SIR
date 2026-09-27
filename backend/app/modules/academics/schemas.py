@@ -113,6 +113,18 @@ class HomeworkUpdate(BaseModel):
     attachment_url: Optional[str] = None
 
 
+class HomeworkSubmissionRequest(BaseModel):
+    student_id: str
+    submission_text: Optional[str] = None
+    attachment_url: Optional[str] = None
+
+
+class HomeworkReviewRequest(BaseModel):
+    rating_stars: int = 5
+    teacher_feedback: Optional[str] = None
+    status: str = "REVIEWED"
+
+
 class StudentLeaveSubmitRequest(BaseModel):
     student_id: str
     from_date: date

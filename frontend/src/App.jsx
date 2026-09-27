@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { TenantProvider } from './context/TenantContext';
 import { Layout } from './components/Layout';
+import { ParentLayout } from './components/ParentLayout';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { StudentList } from './pages/Students/StudentList';
@@ -24,6 +25,7 @@ import { TimetableSyllabusView } from './pages/Academics/TimetableSyllabusView';
 import { ClassesAndSessions } from './pages/Academics/ClassesAndSessions';
 import { StaffDirectory } from './pages/Staff/StaffDirectory';
 import { DisciplineAndAwards } from './pages/Development/DisciplineAndAwards';
+import { TeacherCockpit } from './pages/Teacher/TeacherCockpit';
 
 export const App = () => {
   return (
@@ -35,6 +37,11 @@ export const App = () => {
             <Route path="/website" element={<SchoolPublicWebsite />} />
             <Route path="/login" element={<Login />} />
 
+            {/* Dedicated Parent & Guardian Consumer Layout */}
+            <Route path="/parent-portal" element={<ParentLayout />}>
+              <Route index element={<ParentDashboard />} />
+            </Route>
+
             {/* Protected Staff ERP Layout */}
             <Route path="/" element={<Layout />}>
               <Route index element={<Dashboard />} />
@@ -45,6 +52,7 @@ export const App = () => {
               <Route path="development" element={<DisciplineAndAwards />} />
               <Route path="academics" element={<ClassesAndSessions />} />
               <Route path="academics/timetable" element={<TimetableSyllabusView />} />
+              <Route path="teacher-cockpit" element={<TeacherCockpit />} />
               <Route path="attendance" element={<AttendanceMarker />} />
               <Route path="fees" element={<FeeCollection />} />
               <Route path="exams" element={<MarksEntry />} />
@@ -53,7 +61,6 @@ export const App = () => {
               <Route path="documents" element={<DocumentCenter />} />
               <Route path="reports" element={<ReportsCenter />} />
               <Route path="cms" element={<CMSManager />} />
-              <Route path="parent-portal" element={<ParentDashboard />} />
               <Route path="superadmin" element={<TenantsList />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

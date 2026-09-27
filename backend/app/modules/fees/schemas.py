@@ -159,3 +159,32 @@ class WaiveFeeDemandsRequest(BaseModel):
     waiver_reason: str = Field(..., min_length=5, example="Principal fee waiver approved for Transfer Certificate clearance")
     supporting_doc_ref: Optional[str] = None
 
+
+# 8. Multi-Tenant Payment Gateways & Direct UPI (Phase 4)
+class PaymentGatewayConfigSave(BaseModel):
+    provider: str  # 'DIRECT_UPI_QR', 'RAZORPAY', 'CASHFREE', 'STRIPE', 'PHONEPE'
+    is_active: bool = False
+    merchant_name: Optional[str] = None
+    upi_vpa: Optional[str] = None
+    upi_payee_name: Optional[str] = None
+    key_id: Optional[str] = None
+    key_secret: Optional[str] = None
+    webhook_secret: Optional[str] = None
+
+
+class CreateOnlinePaymentOrderRequest(BaseModel):
+    student_id: str
+    amount: Decimal = Field(..., gt=0)
+    gateway_provider: str = "DIRECT_UPI_QR"
+
+
+class SubmitDirectUpiUtrRequest(BaseModel):
+    order_id: str
+    utr_number: str = Field(..., min_length=6, example="425612345678")
+
+
+class CashierVerifyOrderRequest(BaseModel):
+    action: str = Field(..., example="APPROVE")  # 'APPROVE', 'REJECT'
+    rejection_reason: Optional[str] = None
+
+

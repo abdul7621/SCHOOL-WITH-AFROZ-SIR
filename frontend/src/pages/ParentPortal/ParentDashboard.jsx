@@ -15,6 +15,17 @@ import {
   BookOpen,
   Printer,
   Sparkles,
+  Upload,
+  Star,
+  Camera,
+  Check,
+  Smartphone,
+  QrCode,
+  Copy,
+  ExternalLink,
+  ShieldCheck,
+  ArrowRight,
+  RefreshCcw,
 } from 'lucide-react';
 import api from '../../api/client';
 
@@ -59,11 +70,98 @@ export const ParentDashboard = () => {
   // Homework State
   const [homeworkList, setHomeworkList] = useState([]);
   const [loadingHomework, setLoadingHomework] = useState(false);
+  const [selectedHwToSubmit, setSelectedHwToSubmit] = useState(null);
+  const [submittingHw, setSubmittingHw] = useState(false);
+  const [hwSubmissionForm, setHwSubmissionForm] = useState({
+    submission_text: '',
+    attachment_url: '',
+  });
 
   // Timetable & Daily Routine State
   const [timetableData, setTimetableData] = useState(null);
   const [loadingTimetable, setLoadingTimetable] = useState(false);
   const [showWeeklyModal, setShowWeeklyModal] = useState(false);
+
+  // Online Fee Payment State
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [activeGateways, setActiveGateways] = useState([]);
+  const [loadingGateways, setLoadingGateways] = useState(false);
+  const [payAmount, setPayAmount] = useState('');
+  const [selectedGateway, setSelectedGateway] = useState('DIRECT_UPI_QR');
+  const [paymentStep, setPaymentStep] = useState('AMOUNT'); // 'AMOUNT', 'QR_PAY', 'SUCCESS'
+  const [currentOrder, setCurrentOrder] = useState(null);
+  const [creatingOrder, setCreatingOrder] = useState(false);
+  const [utrNumber, setUtrNumber] = useState('');
+  const [submittingUtr, setSubmittingUtr] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
+
+  const handleOpenPaymentModal = async () => {
+    setShowPaymentModal(true);
+    setPaymentStep('AMOUNT');
+    setCurrentOrder(null);
+    setUtrNumber('');
+    setPayAmount(overview?.fees?.outstanding_balance > 0 ? overview.fees.outstanding_balance : '');
+    setLoadingGateways(true);
+    try {
+      const res = await api.get('/fees/gateways/active');
+      const list = res.data || [];
+      setActiveGateways(list);
+      if (list.length > 0) {
+        setSelectedGateway(list[0].provider);
+      }
+    } catch (err) {
+      console.error('Error fetching active gateways:', err);
+    } finally {
+      setLoadingGateways(false);
+    }
+  };
+
+  const handleCreateOrder = async (e) => {
+    e.preventDefault();
+    if (!payAmount || parseFloat(payAmount) <= 0 || !selectedChild) return;
+    setCreatingOrder(true);
+    try {
+      const res = await api.post('/fees/online/create-order', {
+        student_id: selectedChild.student_id,
+        amount: parseFloat(payAmount),
+        gateway_provider: selectedGateway,
+      });
+      setCurrentOrder(res.data);
+      setPaymentStep('QR_PAY');
+    } catch (err) {
+      alert('Failed to generate payment order: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setCreatingOrder(false);
+    }
+  };
+
+  const handleSubmitUtr = async (e) => {
+    e.preventDefault();
+    if (!utrNumber || utrNumber.trim().length < 6 || !currentOrder) {
+      alert('Please enter a valid Bank Transaction Reference / UTR number.');
+      return;
+    }
+    setSubmittingUtr(true);
+    try {
+      await api.post('/fees/online/submit-utr', {
+        order_id: currentOrder.order_id,
+        utr_number: utrNumber.trim().toUpperCase(),
+      });
+      setCurrentOrder(prev => ({ ...prev, status: 'VERIFICATION_PENDING', utr_number: utrNumber.trim().toUpperCase() }));
+      setPaymentStep('SUCCESS');
+    } catch (err) {
+      alert('Failed to submit UTR: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setSubmittingUtr(false);
+    }
+  };
+
+  const handleCopyVpa = (vpa) => {
+    if (!vpa) return;
+    navigator.clipboard.writeText(vpa);
+    setCopySuccess(true);
+    setTimeout(() => setCopySuccess(false), 2000);
+  };
 
   // 1. Fetch Parent's linked children
   useEffect(() => {
@@ -123,7 +221,7 @@ export const ParentDashboard = () => {
   };
 
   // 4. Fetch Homework for Selected Child's class & section
-  const fetchHomework = async (cId, sId) => {
+  const fetchHomework = async (cId, sId, childId) => {
     if (!cId || !sId) {
       setHomeworkList([]);
       return;
@@ -131,7 +229,7 @@ export const ParentDashboard = () => {
     setLoadingHomework(true);
     try {
       const res = await api.get('/academics/homework', {
-        params: { class_id: cId, section_id: sId },
+        params: { class_id: cId, section_id: sId, student_id: childId || selectedChildId },
       });
       if (res.data) {
         setHomeworkList(res.data);
@@ -140,6 +238,52 @@ export const ParentDashboard = () => {
       console.error('Error fetching child homework:', err);
     } finally {
       setLoadingHomework(false);
+    }
+  };
+
+  const handleHomeworkPhotoUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1200;
+        const scaleSize = MAX_WIDTH / img.width;
+        canvas.width = img.width > MAX_WIDTH ? MAX_WIDTH : img.width;
+        canvas.height = img.width > MAX_WIDTH ? img.height * scaleSize : img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+        setHwSubmissionForm((prev) => ({ ...prev, attachment_url: compressedBase64 }));
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubmitHomework = async (e) => {
+    e.preventDefault();
+    if (!selectedHwToSubmit || !selectedChildId) return;
+    setSubmittingHw(true);
+    try {
+      await api.post(`/academics/homework/${selectedHwToSubmit.id}/submit`, {
+        student_id: selectedChildId,
+        submission_text: hwSubmissionForm.submission_text,
+        attachment_url: hwSubmissionForm.attachment_url || undefined,
+      });
+      alert('Homework submitted successfully! Class teacher will review and grade.');
+      setSelectedHwToSubmit(null);
+      setHwSubmissionForm({ submission_text: '', attachment_url: '' });
+      if (selectedChild?.class_id && selectedChild?.section_id) {
+        fetchHomework(selectedChild.class_id, selectedChild.section_id, selectedChildId);
+      }
+    } catch (err) {
+      alert('Failed to submit homework: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setSubmittingHw(false);
     }
   };
 
@@ -165,7 +309,7 @@ export const ParentDashboard = () => {
   useEffect(() => {
     fetchLeaves();
     if (selectedChild?.class_id && selectedChild?.section_id) {
-      fetchHomework(selectedChild.class_id, selectedChild.section_id);
+      fetchHomework(selectedChild.class_id, selectedChild.section_id, selectedChildId);
     } else {
       setHomeworkList([]);
     }
@@ -276,6 +420,16 @@ export const ParentDashboard = () => {
           </div>
           <div className="text-[11px] text-emerald-600 font-semibold">
             {overview?.fees?.outstanding_balance === 0 ? 'All Clear - No Pending Dues' : 'Due for Current Session'}
+          </div>
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={handleOpenPaymentModal}
+              className="w-full py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-600/20 transition-all cursor-pointer"
+            >
+              <Smartphone size={14} />
+              <span>Pay Online via UPI</span>
+            </button>
           </div>
         </div>
 
@@ -453,25 +607,120 @@ export const ParentDashboard = () => {
           </div>
         ) : (
           <div className="divide-y divide-slate-100 text-xs">
-            {homeworkList.map((hw) => (
-              <div key={hw.id} className="py-3.5 first:pt-0 last:pb-0 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold text-[10px]">
-                      {hw.subject_name}
-                    </span>
-                    <h4 className="font-bold text-slate-900">{hw.title}</h4>
+            {homeworkList.map((hw) => {
+              const sub = hw.my_submission;
+              return (
+                <div key={hw.id} className="py-4 first:pt-0 last:pb-0 space-y-3">
+                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold text-[10px]">
+                          {hw.subject_name}
+                        </span>
+                        <h4 className="font-bold text-slate-900">{hw.title}</h4>
+                      </div>
+                      <p className="text-slate-600 whitespace-pre-wrap">{hw.description}</p>
+                    </div>
+
+                    <div className="flex items-center gap-3 text-[11px] self-end md:self-auto shrink-0">
+                      <span className="text-slate-400">
+                        Assigned by: <strong className="text-slate-600">{hw.assigned_by}</strong>
+                      </span>
+                      <div className="bg-amber-50 text-amber-800 px-2.5 py-1 rounded-lg font-bold border border-amber-200">
+                        Due: {hw.due_date ? new Date(hw.due_date).toLocaleDateString() : 'N/A'}
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-slate-600 whitespace-pre-wrap">{hw.description}</p>
-                </div>
-                <div className="flex items-center gap-3 text-[11px] self-end md:self-auto shrink-0">
-                  <span className="text-slate-400">Assigned by: <strong className="text-slate-600">{hw.assigned_by}</strong></span>
-                  <div className="bg-amber-50 text-amber-800 px-2.5 py-1 rounded-lg font-bold border border-amber-200">
-                    Due: {hw.due_date ? new Date(hw.due_date).toLocaleDateString() : 'N/A'}
+
+                  {/* Submission Telemetry Bar */}
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    {sub ? (
+                      <div className="space-y-1.5 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                              sub.status === 'REVIEWED'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                : 'bg-blue-100 text-blue-800 border border-blue-200'
+                            }`}
+                          >
+                            <Check size={11} />
+                            {sub.status === 'REVIEWED' ? 'Reviewed & Graded' : 'Submitted for Teacher Review'}
+                          </span>
+                          <span className="text-[11px] text-slate-500 font-mono">
+                            Submitted on: {new Date(sub.submitted_at).toLocaleDateString()}
+                          </span>
+                        </div>
+
+                        {sub.status === 'REVIEWED' && (
+                          <div className="flex items-center gap-3 pt-1">
+                            <div className="flex items-center gap-1 text-amber-500">
+                              {[...Array(sub.rating_stars || 5)].map((_, i) => (
+                                <Star key={i} size={13} className="fill-amber-400 text-amber-400" />
+                              ))}
+                              <span className="text-xs font-bold text-slate-700 ml-1">
+                                {sub.rating_stars} / 5 Stars
+                              </span>
+                            </div>
+                            {sub.teacher_feedback && (
+                              <div className="text-xs text-slate-600 italic bg-white px-2 py-0.5 rounded border border-slate-200">
+                                💬 "{sub.teacher_feedback}"
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {sub.submission_text && (
+                          <div className="text-[11px] text-slate-600">
+                            <strong>My Notes:</strong> {sub.submission_text}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                          Pending Submission
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          Complete exercises in notebook and submit photo for teacher verification.
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                      {sub?.attachment_url && (
+                        <a
+                          href={sub.attachment_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2.5 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors"
+                        >
+                          View Uploaded Photo
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedHwToSubmit(hw);
+                          setHwSubmissionForm({
+                            submission_text: sub?.submission_text || '',
+                            attachment_url: sub?.attachment_url || '',
+                          });
+                        }}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
+                          sub
+                            ? 'bg-slate-200 hover:bg-slate-300 text-slate-800'
+                            : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-500/20'
+                        }`}
+                      >
+                        <Upload size={13} />
+                        <span>{sub ? 'Re-Submit' : 'Submit Homework'}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -706,6 +955,464 @@ export const ParentDashboard = () => {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Homework Submission Modal */}
+      {selectedHwToSubmit && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
+                  {selectedHwToSubmit.subject_name}
+                </span>
+                <h3 className="text-base font-bold text-slate-900 mt-1">Submit Homework Assignment</h3>
+                <p className="text-xs text-slate-500 font-medium truncate max-w-sm">{selectedHwToSubmit.title}</p>
+              </div>
+              <button
+                onClick={() => setSelectedHwToSubmit(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitHomework} className="p-6 space-y-4 overflow-y-auto flex-1">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Student Notes / Working Summary
+                </label>
+                <textarea
+                  rows={3}
+                  value={hwSubmissionForm.submission_text}
+                  onChange={(e) => setHwSubmissionForm({ ...hwSubmissionForm, submission_text: e.target.value })}
+                  placeholder="e.g. Completed all 10 questions of Exercise 4.2 in rough copy. Attached photo below."
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Upload Photo of Completed Notebook Page
+                </label>
+                <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center hover:border-blue-400 transition-colors bg-slate-50/50">
+                  {hwSubmissionForm.attachment_url ? (
+                    <div className="space-y-2">
+                      <img
+                        src={hwSubmissionForm.attachment_url}
+                        alt="Notebook page"
+                        className="max-h-48 mx-auto rounded-lg shadow-sm border border-slate-200 object-contain"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setHwSubmissionForm({ ...hwSubmissionForm, attachment_url: '' })}
+                        className="text-xs text-rose-600 font-bold hover:underline"
+                      >
+                        Remove Photo & Re-upload
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="cursor-pointer block space-y-2">
+                      <div className="w-10 h-10 mx-auto rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
+                        <Camera size={20} />
+                      </div>
+                      <div className="text-xs font-bold text-slate-700">Take Photo or Choose File</div>
+                      <div className="text-[11px] text-slate-400">JPEG, PNG up to 10MB (auto-compressed)</div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={handleHomeworkPhotoUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setSelectedHwToSubmit(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingHw}
+                  className="flex items-center gap-1.5 px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all"
+                >
+                  {submittingHw ? (
+                    <>
+                      <Loader2 size={13} className="animate-spin" />
+                      <span>Submitting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={13} />
+                      <span>Confirm & Submit</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Online Fee Payment via Direct UPI / Gateway */}
+      {showPaymentModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-100 flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-emerald-600 to-teal-700 p-5 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-white/10 rounded-xl backdrop-blur-sm">
+                  <Smartphone size={22} className="text-emerald-100" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm">Online Fee Payment</h3>
+                  <p className="text-xs text-emerald-100">
+                    {selectedChild?.student_name} (Class {selectedChild?.class_name})
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPaymentModal(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors text-white"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-5 text-xs">
+              {loadingGateways ? (
+                <div className="py-12 text-center text-slate-400 space-y-2">
+                  <Loader2 size={24} className="animate-spin mx-auto text-emerald-600" />
+                  <p>Loading school payment gateway configuration...</p>
+                </div>
+              ) : activeGateways.length === 0 ? (
+                <div className="py-8 text-center space-y-3 bg-amber-50 rounded-xl p-5 border border-amber-200">
+                  <AlertCircle size={28} className="mx-auto text-amber-600" />
+                  <div className="font-bold text-slate-800 text-sm">Online Payment Unavailable</div>
+                  <p className="text-slate-600 text-xs">
+                    This school has not enabled online payment gateways yet. Please make payment in cash or cheque at the school accounts counter.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowPaymentModal(false)}
+                    className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg font-bold"
+                  >
+                    Close
+                  </button>
+                </div>
+              ) : paymentStep === 'AMOUNT' ? (
+                /* Step 1: Select Amount & Mode */
+                <form onSubmit={handleCreateOrder} className="space-y-4">
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex items-center justify-between">
+                    <div>
+                      <div className="text-[11px] font-semibold text-slate-500 uppercase">Outstanding Balance</div>
+                      <div className="text-xl font-black text-slate-900">
+                        ₹{overview?.fees?.outstanding_balance !== undefined ? overview.fees.outstanding_balance.toLocaleString() : '0.00'}
+                      </div>
+                    </div>
+                    <div className="text-right text-[11px] text-slate-500">
+                      <div>Adm #: <span className="font-bold font-mono text-slate-700">{selectedChild?.admission_no}</span></div>
+                      <div>Roll #: <span className="font-bold font-mono text-slate-700">{selectedChild?.roll_no || '-'}</span></div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">
+                      Enter Amount to Pay (₹) <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="1"
+                      min="1"
+                      required
+                      placeholder="Enter amount"
+                      value={payAmount}
+                      onChange={(e) => setPayAmount(e.target.value)}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-base text-slate-900 focus:outline-none focus:border-emerald-500 focus:bg-white transition-all"
+                    />
+                    {overview?.fees?.outstanding_balance > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        <button
+                          type="button"
+                          onClick={() => setPayAmount(overview.fees.outstanding_balance.toString())}
+                          className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-[11px] font-bold border border-emerald-200"
+                        >
+                          Pay Full Due (₹{overview.fees.outstanding_balance})
+                        </button>
+                        {overview.fees.outstanding_balance > 1000 && (
+                          <button
+                            type="button"
+                            onClick={() => setPayAmount('1000')}
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold"
+                          >
+                            ₹1,000
+                          </button>
+                        )}
+                        {overview.fees.outstanding_balance > 2500 && (
+                          <button
+                            type="button"
+                            onClick={() => setPayAmount('2500')}
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold"
+                          >
+                            ₹2,500
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">
+                      Select Payment Method
+                    </label>
+                    <div className="space-y-2">
+                      {activeGateways.map((gw) => (
+                        <label
+                          key={gw.provider}
+                          className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                            selectedGateway === gw.provider
+                              ? 'bg-emerald-50/60 border-emerald-500 shadow-sm'
+                              : 'bg-white border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="gateway"
+                            value={gw.provider}
+                            checked={selectedGateway === gw.provider}
+                            onChange={(e) => setSelectedGateway(e.target.value)}
+                            className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
+                          />
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-slate-800">
+                                {gw.provider === 'DIRECT_UPI_QR'
+                                  ? 'Direct School UPI (Google Pay, PhonePe, Paytm, BHIM)'
+                                  : 'Cards / NetBanking (Razorpay)'}
+                              </span>
+                              {gw.provider === 'DIRECT_UPI_QR' && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-100 text-emerald-800">
+                                  0% Surcharge
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              {gw.provider === 'DIRECT_UPI_QR'
+                                ? `Pay directly to ${gw.upi_payee_name || 'School Bank Account'}`
+                                : 'Debit/Credit card, Netbanking, or Wallet payment'}
+                            </p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      type="submit"
+                      disabled={creatingOrder || !payAmount || parseFloat(payAmount) <= 0}
+                      className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition-all cursor-pointer"
+                    >
+                      {creatingOrder ? (
+                        <>
+                          <Loader2 size={15} className="animate-spin" />
+                          <span>Generating Payment Order...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Proceed to Pay ₹{parseFloat(payAmount || 0).toLocaleString()}</span>
+                          <ArrowRight size={14} />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              ) : paymentStep === 'QR_PAY' ? (
+                /* Step 2: UPI QR Code & UTR Submission */
+                <div className="space-y-4">
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] uppercase font-bold text-slate-400">Order Reference</div>
+                      <div className="font-mono font-bold text-blue-700">{currentOrder?.order_number}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[10px] uppercase font-bold text-slate-400">Amount Due</div>
+                      <div className="font-black text-emerald-700 text-base">₹{currentOrder?.amount?.toLocaleString()}</div>
+                    </div>
+                  </div>
+
+                  {/* QR Code Card */}
+                  <div className="bg-gradient-to-b from-slate-50 to-white p-5 rounded-2xl border border-slate-200 text-center space-y-3">
+                    <div className="inline-block p-2 bg-white rounded-xl shadow-sm border border-slate-200">
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(currentOrder?.upi_payment_link || '')}`}
+                        alt="NPCI UPI QR Code"
+                        className="w-44 h-44 mx-auto rounded-lg"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="font-bold text-slate-800 text-sm flex items-center justify-center gap-1.5">
+                        <span>Scan & Pay via any UPI App</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        Payee: <strong>{currentOrder?.upi_payee_name}</strong>
+                      </p>
+                    </div>
+
+                    {/* VPA copy row */}
+                    {currentOrder?.upi_vpa && (
+                      <div className="flex items-center justify-center gap-2 max-w-xs mx-auto bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                        <span className="font-mono font-bold text-slate-700 text-xs truncate">
+                          {currentOrder.upi_vpa}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyVpa(currentOrder.upi_vpa)}
+                          className="text-blue-600 hover:text-blue-800 flex items-center gap-1 font-bold text-[11px] shrink-0"
+                          title="Copy UPI ID"
+                        >
+                          <Copy size={12} />
+                          <span>{copySuccess ? 'Copied!' : 'Copy'}</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Mobile App Deep Link Button */}
+                    {currentOrder?.upi_payment_link && (
+                      <div className="pt-1">
+                        <a
+                          href={currentOrder.upi_payment_link}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow transition-all"
+                        >
+                          <ExternalLink size={13} />
+                          <span>Open in PhonePe / GPay / Paytm</span>
+                        </a>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Step-by-Step Instructions */}
+                  <div className="bg-blue-50/70 p-3.5 rounded-xl border border-blue-200/60 text-[11px] text-blue-900 space-y-1.5">
+                    <div className="font-bold flex items-center gap-1.5">
+                      <ShieldCheck size={14} className="text-blue-600" />
+                      <span>Next Steps after Payment:</span>
+                    </div>
+                    <ol className="list-decimal list-inside space-y-0.5 text-blue-800 font-medium pl-1">
+                      <li>Complete transfer in your UPI app.</li>
+                      <li>Find the <strong>12-digit UTR / UPI Ref ID</strong> on the success receipt.</li>
+                      <li>Enter the 12-digit UTR below and click <strong>Submit Payment Reference</strong>.</li>
+                    </ol>
+                  </div>
+
+                  {/* UTR Input Form */}
+                  <form onSubmit={handleSubmitUtr} className="space-y-3 pt-1">
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1">
+                        12-Digit Bank Transaction Reference / UTR <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. 423456789012 or T240927..."
+                        value={utrNumber}
+                        onChange={(e) => setUtrNumber(e.target.value.trim())}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-slate-800 uppercase tracking-wider focus:outline-none focus:border-blue-500 focus:bg-white"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setPaymentStep('AMOUNT')}
+                        className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors"
+                      >
+                        Back
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={submittingUtr || utrNumber.length < 6}
+                        className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl font-bold flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+                      >
+                        {submittingUtr ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            <span>Submitting Reference...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 size={14} />
+                            <span>Submit Payment Reference</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : (
+                /* Step 3: Success Confirmation */
+                <div className="text-center py-6 space-y-4">
+                  <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
+                    <CheckCircle2 size={32} />
+                  </div>
+                  <div>
+                    <h4 className="text-base font-bold text-slate-900">Payment Reference Submitted!</h4>
+                    <p className="text-slate-500 text-xs mt-1">
+                      Your payment verification request has been queued for the school accounts desk.
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-left space-y-2 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Order Number:</span>
+                      <span className="font-mono font-bold text-blue-700">{currentOrder?.order_number}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Amount Paid:</span>
+                      <span className="font-bold text-emerald-700">₹{currentOrder?.amount?.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Submitted UTR:</span>
+                      <span className="font-mono font-bold text-slate-800">{currentOrder?.utr_number}</span>
+                    </div>
+                    <div className="flex justify-between items-center pt-1 border-t border-slate-200">
+                      <span className="text-slate-500">Current Status:</span>
+                      <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold text-[10px] uppercase">
+                        Verification Pending
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-amber-50 rounded-xl border border-amber-200/70 text-[11px] text-amber-900 text-left">
+                    💡 <strong>What happens next?</strong> The school cashier will verify this UTR against the school bank account statement. Once approved, your pending balance will clear and your official fee receipt will be immediately available.
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPaymentModal(false);
+                      if (selectedChildId) {
+                        api.get(`/parent/children/${selectedChildId}/overview`).then(res => res.data && setOverview(res.data));
+                      }
+                    }}
+                    className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold transition-all"
+                  >
+                    Done & Return to Dashboard
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

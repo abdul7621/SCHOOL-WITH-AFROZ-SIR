@@ -17,6 +17,10 @@ import {
   UserCheck,
   Users,
   Copy,
+  Star,
+  Eye,
+  CheckSquare,
+  Image,
 } from 'lucide-react';
 import api from '../../api/client';
 
@@ -44,6 +48,16 @@ export const ClassesAndSessions = () => {
   const [classMappedSubjects, setClassMappedSubjects] = useState([]);
   const [editingHomework, setEditingHomework] = useState(null);
   const [updatingHomework, setUpdatingHomework] = useState(false);
+
+  // Homework Submissions Review State
+  const [showSubmissionsModal, setShowSubmissionsModal] = useState(false);
+  const [selectedHwForReview, setSelectedHwForReview] = useState(null);
+  const [submissionsRoster, setSubmissionsRoster] = useState([]);
+  const [submissionsSummary, setSubmissionsSummary] = useState(null);
+  const [loadingSubmissions, setLoadingSubmissions] = useState(false);
+  const [reviewFormState, setReviewFormState] = useState({});
+  const [savingReviewStudentId, setSavingReviewStudentId] = useState(null);
+  const [previewAttachmentUrl, setPreviewAttachmentUrl] = useState(null);
 
   // Class Modal & Edit State
   const [showClassModal, setShowClassModal] = useState(false);
@@ -243,6 +257,58 @@ export const ClassesAndSessions = () => {
       alert('Failed to assign homework: ' + err.message);
     } finally {
       setSubmittingHomework(false);
+    }
+  };
+
+  const handleOpenSubmissionsModal = async (hw) => {
+    setSelectedHwForReview(hw);
+    setShowSubmissionsModal(true);
+    setLoadingSubmissions(true);
+    try {
+      const res = await api.get(`/academics/homework/${hw.id}/submissions`);
+      const data = res.data || res;
+      setSubmissionsSummary(data);
+      const rosterList = data.roster || [];
+      setSubmissionsRoster(rosterList);
+      const initialForm = {};
+      rosterList.forEach((st) => {
+        if (st.submission) {
+          initialForm[st.student_id] = {
+            submission_id: st.submission.id,
+            rating_stars: st.submission.rating_stars || 5,
+            teacher_feedback: st.submission.teacher_feedback || '',
+          };
+        }
+      });
+      setReviewFormState(initialForm);
+    } catch (err) {
+      console.error('Error fetching submissions:', err);
+      alert('Failed to load student submissions: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setLoadingSubmissions(false);
+    }
+  };
+
+  const handleSaveReview = async (studentId) => {
+    const entry = reviewFormState[studentId];
+    if (!entry || !entry.submission_id) return;
+    setSavingReviewStudentId(studentId);
+    try {
+      await api.patch(`/academics/homework/submissions/${entry.submission_id}/review`, {
+        rating_stars: Number(entry.rating_stars) || 5,
+        teacher_feedback: (entry.teacher_feedback || '').trim(),
+      });
+      // Refresh submissions
+      const res = await api.get(`/academics/homework/${selectedHwForReview.id}/submissions`);
+      const data = res.data || res;
+      setSubmissionsSummary(data);
+      setSubmissionsRoster(data.roster || []);
+      fetchHomework(homeworkClassId, homeworkSectionId);
+      alert('Review & grade saved successfully!');
+    } catch (err) {
+      alert('Error saving review: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setSavingReviewStudentId(null);
     }
   };
 
@@ -1210,6 +1276,15 @@ export const ClassesAndSessions = () => {
                       <div className="bg-amber-50 text-amber-800 px-2.5 py-1 rounded-lg font-bold border border-amber-200">
                         Due: {hw.due_date ? new Date(hw.due_date).toLocaleDateString() : 'N/A'}
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSubmissionsModal(hw)}
+                        className="flex items-center gap-1.5 px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg font-bold border border-indigo-200 transition-colors shadow-sm"
+                        title="Review Student Submissions & Grade Notebooks"
+                      >
+                        <CheckSquare size={13} />
+                        <span>{hw.submission_count || 0} Submissions</span>
+                      </button>
                       <div className="flex items-center gap-1 border-l border-slate-200 pl-2">
                         <button
                           onClick={() => setEditingHomework({ ...hw })}
@@ -2081,6 +2156,275 @@ export const ClassesAndSessions = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 10: HOMEWORK SUBMISSIONS REVIEW COCKPIT */}
+      {showSubmissionsModal && selectedHwForReview && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 font-bold text-[10px]">
+                    {selectedHwForReview.subject_name}
+                  </span>
+                  <h3 className="font-bold text-slate-900 text-base">
+                    Review Homework: {selectedHwForReview.title}
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Submission Due: {selectedHwForReview.due_date ? new Date(selectedHwForReview.due_date).toLocaleDateString() : 'N/A'} • Inspect notebook uploads & assign grades
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowSubmissionsModal(false);
+                  setSelectedHwForReview(null);
+                }}
+                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-xl transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Metrics Ribbon */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-100/70 border-b border-slate-200 text-xs">
+              <div className="bg-white p-3 rounded-xl border border-slate-200">
+                <div className="text-slate-400 font-bold text-[10px] uppercase">Enrolled Students</div>
+                <div className="text-lg font-black text-slate-900">{submissionsSummary?.total_students || 0}</div>
+              </div>
+              <div className="bg-white p-3 rounded-xl border border-emerald-200">
+                <div className="text-emerald-700 font-bold text-[10px] uppercase">Turned In</div>
+                <div className="text-lg font-black text-emerald-600">{submissionsSummary?.submitted_count || 0}</div>
+              </div>
+              <div className="bg-white p-3 rounded-xl border border-blue-200">
+                <div className="text-blue-700 font-bold text-[10px] uppercase">Graded / Reviewed</div>
+                <div className="text-lg font-black text-blue-600">{submissionsSummary?.reviewed_count || 0}</div>
+              </div>
+              <div className="bg-white p-3 rounded-xl border border-amber-200">
+                <div className="text-amber-700 font-bold text-[10px] uppercase">Pending Turn In</div>
+                <div className="text-lg font-black text-amber-600">
+                  {Math.max(0, (submissionsSummary?.total_students || 0) - (submissionsSummary?.submitted_count || 0))}
+                </div>
+              </div>
+            </div>
+
+            {/* Roster & Submissions List */}
+            <div className="overflow-y-auto p-4 space-y-3 flex-1">
+              {loadingSubmissions ? (
+                <div className="py-12 text-center text-slate-400 text-xs">Loading student submissions...</div>
+              ) : submissionsRoster.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 text-xs">
+                  No active students enrolled in this section.
+                </div>
+              ) : (
+                submissionsRoster.map((st) => {
+                  const sub = st.submission;
+                  const form = reviewFormState[st.student_id] || { rating_stars: 5, teacher_feedback: '' };
+                  const isSaving = savingReviewStudentId === st.student_id;
+
+                  return (
+                    <div
+                      key={st.student_id}
+                      className={`p-4 rounded-xl border transition-all ${
+                        st.has_submitted
+                          ? sub.status === 'REVIEWED'
+                            ? 'bg-emerald-50/20 border-emerald-200'
+                            : 'bg-white border-blue-200 shadow-sm'
+                          : 'bg-slate-50/60 border-slate-200 opacity-75'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-3">
+                          <span className="w-7 h-7 rounded-lg bg-slate-200 text-slate-700 font-mono font-bold text-xs flex items-center justify-center shrink-0">
+                            {st.roll_no || '-'}
+                          </span>
+                          <div>
+                            <div className="font-bold text-slate-900 text-xs">{st.full_name}</div>
+                            <div className="text-[10px] text-slate-400 font-mono">Adm: {st.admission_no}</div>
+                          </div>
+                        </div>
+
+                        <div>
+                          {st.has_submitted ? (
+                            sub.status === 'REVIEWED' ? (
+                              <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold inline-flex items-center gap-1">
+                                <CheckCircle2 size={12} /> Graded ({sub.rating_stars}★)
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold inline-flex items-center gap-1">
+                                <Clock size={12} /> Awaiting Grade
+                              </span>
+                            )
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-full bg-slate-200 text-slate-600 text-[10px] font-semibold">
+                              Pending Submission
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Submission Details & Grading */}
+                      {st.has_submitted && (
+                        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                          {/* Left: Student Work */}
+                          <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                            <div className="text-[10px] font-bold text-slate-400 uppercase">
+                              Student's Submission ({new Date(sub.submitted_at).toLocaleString()})
+                            </div>
+                            {sub.submission_text ? (
+                              <p className="text-slate-700 whitespace-pre-wrap font-sans text-xs bg-white p-2.5 rounded-lg border border-slate-200">
+                                {sub.submission_text}
+                              </p>
+                            ) : (
+                              <p className="text-slate-400 italic text-[11px]">No written answer notes provided.</p>
+                            )}
+
+                            {sub.attachment_url && (
+                              <div className="pt-1 flex items-center gap-3">
+                                <div
+                                  onClick={() => setPreviewAttachmentUrl(sub.attachment_url)}
+                                  className="w-16 h-16 rounded-lg border border-slate-300 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity bg-slate-900 shrink-0"
+                                >
+                                  <img
+                                    src={sub.attachment_url}
+                                    alt="Notebook submission"
+                                    className="w-full h-full object-cover"
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewAttachmentUrl(sub.attachment_url)}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold border border-blue-200 transition-colors"
+                                >
+                                  <Eye size={13} /> Inspect Notebook Photo
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Right: Teacher Review & Grading */}
+                          <div className="space-y-2.5 bg-white p-3 rounded-xl border border-slate-200">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-slate-500 uppercase">Teacher Evaluation</span>
+                              {sub.reviewed_by && (
+                                <span className="text-[10px] text-slate-400">
+                                  by {sub.reviewed_by}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* 5-Star Rating Selector */}
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[11px] font-semibold text-slate-600 mr-1">Rating:</span>
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <button
+                                  key={star}
+                                  type="button"
+                                  onClick={() =>
+                                    setReviewFormState((prev) => ({
+                                      ...prev,
+                                      [st.student_id]: {
+                                        ...prev[st.student_id],
+                                        rating_stars: star,
+                                      },
+                                    }))
+                                  }
+                                  className="p-1 hover:scale-110 transition-transform"
+                                >
+                                  <Star
+                                    size={18}
+                                    className={
+                                      star <= (form.rating_stars || 5)
+                                        ? 'text-amber-400 fill-amber-400'
+                                        : 'text-slate-300'
+                                    }
+                                  />
+                                </button>
+                              ))}
+                              <span className="text-xs font-bold text-amber-600 ml-1">
+                                {form.rating_stars || 5} / 5
+                              </span>
+                            </div>
+
+                            {/* Feedback Input */}
+                            <div>
+                              <input
+                                type="text"
+                                placeholder="Add encouraging feedback or correction notes..."
+                                value={form.teacher_feedback || ''}
+                                onChange={(e) =>
+                                  setReviewFormState((prev) => ({
+                                    ...prev,
+                                    [st.student_id]: {
+                                      ...prev[st.student_id],
+                                      teacher_feedback: e.target.value,
+                                    },
+                                  }))
+                                }
+                                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                              />
+                            </div>
+
+                            <div className="flex justify-end pt-1">
+                              <button
+                                type="button"
+                                disabled={isSaving}
+                                onClick={() => handleSaveReview(st.student_id)}
+                                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow transition-all disabled:opacity-50"
+                              >
+                                {isSaving ? 'Saving...' : 'Save Feedback & Grade'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSubmissionsModal(false);
+                  setSelectedHwForReview(null);
+                }}
+                className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl shadow"
+              >
+                Close Cockpit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 11: FULLSCREEN IMAGE LIGHTBOX */}
+      {previewAttachmentUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4"
+          onClick={() => setPreviewAttachmentUrl(null)}
+        >
+          <div className="absolute top-4 right-4 flex items-center gap-3 text-white">
+            <button
+              onClick={() => setPreviewAttachmentUrl(null)}
+              className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          <div className="max-w-4xl max-h-[85vh] overflow-hidden rounded-2xl border border-white/20 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <img
+              src={previewAttachmentUrl}
+              alt="Enlarged notebook submission"
+              className="w-full h-full object-contain max-h-[85vh]"
+            />
           </div>
         </div>
       )}

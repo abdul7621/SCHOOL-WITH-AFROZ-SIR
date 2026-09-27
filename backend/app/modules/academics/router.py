@@ -1,7 +1,7 @@
 from typing import List, Optional
-from datetime import time, date
+from datetime import time, date, datetime
 from fastapi import APIRouter, Depends, status, HTTPException
-from sqlalchemy import select, update, func, delete
+from sqlalchemy import select, update, func, delete, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.core.database import get_tenant_db
@@ -16,6 +16,7 @@ from app.modules.academics.models import (
     ClassSubject,
     ClassTeacher,
     ClassHomework,
+    StudentHomeworkSubmission,
     TimetablePeriod,
     TimetableSlot,
 )
@@ -37,6 +38,8 @@ from app.modules.academics.schemas import (
     ClassTeacherAssignRequest,
     HomeworkCreateRequest,
     HomeworkUpdate,
+    HomeworkSubmissionRequest,
+    HomeworkReviewRequest,
     StudentLeaveSubmitRequest,
     StudentLeaveStatusUpdateRequest,
     PeriodCreate,
@@ -932,10 +935,10 @@ async def create_class_homework(
 async def list_class_homework(
     class_id: str,
     section_id: str,
+    student_id: Optional[str] = None,
     db: AsyncSession = Depends(get_tenant_db),
 ):
-    """Lists homework assignments for a class-section."""
-    from app.modules.academics.models import ClassHomework
+    """Lists homework assignments for a class-section with optional student submission telemetry."""
     stmt = (
         select(ClassHomework)
         .options(selectinload(ClassHomework.subject), selectinload(ClassHomework.assigned_by))
@@ -944,6 +947,39 @@ async def list_class_homework(
     )
     res = await db.execute(stmt)
     records = res.scalars().all()
+
+    sub_map = {}
+    if student_id and records:
+        hw_ids = [r.id for r in records]
+        sub_stmt = select(StudentHomeworkSubmission).where(
+            StudentHomeworkSubmission.homework_id.in_(hw_ids),
+            StudentHomeworkSubmission.student_id == student_id,
+        )
+        sub_res = await db.execute(sub_stmt)
+        for s in sub_res.scalars().all():
+            sub_map[s.homework_id] = {
+                "id": s.id,
+                "status": s.status,
+                "submitted_at": str(s.submitted_at),
+                "submission_text": s.submission_text,
+                "attachment_url": s.attachment_url,
+                "rating_stars": s.rating_stars,
+                "teacher_feedback": s.teacher_feedback,
+                "reviewed_at": str(s.reviewed_at) if s.reviewed_at else None,
+            }
+
+    counts_map = {}
+    if records:
+        hw_ids = [r.id for r in records]
+        cnt_stmt = (
+            select(StudentHomeworkSubmission.homework_id, func.count(StudentHomeworkSubmission.id))
+            .where(StudentHomeworkSubmission.homework_id.in_(hw_ids))
+            .group_by(StudentHomeworkSubmission.homework_id)
+        )
+        cnt_res = await db.execute(cnt_stmt)
+        for h_id, count in cnt_res.all():
+            counts_map[h_id] = count
+
     return success_response(
         data=[
             {
@@ -956,9 +992,180 @@ async def list_class_homework(
                 "due_date": str(r.due_date),
                 "attachment_url": r.attachment_url,
                 "assigned_by": r.assigned_by.username if r.assigned_by else "Teacher",
+                "submission_count": counts_map.get(r.id, 0),
+                "my_submission": sub_map.get(r.id, None),
             }
             for r in records
         ]
+    )
+
+
+@router.post("/homework/{homework_id}/submit")
+async def submit_student_homework(
+    homework_id: str,
+    req: HomeworkSubmissionRequest,
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Parent or Student submits completed homework task with optional notes and notebook photo."""
+    from app.modules.students.models import Parent, Student
+    from app.core.exceptions import PermissionDeniedException
+
+    hw = (await db.execute(select(ClassHomework).where(ClassHomework.id == homework_id))).scalar_one_or_none()
+    if not hw:
+        raise ResourceNotFoundException("ClassHomework", homework_id)
+
+    is_parent = current_user.user_type == "PARENT" or "PARENT" in (current_user.roles or [])
+    is_staff = any(r in ["ADMIN", "TEACHER", "PRINCIPAL", "SUPERADMIN"] for r in (current_user.roles or []))
+    if is_parent and not is_staff:
+        p_res = await db.execute(select(Parent.id).where(Parent.user_id == current_user.id))
+        parent_id = p_res.scalar_one_or_none()
+        if not parent_id:
+            raise PermissionDeniedException("No parent profile linked to your user account.")
+        child_res = await db.execute(select(Student.id).where(Student.parent_id == parent_id, Student.id == req.student_id))
+        if not child_res.scalar_one_or_none():
+            raise PermissionDeniedException("You are only authorized to submit homework for your own enrolled children.")
+
+    stmt = select(StudentHomeworkSubmission).where(
+        StudentHomeworkSubmission.homework_id == homework_id,
+        StudentHomeworkSubmission.student_id == req.student_id,
+    )
+    existing = (await db.execute(stmt)).scalar_one_or_none()
+    if existing:
+        existing.submission_text = req.submission_text
+        if req.attachment_url is not None:
+            existing.attachment_url = req.attachment_url
+        existing.status = "SUBMITTED"
+        existing.submitted_at = datetime.utcnow()
+        sub_obj = existing
+    else:
+        sub_obj = StudentHomeworkSubmission(
+            homework_id=homework_id,
+            student_id=req.student_id,
+            submission_text=req.submission_text,
+            attachment_url=req.attachment_url,
+            status="SUBMITTED",
+        )
+        db.add(sub_obj)
+
+    await db.commit()
+    await db.refresh(sub_obj)
+    return success_response(
+        data={"submission_id": sub_obj.id, "status": sub_obj.status},
+        message="Homework submitted successfully for teacher review."
+    )
+
+
+@router.get("/homework/{homework_id}/submissions")
+async def list_homework_submissions(
+    homework_id: str,
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Teacher/Admin Cockpit: Lists class roster with homework submission statuses and attachments."""
+    from app.modules.students.models import Student, StudentEnrollment
+
+    hw = (await db.execute(select(ClassHomework).where(ClassHomework.id == homework_id))).scalar_one_or_none()
+    if not hw:
+        raise ResourceNotFoundException("ClassHomework", homework_id)
+
+    enr_stmt = (
+        select(Student, StudentEnrollment)
+        .join(StudentEnrollment, Student.id == StudentEnrollment.student_id)
+        .where(
+            StudentEnrollment.class_id == hw.class_id,
+            StudentEnrollment.section_id == hw.section_id,
+            StudentEnrollment.is_active == True,
+        )
+        .order_by(StudentEnrollment.roll_no.asc(), Student.first_name.asc())
+    )
+    enrolled_students = (await db.execute(enr_stmt)).all()
+
+    sub_stmt = (
+        select(StudentHomeworkSubmission, User, StaffProfile)
+        .outerjoin(User, StudentHomeworkSubmission.reviewed_by_teacher_id == User.id)
+        .outerjoin(StaffProfile, StaffProfile.user_id == User.id)
+        .where(StudentHomeworkSubmission.homework_id == homework_id)
+    )
+    sub_rows = (await db.execute(sub_stmt)).all()
+    sub_map = {}
+    for sub, usr, stf in sub_rows:
+        rev_name = f"{stf.first_name} {stf.last_name or ''}".strip() if stf else (usr.username if usr else None)
+        sub_map[sub.student_id] = {
+            "id": sub.id,
+            "status": sub.status,
+            "submitted_at": str(sub.submitted_at),
+            "submission_text": sub.submission_text,
+            "attachment_url": sub.attachment_url,
+            "rating_stars": sub.rating_stars,
+            "teacher_feedback": sub.teacher_feedback,
+            "reviewed_by": rev_name,
+            "reviewed_at": str(sub.reviewed_at) if sub.reviewed_at else None,
+        }
+
+    roster = []
+    submitted_count = 0
+    reviewed_count = 0
+    for st, enr in enrolled_students:
+        sub_data = sub_map.get(st.id)
+        if sub_data:
+            submitted_count += 1
+            if sub_data["status"] == "REVIEWED":
+                reviewed_count += 1
+
+        roster.append({
+            "student_id": st.id,
+            "admission_no": st.admission_no,
+            "full_name": f"{st.first_name} {st.last_name or ''}".strip(),
+            "roll_no": enr.roll_no,
+            "submission": sub_data,
+            "has_submitted": sub_data is not None,
+        })
+
+    return success_response(
+        data={
+            "homework_id": hw.id,
+            "title": hw.title,
+            "due_date": str(hw.due_date),
+            "total_students": len(enrolled_students),
+            "submitted_count": submitted_count,
+            "reviewed_count": reviewed_count,
+            "pending_count": max(0, len(enrolled_students) - submitted_count),
+            "students": roster,
+        }
+    )
+
+
+@router.patch("/homework/submissions/{submission_id}/review")
+async def review_student_homework_submission(
+    submission_id: str,
+    req: HomeworkReviewRequest,
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Teacher/Admin reviews and rates a student's homework submission."""
+    from app.core.exceptions import PermissionDeniedException
+
+    is_staff = any(r in ["ADMIN", "TEACHER", "PRINCIPAL", "SUPERADMIN"] for r in (current_user.roles or []))
+    if not is_staff:
+        raise PermissionDeniedException("Only teaching faculty and administrators can review homework submissions.")
+
+    stmt = select(StudentHomeworkSubmission).where(StudentHomeworkSubmission.id == submission_id)
+    sub = (await db.execute(stmt)).scalar_one_or_none()
+    if not sub:
+        raise ResourceNotFoundException("StudentHomeworkSubmission", submission_id)
+
+    sub.rating_stars = max(1, min(5, req.rating_stars))
+    sub.teacher_feedback = req.teacher_feedback.strip() if req.teacher_feedback else None
+    sub.status = req.status.upper() if req.status else "REVIEWED"
+    sub.reviewed_by_teacher_id = current_user.id
+    sub.reviewed_at = datetime.utcnow()
+
+    await db.commit()
+    await db.refresh(sub)
+    return success_response(
+        data={"submission_id": sub.id, "status": sub.status, "rating_stars": sub.rating_stars},
+        message="Homework submission reviewed and graded successfully."
     )
 
 
@@ -1689,6 +1896,191 @@ async def get_teacher_schedule(
             ],
             "slots": slots,
             "free_periods": free_periods,
+        }
+    )
+
+
+# ==========================================
+# 10. Teacher Cockpit Hub (Phase 2)
+# ==========================================
+@router.get("/teacher-cockpit")
+async def get_teacher_cockpit_summary(
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """
+    Dedicated Teacher Cockpit Endpoint:
+    Provides live timetable radar for today, class teacher assignment + today's attendance status,
+    and recent homework assignments with student submission counts.
+    """
+    from datetime import date, datetime
+    from app.modules.academics.models import ClassTeacher, ClassLevel, Section, TimetableSlot, TimetablePeriod, Subject, ClassHomework, StudentHomeworkSubmission
+    from app.modules.attendance.models import AttendanceSession
+    from app.modules.staff.models import StaffProfile
+
+    today = date.today()
+    days_map = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]
+    today_day_str = days_map[today.weekday()]
+
+    # 1. Staff Profile
+    sp = (await db.execute(select(StaffProfile).where(StaffProfile.user_id == current_user.id))).scalar_one_or_none()
+    teacher_name = f"{sp.first_name} {sp.last_name or ''}".strip() if sp else current_user.username
+    employee_id = sp.employee_id if sp else None
+
+    # 2. Active Academic Year
+    ay_res = await db.execute(select(AcademicYear.id).where(AcademicYear.is_current == True))
+    ay_id = ay_res.scalar_one_or_none()
+
+    # 3. Class Teacher Section(s)
+    ct_stmt = (
+        select(ClassTeacher, ClassLevel, Section)
+        .join(ClassLevel, ClassTeacher.class_id == ClassLevel.id)
+        .join(Section, ClassTeacher.section_id == Section.id)
+        .where(ClassTeacher.teacher_user_id == current_user.id)
+    )
+    if ay_id:
+        ct_stmt = ct_stmt.where(ClassTeacher.academic_year_id == ay_id)
+    ct_rows = (await db.execute(ct_stmt)).all()
+
+    class_teacher_sections = []
+    for ct, cls, sec in ct_rows:
+        att_session = (
+            await db.execute(
+                select(AttendanceSession.id, AttendanceSession.status)
+                .where(
+                    AttendanceSession.class_id == cls.id,
+                    AttendanceSession.section_id == sec.id,
+                    AttendanceSession.attendance_date == today,
+                )
+            )
+        ).first()
+        class_teacher_sections.append({
+            "class_id": cls.id,
+            "class_name": cls.name,
+            "section_id": sec.id,
+            "section_name": sec.name,
+            "attendance_marked": att_session is not None,
+            "attendance_status": att_session[1] if att_session else "PENDING",
+        })
+
+    # 4. Today's Timetable Periods
+    p_stmt = select(TimetablePeriod).order_by(TimetablePeriod.sort_order.asc(), TimetablePeriod.start_time.asc())
+    periods = (await db.execute(p_stmt)).scalars().all()
+
+    slot_stmt = (
+        select(TimetableSlot, ClassLevel, Section, Subject)
+        .join(ClassLevel, TimetableSlot.class_id == ClassLevel.id)
+        .join(Section, TimetableSlot.section_id == Section.id)
+        .join(Subject, TimetableSlot.subject_id == Subject.id)
+        .where(
+            TimetableSlot.teacher_user_id == current_user.id,
+            TimetableSlot.day_of_week == today_day_str,
+        )
+    )
+    if ay_id:
+        slot_stmt = slot_stmt.where(TimetableSlot.academic_year_id == ay_id)
+    slot_rows = (await db.execute(slot_stmt)).all()
+
+    slot_by_period = {
+        ts.period_id: {
+            "slot_id": ts.id,
+            "class_name": cls.name,
+            "class_id": cls.id,
+            "section_name": sec.name,
+            "section_id": sec.id,
+            "subject_name": sub.name,
+            "subject_code": sub.code,
+            "room_number": ts.room_number,
+        }
+        for ts, cls, sec, sub in slot_rows
+    }
+
+    now_time = datetime.now().time()
+    today_schedule = []
+    current_period_info = None
+
+    for p in periods:
+        slot_info = slot_by_period.get(p.id)
+        is_now = False
+        if p.start_time <= now_time <= p.end_time:
+            is_now = True
+
+        period_obj = {
+            "period_id": p.id,
+            "period_number": p.period_number,
+            "name": p.name,
+            "start_time": str(p.start_time),
+            "end_time": str(p.end_time),
+            "is_break": p.is_break,
+            "is_active_now": is_now,
+            "teaching_slot": slot_info,
+        }
+        if is_now:
+            current_period_info = period_obj
+        today_schedule.append(period_obj)
+
+    # 5. Teacher's Recent Homework
+    hw_stmt = (
+        select(ClassHomework, ClassLevel, Section, Subject)
+        .join(ClassLevel, ClassHomework.class_id == ClassLevel.id)
+        .join(Section, ClassHomework.section_id == Section.id)
+        .join(Subject, ClassHomework.subject_id == Subject.id)
+        .where(ClassHomework.assigned_by_user_id == current_user.id)
+        .order_by(ClassHomework.created_at.desc())
+        .limit(10)
+    )
+    hw_rows = (await db.execute(hw_stmt)).all()
+
+    hw_ids = [hw.id for hw, _, _, _ in hw_rows]
+    sub_count_map = {}
+    rev_count_map = {}
+    if hw_ids:
+        c_stmt = (
+            select(
+                StudentHomeworkSubmission.homework_id,
+                func.count(StudentHomeworkSubmission.id),
+                func.sum(case((StudentHomeworkSubmission.status == 'REVIEWED', 1), else_=0))
+            )
+            .where(StudentHomeworkSubmission.homework_id.in_(hw_ids))
+            .group_by(StudentHomeworkSubmission.homework_id)
+        )
+        for h_id, tot, rev in (await db.execute(c_stmt)).all():
+            sub_count_map[h_id] = tot or 0
+            rev_count_map[h_id] = rev or 0
+
+    recent_homework = [
+        {
+            "id": hw.id,
+            "title": hw.title,
+            "description": hw.description,
+            "class_name": cls.name,
+            "section_name": sec.name,
+            "subject_name": sub.name,
+            "due_date": str(hw.due_date),
+            "assigned_date": str(hw.assigned_date),
+            "submission_count": sub_count_map.get(hw.id, 0),
+            "reviewed_count": rev_count_map.get(hw.id, 0),
+        }
+        for hw, cls, sec, sub in hw_rows
+    ]
+
+    total_pending_grading = sum(
+        max(0, hw_item["submission_count"] - hw_item["reviewed_count"])
+        for hw_item in recent_homework
+    )
+
+    return success_response(
+        data={
+            "today_date": str(today),
+            "today_day": today_day_str,
+            "teacher_name": teacher_name,
+            "employee_id": employee_id,
+            "current_period": current_period_info,
+            "class_teacher_sections": class_teacher_sections,
+            "today_schedule": today_schedule,
+            "recent_homework": recent_homework,
+            "total_classes_today": len(slot_rows),
+            "total_pending_grading": total_pending_grading,
         }
     )
 

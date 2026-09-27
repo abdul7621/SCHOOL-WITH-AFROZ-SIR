@@ -1,11 +1,14 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy import select
+from datetime import datetime, date
+import uuid
+import urllib.parse
+from fastapi import APIRouter, Depends, Query, status, HTTPException
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
 
 from app.core.database import get_tenant_db
-from app.core.exceptions import ResourceNotFoundException
+from app.core.exceptions import ResourceNotFoundException, AppException
 from app.shared.responses import success_response
 from app.middlewares.auth_middleware import RequirePermission, CurrentTenantUser, get_current_user
 from app.modules.fees.models import (
@@ -19,6 +22,8 @@ from app.modules.fees.models import (
     FeeCollection,
     FeeCollectionItem,
     FeeRefund,
+    TenantPaymentGatewayConfig,
+    OnlinePaymentOrder,
 )
 from app.modules.fees.schemas import (
     FeeHeadCreate,
@@ -32,6 +37,10 @@ from app.modules.fees.schemas import (
     FeeRefundCreate,
     FeeRefundResponse,
     WaiveFeeDemandsRequest,
+    PaymentGatewayConfigSave,
+    CreateOnlinePaymentOrderRequest,
+    SubmitDirectUpiUtrRequest,
+    CashierVerifyOrderRequest,
 )
 from app.modules.fees.services import FeeService
 
@@ -499,4 +508,314 @@ async def list_fee_refunds(
             for r in refunds
         ]
     )
+
+
+# ==========================================
+# 9. Multi-Tenant Payment Gateways & Direct UPI (Phase 4)
+# ==========================================
+@router.get("/gateways/configs", dependencies=[Depends(RequirePermission("settings:manage"))])
+async def list_gateway_configs(db: AsyncSession = Depends(get_tenant_db)):
+    """Principal/Admin Action: Lists all payment gateway configurations with masked secrets."""
+    stmt = select(TenantPaymentGatewayConfig).order_by(TenantPaymentGatewayConfig.provider.asc())
+    res = await db.execute(stmt)
+    configs = res.scalars().all()
+    data = []
+    for c in configs:
+        masked_sec = ("*" * 8 + c.key_secret[-4:]) if c.key_secret and len(c.key_secret) > 4 else ("******" if c.key_secret else None)
+        data.append({
+            "id": c.id,
+            "provider": c.provider,
+            "is_active": c.is_active,
+            "merchant_name": c.merchant_name,
+            "upi_vpa": c.upi_vpa,
+            "upi_payee_name": c.upi_payee_name,
+            "key_id": c.key_id,
+            "key_secret_masked": masked_sec,
+            "has_webhook_secret": bool(c.webhook_secret),
+        })
+    return success_response(data=data)
+
+
+@router.post("/gateways/configs", dependencies=[Depends(RequirePermission("settings:manage"))])
+async def save_gateway_config(req: PaymentGatewayConfigSave, db: AsyncSession = Depends(get_tenant_db)):
+    """Principal/Admin Action: Configures or toggles Direct UPI VPA or merchant gateway credentials."""
+    stmt = select(TenantPaymentGatewayConfig).where(TenantPaymentGatewayConfig.provider == req.provider.upper())
+    res = await db.execute(stmt)
+    config = res.scalar_one_or_none()
+
+    if config:
+        config.is_active = req.is_active
+        if req.merchant_name is not None:
+            config.merchant_name = req.merchant_name.strip()
+        if req.upi_vpa is not None:
+            config.upi_vpa = req.upi_vpa.strip()
+        if req.upi_payee_name is not None:
+            config.upi_payee_name = req.upi_payee_name.strip()
+        if req.key_id is not None:
+            config.key_id = req.key_id.strip()
+        if req.key_secret is not None and not req.key_secret.startswith("******"):
+            config.key_secret = req.key_secret.strip()
+        if req.webhook_secret is not None:
+            config.webhook_secret = req.webhook_secret.strip()
+    else:
+        config = TenantPaymentGatewayConfig(
+            provider=req.provider.upper(),
+            is_active=req.is_active,
+            merchant_name=req.merchant_name.strip() if req.merchant_name else None,
+            upi_vpa=req.upi_vpa.strip() if req.upi_vpa else None,
+            upi_payee_name=req.upi_payee_name.strip() if req.upi_payee_name else None,
+            key_id=req.key_id.strip() if req.key_id else None,
+            key_secret=req.key_secret.strip() if req.key_secret else None,
+            webhook_secret=req.webhook_secret.strip() if req.webhook_secret else None,
+        )
+        db.add(config)
+
+    await db.commit()
+    await db.refresh(config)
+    return success_response(
+        data={"id": config.id, "provider": config.provider, "is_active": config.is_active},
+        message=f"Gateway configuration for '{config.provider}' saved successfully."
+    )
+
+
+@router.get("/gateways/active")
+async def get_active_payment_gateways(db: AsyncSession = Depends(get_tenant_db)):
+    """Public / Parent Action: Retrieves active payment methods available for the school."""
+    stmt = select(TenantPaymentGatewayConfig).where(TenantPaymentGatewayConfig.is_active == True)
+    res = await db.execute(stmt)
+    configs = res.scalars().all()
+    active_options = []
+    for c in configs:
+        active_options.append({
+            "provider": c.provider,
+            "merchant_name": c.merchant_name,
+            "upi_vpa": c.upi_vpa,
+            "upi_payee_name": c.upi_payee_name,
+            "key_id": c.key_id,
+        })
+    return success_response(data=active_options)
+
+
+@router.post("/online/create-order")
+async def create_online_payment_order(
+    req: CreateOnlinePaymentOrderRequest,
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Parent/Student Action: Initiates an online fee payment and returns UPI deep-link / Gateway order."""
+    from app.modules.students.models import Student, StudentEnrollment
+    from app.modules.academics.models import AcademicYear
+
+    student = (await db.execute(select(Student).where(Student.id == req.student_id))).scalar_one_or_none()
+    if not student:
+        raise ResourceNotFoundException("Student", req.student_id)
+
+    # Find active academic year
+    enr = (
+        await db.execute(
+            select(StudentEnrollment)
+            .where(StudentEnrollment.student_id == req.student_id, StudentEnrollment.is_active == True)
+        )
+    ).scalar_one_or_none()
+    ay_id = enr.academic_year_id if enr else None
+    if not ay_id:
+        curr_ay = (await db.execute(select(AcademicYear.id).where(AcademicYear.is_current == True))).scalar_one_or_none()
+        ay_id = curr_ay or "current"
+
+    # Verify provider is configured and active
+    provider_clean = req.gateway_provider.upper()
+    cfg_stmt = select(TenantPaymentGatewayConfig).where(
+        TenantPaymentGatewayConfig.provider == provider_clean,
+        TenantPaymentGatewayConfig.is_active == True,
+    )
+    cfg = (await db.execute(cfg_stmt)).scalar_one_or_none()
+    if not cfg:
+        # Fallback to any active provider if requested not found
+        cfg_stmt2 = select(TenantPaymentGatewayConfig).where(TenantPaymentGatewayConfig.is_active == True)
+        cfg = (await db.execute(cfg_stmt2)).scalar_one_or_none()
+        if not cfg:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Online payment is currently not enabled by the school administration."
+            )
+        provider_clean = cfg.provider
+
+    order_num = f"ORD-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
+    order = OnlinePaymentOrder(
+        order_number=order_num,
+        student_id=req.student_id,
+        academic_year_id=ay_id,
+        amount=req.amount,
+        gateway_provider=provider_clean,
+        status="PENDING",
+    )
+    db.add(order)
+    await db.commit()
+    await db.refresh(order)
+
+    # If Direct UPI, format standard NPCI UPI URI string
+    upi_intent_url = None
+    if provider_clean == "DIRECT_UPI_QR" and cfg.upi_vpa:
+        payee_encoded = urllib.parse.quote(cfg.upi_payee_name or "School Fees")
+        note_encoded = urllib.parse.quote(f"Fee {student.first_name} {order_num}")
+        upi_intent_url = (
+            f"upi://pay?pa={cfg.upi_vpa}&pn={payee_encoded}&am={req.amount:.2f}&cu=INR&tn={note_encoded}"
+        )
+
+    return success_response(
+        data={
+            "order_id": order.id,
+            "order_number": order.order_number,
+            "amount": float(order.amount),
+            "gateway_provider": order.gateway_provider,
+            "upi_vpa": cfg.upi_vpa,
+            "upi_payee_name": cfg.upi_payee_name,
+            "upi_intent_url": upi_intent_url,
+            "upi_payment_link": upi_intent_url,
+            "status": order.status,
+        },
+        message="Payment order initialized."
+    )
+
+
+@router.post("/online/submit-utr")
+async def submit_direct_upi_utr(
+    req: SubmitDirectUpiUtrRequest,
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Parent Action: Submits 12-digit UPI UTR number after transferring fees for cashier verification."""
+    order = (await db.execute(select(OnlinePaymentOrder).where(OnlinePaymentOrder.id == req.order_id))).scalar_one_or_none()
+    if not order:
+        raise ResourceNotFoundException("OnlinePaymentOrder", req.order_id)
+
+    order.utr_number = req.utr_number.strip()
+    order.status = "VERIFICATION_PENDING"
+    await db.commit()
+    await db.refresh(order)
+
+    return success_response(
+        data={"order_id": order.id, "status": order.status, "utr_number": order.utr_number},
+        message="UTR number submitted successfully. The school cashier will verify against the bank statement and issue your official receipt."
+    )
+
+
+@router.get("/online/pending-approvals", dependencies=[Depends(RequirePermission("fees:collect"))])
+async def list_pending_online_approvals(db: AsyncSession = Depends(get_tenant_db)):
+    """Cashier Action: Lists all Direct UPI payments submitted by parents awaiting bank verification."""
+    from app.modules.students.models import Student, StudentEnrollment, Parent
+    from app.modules.academics.models import ClassLevel, Section
+
+    stmt = (
+        select(OnlinePaymentOrder, Student, Parent, ClassLevel, Section)
+        .join(Student, OnlinePaymentOrder.student_id == Student.id)
+        .outerjoin(Parent, Student.parent_id == Parent.id)
+        .outerjoin(StudentEnrollment, (Student.id == StudentEnrollment.student_id) & (StudentEnrollment.is_active == True))
+        .outerjoin(ClassLevel, StudentEnrollment.class_id == ClassLevel.id)
+        .outerjoin(Section, StudentEnrollment.section_id == Section.id)
+        .where(OnlinePaymentOrder.status == "VERIFICATION_PENDING")
+        .order_by(OnlinePaymentOrder.created_at.desc())
+    )
+    res = await db.execute(stmt)
+    rows = res.all()
+
+    orders = []
+    for order, st, pr, cls, sec in rows:
+        orders.append({
+            "order_id": order.id,
+            "order_number": order.order_number,
+            "amount": float(order.amount),
+            "gateway_provider": order.gateway_provider,
+            "utr_number": order.utr_number,
+            "status": order.status,
+            "created_at": str(order.created_at),
+            "student_id": st.id,
+            "student_name": f"{st.first_name} {st.last_name or ''}".strip(),
+            "admission_no": st.admission_no,
+            "class_name": cls.name if cls else "N/A",
+            "section_name": sec.name if sec else "N/A",
+            "parent_phone": pr.primary_phone if pr else "N/A",
+        })
+
+    return success_response(data=orders)
+
+
+@router.post("/online/orders/{order_id}/verify", dependencies=[Depends(RequirePermission("fees:collect"))])
+async def cashier_verify_online_order(
+    order_id: str,
+    req: CashierVerifyOrderRequest,
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """
+    Cashier 1-Click Action: Approves or rejects a Direct UPI UTR submission.
+    When APPROVED:
+    Executes Penny-Perfect FIFO collection via FeeService.collect_fee_payment,
+    clearing demands sequentially, depositing any advance wallet credit,
+    and generating the official sequential RCP-... receipt.
+    """
+    from app.modules.lookups.models import PaymentMode
+
+    order = (await db.execute(select(OnlinePaymentOrder).where(OnlinePaymentOrder.id == order_id))).scalar_one_or_none()
+    if not order:
+        raise ResourceNotFoundException("OnlinePaymentOrder", order_id)
+
+    if order.status == "SUCCESS":
+        return success_response(
+            data={"order_id": order.id, "receipt_no": order.receipt_no, "status": order.status},
+            message=f"Order has already been verified and paid under receipt '{order.receipt_no}'."
+        )
+
+    if req.action == "REJECT":
+        order.status = "FAILED"
+        order.payment_response_payload = req.rejection_reason or "Rejected by cashier (UTR invalid / unverified)"
+        order.verified_by_user_id = current_user.id
+        order.verified_at = datetime.utcnow()
+        await db.commit()
+        return success_response(data={"order_id": order.id, "status": "FAILED"}, message="Payment order rejected.")
+
+    # APPROVAL FLOW: Penny-perfect fee collection
+    pm_res = await db.execute(select(PaymentMode).where(PaymentMode.code.in_(["UPI_QR", "ONLINE", "BANK_TRANSFER"])))
+    pm = pm_res.scalar_one_or_none()
+    if not pm:
+        pm_res2 = await db.execute(select(PaymentMode).limit(1))
+        pm = pm_res2.scalar_one_or_none()
+    pm_id = pm.id if pm else None
+
+    collect_req = CollectFeePaymentRequest(
+        student_id=order.student_id,
+        academic_year_id=order.academic_year_id,
+        total_amount_paid=order.amount,
+        payment_mode_id=pm_id,
+        transaction_reference_no=f"UPI-{order.utr_number or order.order_number}",
+        remarks=f"Online UPI payment verified by cashier (Order #{order.order_number}, UTR #{order.utr_number})",
+    )
+
+    fee_collection = await FeeService.collect_fee_payment(
+        req=collect_req,
+        cashier_user_id=current_user.id,
+        db=db,
+    )
+
+    order.status = "SUCCESS"
+    order.fee_collection_id = fee_collection.id
+    order.receipt_no = fee_collection.receipt_no
+    order.verified_by_user_id = current_user.id
+    order.verified_at = datetime.utcnow()
+
+    await db.commit()
+    await db.refresh(order)
+
+    return success_response(
+        data={
+            "order_id": order.id,
+            "order_number": order.order_number,
+            "receipt_no": order.receipt_no,
+            "status": order.status,
+            "fee_collection_id": fee_collection.id,
+            "amount_paid": float(fee_collection.total_amount_paid),
+        },
+        message=f"UPI payment verified! Official Receipt '{order.receipt_no}' generated successfully."
+    )
+
 

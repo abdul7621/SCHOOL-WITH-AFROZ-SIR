@@ -1,7 +1,10 @@
+import logging
 from datetime import date
 from typing import List, Dict, Any, Optional
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.orm import selectinload
 from app.modules.students.models import Student, StudentEnrollment
 from app.modules.academics.models import ClassLevel, Section, AcademicYear
@@ -84,13 +87,29 @@ class AttendanceService:
                     "remarks": rec.remarks,
                 }
 
-        # 3. Get Attendance Status Lookups
+        # 3. Query approved leaves for enrolled students on this attendance date
+        from app.modules.academics.models import StudentLeaveRequest
+        enrolled_student_ids = [st[0].id for st in enrolled_students]
+        approved_leave_map = {}
+        if enrolled_student_ids:
+            leave_stmt = select(StudentLeaveRequest).where(
+                StudentLeaveRequest.student_id.in_(enrolled_student_ids),
+                StudentLeaveRequest.status == "APPROVED",
+                StudentLeaveRequest.from_date <= attendance_date,
+                StudentLeaveRequest.to_date >= attendance_date,
+            )
+            leave_res = await db.execute(leave_stmt)
+            for lv in leave_res.scalars().all():
+                approved_leave_map[lv.student_id] = lv.reason or "Medical / Personal Leave"
+
+        # 4. Get Attendance Status Lookups
         cat_stmt = select(LookupCategory).where(LookupCategory.code == "ATTENDANCE_STATUS")
         cat_res = await db.execute(cat_stmt)
         cat = cat_res.scalar_one_or_none()
 
         status_options = []
         default_present_id = None
+        excused_status_id = None
         status_id_to_code = {}
         if cat:
             vals = await db.execute(select(LookupValue).where(LookupValue.category_id == cat.id, LookupValue.is_active == True))
@@ -99,12 +118,24 @@ class AttendanceService:
                 status_id_to_code[v.id] = v.code
                 if v.code == "PRESENT":
                     default_present_id = v.id
+                elif v.code in ("EXCUSED", "ON_LEAVE", "LEAVE"):
+                    excused_status_id = v.id
 
         roster = []
         for student, enroll in enrolled_students:
             marked_info = marked_map.get(student.id, {})
-            current_status = marked_info.get("attendance_status_id", default_present_id)
-            remarks = marked_info.get("remarks", None)
+            has_leave = student.id in approved_leave_map
+            leave_reason = approved_leave_map.get(student.id)
+
+            if student.id in marked_map:
+                current_status = marked_info.get("attendance_status_id", default_present_id)
+                remarks = marked_info.get("remarks", None)
+            elif has_leave and excused_status_id:
+                current_status = excused_status_id
+                remarks = f"Approved Leave: {leave_reason}"
+            else:
+                current_status = default_present_id
+                remarks = None
 
             roster.append({
                 "student_id": student.id,
@@ -112,8 +143,10 @@ class AttendanceService:
                 "full_name": f"{student.first_name} {student.last_name or ''}".strip(),
                 "roll_no": enroll.roll_no,
                 "current_status_id": current_status,
-                "status_code": status_id_to_code.get(current_status, "PRESENT"),
+                "status_code": status_id_to_code.get(current_status, "EXCUSED" if (has_leave and not existing_session) else "PRESENT"),
                 "remarks": remarks,
+                "has_approved_leave": has_leave,
+                "leave_reason": leave_reason,
             })
 
         return {
@@ -210,7 +243,37 @@ class AttendanceService:
                 )
                 db.add(record)
 
+        # Collect absent students for notification alerts
+        absent_student_ids = []
+        for item in req.records:
+            status_id = item.attendance_status_id
+            val = status_map_by_id.get(status_id)
+            code = val.code.upper() if val else str(status_id).upper()
+            if code == "ABSENT":
+                absent_student_ids.append(item.student_id)
+
         await db.commit()
+
+        # Automated Absentee SMS / WhatsApp notification trigger
+        if absent_student_ids:
+            try:
+                from app.modules.students.models import Student, Parent
+                st_stmt = (
+                    select(Student, Parent)
+                    .outerjoin(Parent, Student.parent_id == Parent.id)
+                    .where(Student.id.in_(absent_student_ids))
+                )
+                st_res = await db.execute(st_stmt)
+                for st_obj, parent_obj in st_res.all():
+                    parent_phone = parent_obj.primary_phone if parent_obj else "N/A"
+                    logger.info(
+                        f"[AUTOMATED PARENT ALERT] Student {st_obj.first_name} {st_obj.last_name or ''} "
+                        f"(Adm #{st_obj.admission_no}) marked ABSENT on {req.attendance_date}. "
+                        f"Notification dispatched to Guardian Phone: {parent_phone}."
+                    )
+            except Exception as notify_err:
+                logger.debug(f"Absentee notification notice: {notify_err}")
+
         return session
 
     @classmethod

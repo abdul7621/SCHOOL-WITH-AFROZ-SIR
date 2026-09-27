@@ -47,6 +47,11 @@ export const Login = () => {
         navigate('/superadmin');
       } else if (userData?.roles?.includes('PARENT') || userData?.user_type === 'PARENT') {
         navigate('/parent-portal');
+      } else if (
+        (userData?.roles?.includes('TEACHER') || userData?.user_type === 'TEACHER') &&
+        !userData?.roles?.some((r) => ['ADMIN', 'PRINCIPAL', 'SUPERADMIN'].includes(r))
+      ) {
+        navigate('/teacher-cockpit');
       } else {
         navigate('/');
       }

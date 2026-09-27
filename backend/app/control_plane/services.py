@@ -2,7 +2,7 @@ import os
 import uuid
 import pymysql
 from typing import List, Optional
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.logging import logger
@@ -1034,6 +1034,99 @@ class TenantProvisioningService:
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
                 """)
 
+                # Student Homework Submissions
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS student_homework_submissions (
+                    id VARCHAR(36) PRIMARY KEY,
+                    homework_id VARCHAR(36) NOT NULL,
+                    student_id VARCHAR(36) NOT NULL,
+                    submission_text TEXT NULL,
+                    attachment_url LONGTEXT NULL,
+                    submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    status VARCHAR(30) NOT NULL DEFAULT 'SUBMITTED',
+                    rating_stars INT NOT NULL DEFAULT 0,
+                    teacher_feedback VARCHAR(500) NULL,
+                    reviewed_by_teacher_id VARCHAR(36) NULL,
+                    reviewed_at DATETIME NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (homework_id) REFERENCES class_homework(id) ON DELETE CASCADE,
+                    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+                    FOREIGN KEY (reviewed_by_teacher_id) REFERENCES users(id) ON DELETE SET NULL,
+                    INDEX idx_sub_hw (homework_id),
+                    INDEX idx_sub_st (student_id),
+                    UNIQUE KEY uk_homework_student_sub (homework_id, student_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """)
+
+                # Student Fee Followups (PTP Tracker)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS student_fee_followups (
+                    id VARCHAR(36) PRIMARY KEY,
+                    student_id VARCHAR(36) NOT NULL,
+                    contacted_phone VARCHAR(30) NULL,
+                    followup_date DATE NOT NULL,
+                    promise_date DATE NULL,
+                    promised_amount DECIMAL(10, 2) NULL,
+                    outcome VARCHAR(50) NOT NULL DEFAULT 'PROMISED',
+                    notes TEXT NULL,
+                    recorded_by_user_id VARCHAR(36) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+                    FOREIGN KEY (recorded_by_user_id) REFERENCES users(id),
+                    INDEX idx_fup_st (student_id),
+                    INDEX idx_fup_date (followup_date)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """)
+
+                # Tenant Payment Gateway Configs
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS tenant_payment_gateway_configs (
+                    id VARCHAR(36) PRIMARY KEY,
+                    provider VARCHAR(50) NOT NULL,
+                    is_active TINYINT(1) NOT NULL DEFAULT 0,
+                    merchant_name VARCHAR(150) NULL,
+                    upi_vpa VARCHAR(100) NULL,
+                    upi_payee_name VARCHAR(150) NULL,
+                    key_id VARCHAR(255) NULL,
+                    key_secret VARCHAR(255) NULL,
+                    webhook_secret VARCHAR(255) NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY uk_tpgc_provider (provider)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """)
+
+                # Online Payment Orders
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS online_payment_orders (
+                    id VARCHAR(36) PRIMARY KEY,
+                    order_number VARCHAR(60) NOT NULL,
+                    student_id VARCHAR(36) NOT NULL,
+                    academic_year_id VARCHAR(36) NOT NULL,
+                    amount DECIMAL(10, 2) NOT NULL,
+                    gateway_provider VARCHAR(50) NOT NULL,
+                    gateway_order_id VARCHAR(100) NULL,
+                    gateway_payment_id VARCHAR(100) NULL,
+                    utr_number VARCHAR(100) NULL,
+                    status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+                    payment_response_payload LONGTEXT NULL,
+                    verified_by_user_id VARCHAR(36) NULL,
+                    verified_at DATETIME NULL,
+                    fee_collection_id VARCHAR(36) NULL,
+                    receipt_no VARCHAR(50) NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+                    FOREIGN KEY (academic_year_id) REFERENCES academic_years(id),
+                    FOREIGN KEY (fee_collection_id) REFERENCES fee_collections(id) ON DELETE SET NULL,
+                    INDEX idx_opo_st (student_id),
+                    INDEX idx_opo_stat (status),
+                    UNIQUE KEY uk_order_num (order_number)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """)
+
                 logger.info(f"Initialized all base tables in tenant database '{db_name}'")
         finally:
             connection.close()
@@ -1370,8 +1463,15 @@ class TenantProvisioningService:
             return tenant
 
         except Exception as e:
-            logger.error(f"Tenant provisioning failed for '{req.slug}': {e}. Initiating rollback...")
+            logger.error(f"Tenant provisioning failed for '{req.slug}': {e}. Initiating complete rollback...")
             cls._drop_mysql_database(db_name)
-            tenant.status = "FAILED"
-            await db.commit()
-            raise AppException(message=f"Tenant provisioning failed: {str(e)}", error_code="PROVISIONING_FAILED")
+            try:
+                await db.execute(delete(TenantDomain).where(TenantDomain.tenant_id == tenant.id))
+                await db.execute(delete(TenantModuleToggle).where(TenantModuleToggle.tenant_id == tenant.id))
+                await db.delete(tenant)
+                await db.commit()
+                logger.info(f"Rollback Complete: Successfully removed partial control plane records for '{req.slug}'.")
+            except Exception as rollback_err:
+                logger.error(f"Error during control DB rollback cleanup for '{req.slug}': {rollback_err}")
+                await db.rollback()
+            raise AppException(message=f"Tenant provisioning failed and rolled back cleanly: {str(e)}", error_code="PROVISIONING_FAILED")
