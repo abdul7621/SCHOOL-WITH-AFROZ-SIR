@@ -26,6 +26,9 @@ import {
   ShieldCheck,
   ArrowRight,
   RefreshCcw,
+  Flame,
+  ClipboardList,
+  Package,
 } from 'lucide-react';
 import api from '../../api/client';
 
@@ -94,6 +97,47 @@ export const ParentDashboard = () => {
   const [utrNumber, setUtrNumber] = useState('');
   const [submittingUtr, setSubmittingUtr] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
+
+  // 9-Point Daily Habit Journal State
+  const [showHabitJournalModal, setShowHabitJournalModal] = useState(false);
+  const [habitJournalData, setHabitJournalData] = useState(null);
+  const [loadingHabitJournal, setLoadingHabitJournal] = useState(false);
+
+  // Module 2: Tomorrow's Learning Dispatch Feed State
+  const [tomorrowsPlans, setTomorrowsPlans] = useState([]);
+  const [loadingPlans, setLoadingPlans] = useState(false);
+
+  const fetchTomorrowsLearning = async (childId) => {
+    if (!childId || childId === 'st_01') {
+      setTomorrowsPlans([]);
+      return;
+    }
+    setLoadingPlans(true);
+    try {
+      const res = await api.get(`/academics/tomorrows-learning/student/${childId}`);
+      const data = res?.data?.data || res?.data || [];
+      setTomorrowsPlans(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to load tomorrow learning plans:', err);
+      setTomorrowsPlans([]);
+    } finally {
+      setLoadingPlans(false);
+    }
+  };
+
+  const handleOpenHabitJournal = async () => {
+    if (!selectedChildId) return;
+    setShowHabitJournalModal(true);
+    setLoadingHabitJournal(true);
+    try {
+      const res = await api.get(`/development/habits/student/${selectedChildId}/journal?days=30`);
+      setHabitJournalData(res.data || res);
+    } catch (err) {
+      console.error('Failed to load habit journal:', err);
+    } finally {
+      setLoadingHabitJournal(false);
+    }
+  };
 
   const handleOpenPaymentModal = async () => {
     setShowPaymentModal(true);
@@ -315,6 +359,7 @@ export const ParentDashboard = () => {
     }
     if (selectedChildId) {
       fetchChildTimetable(selectedChildId);
+      fetchTomorrowsLearning(selectedChildId);
     }
   }, [selectedChildId, selectedChild?.class_id, selectedChild?.section_id]);
 
@@ -448,16 +493,46 @@ export const ParentDashboard = () => {
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-2">
-          <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
-            <Award size={20} />
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-2 relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+              <Sparkles size={20} />
+            </div>
+            {overview?.habit_character_score?.current_streak > 0 && (
+              <span className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-black px-2 py-0.5 rounded-full">
+                🔥 {overview.habit_character_score.current_streak} Day Streak
+              </span>
+            )}
           </div>
-          <div className="text-xs font-semibold text-slate-500 uppercase">Behavioral Rating</div>
-          <div className="text-xl font-bold text-amber-500">
-            {overview?.behavioral_rating || 'N/A'}
+          <div className="text-xs font-semibold text-slate-500 uppercase">Daily Character Score</div>
+          <div className="flex items-baseline gap-2">
+            <div className="text-2xl font-black text-slate-900">
+              {overview?.habit_character_score?.today_score !== null && overview?.habit_character_score?.today_score !== undefined
+                ? `${overview.habit_character_score.today_score}/9`
+                : `${overview?.habit_character_score?.weekly_average || 9.0}/9`}
+            </div>
+            <span className="text-[11px] font-bold text-emerald-600">
+              {overview?.habit_character_score?.today_score === 9
+                ? '⭐ Perfect Day'
+                : overview?.habit_character_score?.today_score !== null && overview?.habit_character_score?.today_score !== undefined
+                ? 'Evaluated'
+                : 'Avg Rating'}
+            </span>
           </div>
-          <div className="text-[11px] text-slate-500">
-            {overview?.behavioral_rating ? 'Recent term evaluation' : 'No rating recorded yet'}
+          <div className="text-[11px] text-slate-500 truncate" title={overview?.habit_character_score?.today_exceptions?.join(', ') || 'Uniform, Homework, Punctuality & Habits'}>
+            {overview?.habit_character_score?.today_exceptions?.length > 0
+              ? `Today: ${overview.habit_character_score.today_exceptions.join(', ')}`
+              : 'Uniform, Homework, Punctuality & Habits'}
+          </div>
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={handleOpenHabitJournal}
+              className="w-full py-2 bg-gradient-to-r from-amber-500 to-indigo-600 hover:from-amber-600 hover:to-indigo-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm shadow-amber-500/20 transition-all cursor-pointer"
+            >
+              <Award size={14} />
+              <span>View Character Journal</span>
+            </button>
           </div>
         </div>
       </div>
@@ -578,6 +653,86 @@ export const ParentDashboard = () => {
                 </div>
               );
             })}
+          </div>
+        )}
+      {/* Module 2: Tomorrow's Advance Lesson & Material Checklist */}
+      <div className="bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-900 rounded-2xl p-6 text-white shadow-lg space-y-4 border border-indigo-800/40">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-3">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <ClipboardList size={20} className="text-amber-400" />
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>Tomorrow's Advance Lesson & Material Checklist</span>
+                <span className="px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 font-extrabold text-[10px] tracking-wider uppercase border border-amber-400/30">
+                  ADVANCE DIGEST
+                </span>
+              </h3>
+            </div>
+            <p className="text-xs text-slate-300">
+              Topics to be taught tomorrow and items your child needs to pack in their bag.
+            </p>
+          </div>
+          {tomorrowsPlans.length > 0 && (
+            <span className="text-xs bg-white/10 text-blue-200 px-3 py-1 rounded-full font-bold self-start sm:self-auto">
+              {tomorrowsPlans.length} {tomorrowsPlans.length === 1 ? 'Subject Dispatched' : 'Subjects Dispatched'}
+            </span>
+          )}
+        </div>
+
+        {loadingPlans ? (
+          <div className="p-6 text-center text-xs text-slate-400">Loading tomorrow's learning digest...</div>
+        ) : tomorrowsPlans.length === 0 ? (
+          <div className="p-5 text-center text-xs text-slate-300 bg-white/5 rounded-xl border border-dashed border-white/10">
+            Teachers have not published tomorrow's advance lesson checklist yet for this class. Please check back by evening!
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {tomorrowsPlans.map((plan) => (
+              <div
+                key={plan.id}
+                className="bg-white/10 backdrop-blur-md border border-white/15 rounded-xl p-4 space-y-2 flex flex-col justify-between"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-[10px]">
+                      {plan.subject_name || 'Subject'}
+                    </span>
+                    <span className="text-[10px] text-slate-300 font-mono font-semibold">
+                      {plan.teaching_date}
+                    </span>
+                  </div>
+
+                  <h4 className="font-bold text-white text-sm">
+                    {plan.topic_name}
+                  </h4>
+
+                  {plan.learning_objectives && (
+                    <div className="text-xs text-slate-200 leading-relaxed">
+                      <strong className="text-amber-300 font-semibold">Goal:</strong> {plan.learning_objectives}
+                    </div>
+                  )}
+
+                  {plan.materials_required && (
+                    <div className="text-[11px] bg-amber-500/20 border border-amber-400/40 text-amber-200 p-2.5 rounded-lg font-medium">
+                      🎒 <strong className="text-amber-300">Pack in School Bag:</strong> {plan.materials_required}
+                    </div>
+                  )}
+
+                  {plan.homework_preview && (
+                    <div className="text-[11px] text-slate-300">
+                      📖 <strong className="text-slate-200">Pre-Reading / Practice:</strong> {plan.homework_preview}
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-white/10 text-[10px] text-slate-400 flex items-center justify-between">
+                  <span>Teacher: {plan.teacher_name || 'Class Faculty'}</span>
+                  <span className="text-emerald-400 font-bold flex items-center gap-1">
+                    <CheckCircle2 size={11} /> Ready for Tomorrow
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -1413,6 +1568,215 @@ export const ParentDashboard = () => {
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 9-Point Daily Habit Character Journal Modal */}
+      {showHabitJournalModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-2xl flex flex-col border border-slate-100">
+            {/* Modal Header */}
+            <div className="p-6 bg-gradient-to-r from-amber-600 via-indigo-600 to-slate-900 text-white flex items-center justify-between">
+              <div className="space-y-1">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 text-amber-200 text-[11px] font-bold">
+                  <Sparkles size={12} />
+                  <span>9-Point Daily Habit & Discipline Journal</span>
+                </div>
+                <h3 className="text-xl font-black text-white">
+                  {selectedChild?.student_name}'s Character Record
+                </h3>
+                <p className="text-xs text-blue-100">
+                  {selectedChild?.class_name} ({selectedChild?.section_name}) • Adm #{selectedChild?.admission_no}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowHabitJournalModal(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-6">
+              {loadingHabitJournal ? (
+                <div className="py-12 text-center space-y-3">
+                  <Loader2 size={24} className="animate-spin text-amber-600 mx-auto" />
+                  <p className="text-xs font-semibold text-slate-500">Loading daily habit evaluations & streaks...</p>
+                </div>
+              ) : !habitJournalData ? (
+                <div className="py-8 text-center text-xs text-slate-400">
+                  No habit journal data available yet for this student.
+                </div>
+              ) : (
+                <>
+                  {/* Streak & Score Highlights */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-center">
+                      <span className="text-[10px] font-bold uppercase text-amber-700">Habit Streak</span>
+                      <div className="text-xl font-black text-amber-900 mt-0.5 flex items-center justify-center gap-1">
+                        <Flame size={18} className="text-amber-500" />
+                        <span>{habitJournalData.current_streak} Days</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-center">
+                      <span className="text-[10px] font-bold uppercase text-emerald-700">Weekly Average</span>
+                      <div className="text-xl font-black text-emerald-900 mt-0.5">
+                        {habitJournalData.weekly_average} <span className="text-xs text-emerald-600">/ 9</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3 text-center">
+                      <span className="text-[10px] font-bold uppercase text-blue-700">30-Day Average</span>
+                      <div className="text-xl font-black text-blue-900 mt-0.5">
+                        {habitJournalData.monthly_average} <span className="text-xs text-blue-600">/ 9</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-purple-50 border border-purple-200 rounded-2xl p-3 text-center">
+                      <span className="text-[10px] font-bold uppercase text-purple-700">Days Evaluated</span>
+                      <div className="text-xl font-black text-purple-900 mt-0.5">
+                        {habitJournalData.total_evaluations} Days
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Frequent Exceptions Summary */}
+                  {habitJournalData.exceptions_breakdown && (
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                        Dimension Observation Summary (Past 30 Days)
+                      </h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                        <div className="p-2 bg-white rounded-lg border border-slate-100 flex items-center justify-between">
+                          <span className="text-slate-600">👔 Uniform:</span>
+                          <span className="font-bold text-slate-900">
+                            {habitJournalData.exceptions_breakdown.uniform_improper === 0 ? '✅ 100%' : `⚠️ ${habitJournalData.exceptions_breakdown.uniform_improper} notes`}
+                          </span>
+                        </div>
+                        <div className="p-2 bg-white rounded-lg border border-slate-100 flex items-center justify-between">
+                          <span className="text-slate-600">✍️ Homework:</span>
+                          <span className="font-bold text-slate-900">
+                            {habitJournalData.exceptions_breakdown.homework_incomplete === 0 ? '✅ 100%' : `⚠️ ${habitJournalData.exceptions_breakdown.homework_incomplete} notes`}
+                          </span>
+                        </div>
+                        <div className="p-2 bg-white rounded-lg border border-slate-100 flex items-center justify-between">
+                          <span className="text-slate-600">⏰ Punctual:</span>
+                          <span className="font-bold text-slate-900">
+                            {habitJournalData.exceptions_breakdown.late_arrival === 0 ? '✅ 100%' : `⚠️ ${habitJournalData.exceptions_breakdown.late_arrival} notes`}
+                          </span>
+                        </div>
+                        <div className="p-2 bg-white rounded-lg border border-slate-100 flex items-center justify-between">
+                          <span className="text-slate-600">🍱 Nutrition:</span>
+                          <span className="font-bold text-slate-900">
+                            {habitJournalData.exceptions_breakdown.unhealthy_lunch === 0 ? '✅ 100%' : `⚠️ ${habitJournalData.exceptions_breakdown.unhealthy_lunch} notes`}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Day-by-Day Historical Log */}
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                      Daily Evaluations & Teacher Observations
+                    </h4>
+
+                    {habitJournalData.records?.length === 0 ? (
+                      <div className="p-6 text-center text-xs text-slate-400 bg-slate-50 rounded-xl">
+                        No daily evaluations logged yet.
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {habitJournalData.records.map((rec) => (
+                          <div
+                            key={rec.id || rec.habit_date}
+                            className={`p-3.5 rounded-2xl border transition-all ${
+                              rec.is_perfect
+                                ? 'bg-emerald-50/40 border-emerald-200'
+                                : rec.daily_score >= 7
+                                ? 'bg-slate-50 border-slate-200'
+                                : 'bg-amber-50/50 border-amber-200'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-black text-slate-900">{rec.habit_date}</span>
+                                  {rec.attendance_status === 'ABSENT' ? (
+                                    <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-rose-100 text-rose-700">
+                                      ABSENT
+                                    </span>
+                                  ) : rec.attendance_status === 'EXCUSED' ? (
+                                    <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-purple-100 text-purple-700">
+                                      EXCUSED LEAVE
+                                    </span>
+                                  ) : rec.is_perfect ? (
+                                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                      ⭐ Perfect 9/9
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                                      Score: {rec.daily_score}/9
+                                    </span>
+                                  )}
+                                </div>
+
+                                {rec.exceptions && rec.exceptions.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 pt-1">
+                                    {rec.exceptions.map((ex, idx) => (
+                                      <span
+                                        key={idx}
+                                        className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200"
+                                      >
+                                        ⚠️ {ex}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {rec.exception_notes && (
+                                  <p className="text-[11px] text-slate-600 italic pt-0.5">
+                                    Teacher note: "{rec.exception_notes}"
+                                  </p>
+                                )}
+                              </div>
+
+                              <div className="text-right">
+                                <span
+                                  className={`inline-block px-2.5 py-1 rounded-xl text-xs font-black ${
+                                    rec.daily_score === 9
+                                      ? 'bg-emerald-600 text-white'
+                                      : rec.daily_score >= 7
+                                      ? 'bg-blue-600 text-white'
+                                      : 'bg-amber-500 text-white'
+                                  }`}
+                                >
+                                  {rec.daily_score}/9
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowHabitJournalModal(false)}
+                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all cursor-pointer"
+              >
+                Close Journal
+              </button>
             </div>
           </div>
         </div>

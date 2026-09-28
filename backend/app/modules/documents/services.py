@@ -1557,3 +1557,564 @@ class DocumentGeneratorService:
 </html>"""
         return html_content
 
+    @staticmethod
+    def date_to_english_words(d: Optional[date]) -> str:
+        """Converts a Python date object into formal Christian English words."""
+        if not d:
+            return "-"
+        days_map = {
+            1: "First", 2: "Second", 3: "Third", 4: "Fourth", 5: "Fifth",
+            6: "Sixth", 7: "Seventh", 8: "Eighth", 9: "Ninth", 10: "Tenth",
+            11: "Eleventh", 12: "Twelfth", 13: "Thirteenth", 14: "Fourteenth", 15: "Fifteenth",
+            16: "Sixteenth", 17: "Seventeenth", 18: "Eighteenth", 19: "Nineteenth", 20: "Twentieth",
+            21: "Twenty-First", 22: "Twenty-Second", 23: "Twenty-Third", 24: "Twenty-Fourth", 25: "Twenty-Fifth",
+            26: "Twenty-Sixth", 27: "Twenty-Seventh", 28: "Twenty-Eighth", 29: "Twenty-Ninth", 30: "Thirtieth",
+            31: "Thirty-First"
+        }
+        months_map = {
+            1: "January", 2: "February", 3: "March", 4: "April", 5: "May", 6: "June",
+            7: "July", 8: "August", 9: "September", 10: "October", 11: "November", 12: "December"
+        }
+
+        def num_to_words(n: int) -> str:
+            ones = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+                    "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen",
+                    "Seventeen", "Eighteen", "Nineteen"]
+            tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
+            if n < 20:
+                return ones[n]
+            elif n < 100:
+                return tens[n // 10] + (" " + ones[n % 10] if n % 10 != 0 else "")
+            elif n < 1000:
+                return ones[n // 100] + " Hundred" + (" and " + num_to_words(n % 100) if n % 100 != 0 else "")
+            elif n < 1000000:
+                return num_to_words(n // 1000) + " Thousand" + (" " + num_to_words(n % 1000) if n % 1000 != 0 else "")
+            return str(n)
+
+        day_word = days_map.get(d.day, str(d.day))
+        month_word = months_map.get(d.month, "")
+        year_word = num_to_words(d.year)
+        return f"{day_word} {month_word} {year_word}"
+
+    @classmethod
+    def generate_general_register_html(
+        cls,
+        students_records: list,
+        school_info: Dict[str, Any],
+        brand_color: str = "#1E40AF",
+        filter_label: str = "All Enrolled Students",
+    ) -> str:
+        """
+        Renders the Statutory 2-Page General Register (G.R. / Scholar Register)
+        matching Gujarat Primary/Secondary Education Regulations and National CBSE Gazette standards.
+        Designed for A3/A4 landscape dual-page side-by-side spread printing.
+        """
+        toolbar = cls.get_toolbar_component(
+            doc_title=f"Statutory General Register (G.R. Ledger) — {filter_label}",
+            doc_badge="STATUTORY GAZETTE REGISTER",
+            brand_color=brand_color,
+            orientation="landscape",
+        )
+
+        def render_digit_boxes(val: Any, length: int) -> str:
+            cleaned = (str(val) if val is not None else "").replace(" ", "").replace("-", "")
+            boxes = []
+            for i in range(length):
+                ch = cleaned[i] if i < len(cleaned) else "&nbsp;"
+                boxes.append(f'<span class="digit-box">{ch}</span>')
+            return "".join(boxes)
+
+        school_name = school_info.get("school_name", "7A Model Academy")
+        dise_code = school_info.get("dise_code", "24070501234")
+        affiliation_no = school_info.get("affiliation_no", "CBSE/GUJ/2026/089")
+        board_name = school_info.get("board", "State Board of Secondary Education / CBSE")
+        school_address = school_info.get("address", "Ahmedabad, Gujarat, India")
+
+        spreads_html = []
+
+        if not students_records:
+            spreads_html.append("""
+            <div style="background: #fff; padding: 40px; text-align: center; border-radius: 8px; font-size: 15px; color: #64748b;">
+                No student records found for the selected General Register query.
+            </div>
+            """)
+
+        for idx, st in enumerate(students_records, start=1):
+            gr_no = st.get("admission_no", "-")
+            student_name = st.get("student_name", "-")
+            father_name = st.get("father_name", "-")
+            surname = st.get("surname", "-")
+            mother_name = st.get("mother_name", "-")
+            gender = st.get("gender", "-")
+            religion = st.get("religion", "-")
+            caste = st.get("caste", "-")
+            category = st.get("category", "General")
+            birth_place_village = st.get("birth_place_village", "-")
+            birth_place_taluka = st.get("birth_place_taluka", "-")
+            birth_place_district = st.get("birth_place_district", "-")
+            birth_place_state = st.get("birth_place_state", "Gujarat")
+
+            dob_obj = st.get("dob_date")
+            dob_fig = st.get("dob_fig", "-")
+            dob_words = st.get("dob_words") or cls.date_to_english_words(dob_obj)
+
+            apaar_id = st.get("apaar_id", "")
+            aadhaar_no = st.get("aadhaar_no", "")
+            uid_18 = st.get("uid_18", "")
+            pen_11 = st.get("pen_11", "")
+
+            last_school = st.get("last_school", "Direct Admission / None")
+            last_standard = st.get("last_standard", "-")
+            admission_date = st.get("admission_date", "-")
+            class_admitted = st.get("class_admitted", "-")
+            current_class = st.get("current_class", "-")
+            current_section = st.get("current_section", "-")
+            rte_quota = "YES (RTE 25%)" if st.get("is_rte") else "NO"
+            progress = st.get("progress", "Satisfactory / Good")
+            conduct = st.get("conduct", "Good (ઉત્તમ)")
+            leaving_date = st.get("leaving_date", "Currently Studying")
+            standard_left = st.get("standard_left", "-")
+            reason_leaving = st.get("reason_leaving", "-")
+            remarks = st.get("remarks", "Official Enrollment Verified")
+            address = st.get("address", "-")
+            phone = st.get("phone", "-")
+
+            apaar_boxes = render_digit_boxes(apaar_id, 12)
+            aadhaar_boxes = render_digit_boxes(aadhaar_no, 12)
+            uid_boxes = render_digit_boxes(uid_18, 18)
+            pen_boxes = render_digit_boxes(pen_11, 11)
+
+            spread = f"""
+            <div class="ledger-spread">
+                <!-- LEFT PAGE: DEMOGRAPHICS & IDENTITY -->
+                <div class="ledger-page">
+                    <div class="page-side-tag">LEFT PAGE (ડાબો પાન) — DEMOGRAPHICS & IDENTITY</div>
+                    <div class="header-box">
+                        <div class="school-title">{school_name}</div>
+                        <div class="school-subtitle">{school_address}</div>
+                        <div class="register-heading">GENERAL REGISTER (જનરલ રજીસ્ટર)</div>
+                    </div>
+
+                    <div class="gr-top-row">
+                        <div class="gr-badge-box">
+                            <span class="gr-label">G.R. NO. / રજીસ્ટર નં.</span>
+                            <span class="gr-val">{gr_no}</span>
+                        </div>
+                        <div class="gr-sub-info">
+                            <div><strong>Current Class:</strong> {current_class} - {current_section}</div>
+                            <div><strong>Phone:</strong> {phone}</div>
+                        </div>
+                    </div>
+
+                    <div class="field-section-title">1. STUDENT NAME BREAKDOWN (વિદ્યાર્થી નામ વિગત)</div>
+                    <table class="data-table">
+                        <tr>
+                            <td class="col-lbl" style="width: 38%;">Student Name (વિદ્યાર્થીનું નામ):</td>
+                            <td class="col-val"><strong>{student_name}</strong></td>
+                        </tr>
+                        <tr>
+                            <td class="col-lbl">Father's Name (પિતાનું નામ):</td>
+                            <td class="col-val">{father_name}</td>
+                        </tr>
+                        <tr>
+                            <td class="col-lbl">Surname (અટક):</td>
+                            <td class="col-val"><strong>{surname}</strong></td>
+                        </tr>
+                        <tr>
+                            <td class="col-lbl">Mother's Name (માતાનું નામ):</td>
+                            <td class="col-val">{mother_name}</td>
+                        </tr>
+                    </table>
+
+                    <div class="field-section-title">2. SOCIAL & COMMUNITY IDENTITY (સામાજિક વિગત)</div>
+                    <table class="data-table">
+                        <tr>
+                            <td class="col-lbl" style="width: 25%;">Gender (જાતિ):</td>
+                            <td class="col-val" style="width: 25%;">{gender}</td>
+                            <td class="col-lbl" style="width: 25%;">Religion (ધર્મ):</td>
+                            <td class="col-val" style="width: 25%;">{religion}</td>
+                        </tr>
+                        <tr>
+                            <td class="col-lbl">Caste / Sub-Caste:</td>
+                            <td class="col-val">{caste}</td>
+                            <td class="col-lbl">Social Category:</td>
+                            <td class="col-val"><strong>{category}</strong></td>
+                        </tr>
+                    </table>
+
+                    <div class="field-section-title">3. BIRTHPLACE & DATE OF BIRTH (જન્મ સ્થળ અને જન્મ તારીખ)</div>
+                    <table class="data-table">
+                        <tr>
+                            <td class="col-lbl" style="width: 25%;">Village / Town:</td>
+                            <td class="col-val" style="width: 25%;">{birth_place_village}</td>
+                            <td class="col-lbl" style="width: 25%;">Taluka / Tehsil:</td>
+                            <td class="col-val" style="width: 25%;">{birth_place_taluka}</td>
+                        </tr>
+                        <tr>
+                            <td class="col-lbl">District (જિલ્લો):</td>
+                            <td class="col-val">{birth_place_district}</td>
+                            <td class="col-lbl">State (રાજ્ય):</td>
+                            <td class="col-val">{birth_place_state}</td>
+                        </tr>
+                        <tr>
+                            <td class="col-lbl">DOB in Figures (અંકમાં):</td>
+                            <td class="col-val" colspan="3"><strong style="font-size:12px; color:#1E40AF;">{dob_fig}</strong> (DD/MM/YYYY)</td>
+                        </tr>
+                        <tr>
+                            <td class="col-lbl">DOB in Words (શબ્દોમાં):</td>
+                            <td class="col-val" colspan="3"><em>{dob_words}</em></td>
+                        </tr>
+                    </table>
+
+                    <div class="field-section-title">4. STATUTORY NATIONAL IDENTIFIERS</div>
+                    <div class="box-digit-group">
+                        <div class="box-digit-title">APAAR ID (Automated Permanent Academic Account Registry - 12 Digits):</div>
+                        <div class="digit-box-container">{apaar_boxes}</div>
+                    </div>
+                    <div class="box-digit-group" style="margin-top:6px;">
+                        <div class="box-digit-title">Aadhaar Card No. (12 Digits):</div>
+                        <div class="digit-box-container">{aadhaar_boxes}</div>
+                    </div>
+
+                    <div style="margin-top: 8px; font-size: 10px; color: #475569;">
+                        <strong>Address:</strong> {address}
+                    </div>
+                </div>
+
+                <!-- RIGHT PAGE: ACADEMIC LIFECYCLE & DISCHARGE -->
+                <div class="ledger-page">
+                    <div class="page-side-tag">RIGHT PAGE (જમણો પાન) — ACADEMIC LIFECYCLE & DISCHARGE</div>
+                    <div class="header-box">
+                        <div class="school-title">DISE CODE: {dise_code} | BOARD: {affiliation_no}</div>
+                        <div class="school-subtitle">{board_name}</div>
+                        <div class="register-heading">ENROLLMENT, PROGRESS & SCHOOL LEAVING RECORD</div>
+                    </div>
+
+                    <div class="field-section-title">5. CHILD TRACKING & NATIONAL PORTAL IDS</div>
+                    <div class="box-digit-group">
+                        <div class="box-digit-title">Gujarat Child Tracking 18-Digit UID:</div>
+                        <div class="digit-box-container">{uid_boxes}</div>
+                    </div>
+                    <div class="box-digit-group" style="margin-top:6px;">
+                        <div class="box-digit-title">UDISE+ Permanent Education Number (PEN - 11 Digits):</div>
+                        <div class="digit-box-container">{pen_boxes}</div>
+                    </div>
+
+                    <div class="field-section-title">6. ADMISSION & PREVIOUS ACADEMIC RECORD</div>
+                    <table class="data-table">
+                        <tr>
+                            <td class="col-lbl" style="width: 35%;">Last School Attended:</td>
+                            <td class="col-val" colspan="3">{last_school}</td>
+                        </tr>
+                        <tr>
+                            <td class="col-lbl">Last Standard Studied:</td>
+                            <td class="col-val" style="width: 25%;">{last_standard}</td>
+                            <td class="col-lbl" style="width: 20%;">RTE 25% Quota:</td>
+                            <td class="col-val" style="width: 20%;"><strong style="color: {'#16A34A' if st.get('is_rte') else '#475569'};">{rte_quota}</strong></td>
+                        </tr>
+                        <tr>
+                            <td class="col-lbl">Date of Admission:</td>
+                            <td class="col-val">{admission_date}</td>
+                            <td class="col-lbl">Admitted Standard:</td>
+                            <td class="col-val"><strong>{class_admitted}</strong></td>
+                        </tr>
+                    </table>
+
+                    <div class="field-section-title">7. ACADEMIC PROGRESS & CONDUCT</div>
+                    <table class="data-table">
+                        <tr>
+                            <td class="col-lbl" style="width: 35%;">Academic Progress (પ્રગતિ):</td>
+                            <td class="col-val" style="width: 65%;">{progress}</td>
+                        </tr>
+                        <tr>
+                            <td class="col-lbl">Conduct & Character (ચાલચલગત):</td>
+                            <td class="col-val"><strong>{conduct}</strong></td>
+                        </tr>
+                    </table>
+
+                    <div class="field-section-title">8. SCHOOL LEAVING & DISCHARGE (શાળા છોડ્યા વિગત)</div>
+                    <table class="data-table">
+                        <tr>
+                            <td class="col-lbl" style="width: 35%;">Date of Leaving (છોડ્યા તારીખ):</td>
+                            <td class="col-val">{leaving_date}</td>
+                            <td class="col-lbl" style="width: 25%;">Standard Left:</td>
+                            <td class="col-val">{standard_left}</td>
+                        </tr>
+                        <tr>
+                            <td class="col-lbl">Reason for Leaving (કારણ):</td>
+                            <td class="col-val" colspan="3">{reason_leaving}</td>
+                        </tr>
+                        <tr>
+                            <td class="col-lbl">Statutory Remarks (નોંધ):</td>
+                            <td class="col-val" colspan="3">{remarks}</td>
+                        </tr>
+                    </table>
+
+                    <div class="sign-section">
+                        <div class="sign-block">
+                            <div class="sign-line"></div>
+                            <div class="sign-title">Class Teacher Signature</div>
+                        </div>
+                        <div class="sign-block">
+                            <div class="sign-line"></div>
+                            <div class="sign-title">Head Clerk / Registrar</div>
+                        </div>
+                        <div class="sign-block">
+                            <div class="sign-line"></div>
+                            <div class="sign-title">Principal / Headmaster (with Seal)</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            """
+            spreads_html.append(spread)
+
+        spreads_content = "\n".join(spreads_html)
+
+        html_doc = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>General Register (G.R. Ledger) — {school_name}</title>
+    <style>
+        {toolbar['css']}
+        
+        .ledger-wrapper {{
+            max-width: 1400px;
+            margin: 0 auto;
+        }}
+        
+        .ledger-spread {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            background: #FFFFFF;
+            border: 2px solid #0F172A;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 28px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+            page-break-inside: avoid;
+            page-break-after: always;
+            break-after: page;
+        }}
+        
+        .ledger-page {{
+            border: 1.5px solid #334155;
+            padding: 12px 14px;
+            background: #FCFDFE;
+            position: relative;
+            font-size: 11px;
+            line-height: 1.4;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }}
+        
+        .page-side-tag {{
+            font-size: 9px;
+            font-weight: 800;
+            color: #475569;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            border-bottom: 1px dashed #CBD5E1;
+            padding-bottom: 3px;
+            margin-bottom: 6px;
+        }}
+        
+        .header-box {{
+            text-align: center;
+            border-bottom: 1.5px solid #0F172A;
+            padding-bottom: 6px;
+            margin-bottom: 8px;
+        }}
+        
+        .school-title {{
+            font-size: 14px;
+            font-weight: 800;
+            color: {brand_color};
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        
+        .school-subtitle {{
+            font-size: 10px;
+            color: #475569;
+        }}
+        
+        .register-heading {{
+            font-size: 11px;
+            font-weight: 800;
+            color: #0F172A;
+            margin-top: 3px;
+            letter-spacing: 0.5px;
+        }}
+        
+        .gr-top-row {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #F1F5F9;
+            border: 1px solid #CBD5E1;
+            border-radius: 4px;
+            padding: 6px 10px;
+            margin-bottom: 8px;
+        }}
+        
+        .gr-badge-box {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+        
+        .gr-label {{
+            font-size: 10px;
+            font-weight: 700;
+            color: #475569;
+        }}
+        
+        .gr-val {{
+            font-size: 15px;
+            font-weight: 900;
+            color: {brand_color};
+            background: #FFFFFF;
+            border: 1px solid #94A3B8;
+            padding: 2px 8px;
+            border-radius: 4px;
+            letter-spacing: 0.5px;
+        }}
+        
+        .gr-sub-info {{
+            font-size: 10px;
+            color: #334155;
+            text-align: right;
+        }}
+        
+        .field-section-title {{
+            font-size: 10px;
+            font-weight: 800;
+            color: #1E293B;
+            background: #E2E8F0;
+            padding: 3px 6px;
+            border-left: 3px solid {brand_color};
+            margin-top: 8px;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }}
+        
+        .data-table {{
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10.5px;
+        }}
+        
+        .data-table td {{
+            border: 1px solid #E2E8F0;
+            padding: 3.5px 6px;
+            vertical-align: middle;
+        }}
+        
+        .col-lbl {{
+            background: #F8FAFC;
+            color: #475569;
+            font-weight: 600;
+            font-size: 10px;
+        }}
+        
+        .col-val {{
+            color: #0F172A;
+        }}
+        
+        .box-digit-group {{
+            background: #F8FAFC;
+            border: 1px solid #E2E8F0;
+            border-radius: 4px;
+            padding: 4px 6px;
+        }}
+        
+        .box-digit-title {{
+            font-size: 9px;
+            font-weight: 700;
+            color: #475569;
+            margin-bottom: 3px;
+        }}
+        
+        .digit-box-container {{
+            display: flex;
+            gap: 3px;
+            flex-wrap: wrap;
+        }}
+        
+        .digit-box {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 18px;
+            border: 1px solid #475569;
+            background: #FFFFFF;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            font-weight: 800;
+            color: #0F172A;
+            border-radius: 2px;
+        }}
+        
+        .sign-section {{
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+            margin-top: 20px;
+            padding-top: 10px;
+        }}
+        
+        .sign-block {{
+            text-align: center;
+        }}
+        
+        .sign-line {{
+            border-bottom: 1px solid #475569;
+            height: 24px;
+            margin-bottom: 4px;
+        }}
+        
+        .sign-title {{
+            font-size: 9px;
+            font-weight: 700;
+            color: #334155;
+        }}
+        
+        @media print {{
+            .ledger-wrapper {{
+                max-width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }}
+            .ledger-spread {{
+                border: 2px solid #000000 !important;
+                box-shadow: none !important;
+                margin-bottom: 0 !important;
+            }}
+            .ledger-page {{
+                border: 1px solid #000000 !important;
+                background: #FFFFFF !important;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    {toolbar['html']}
+    <div class="document-toolbar-spacer no-print"></div>
+
+    <div class="printable-content">
+        <div class="ledger-wrapper">
+            {spreads_content}
+        </div>
+    </div>
+</body>
+</html>"""
+        return html_doc
+
+

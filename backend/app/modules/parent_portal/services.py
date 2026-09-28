@@ -12,7 +12,8 @@ from app.modules.attendance.models import AttendanceSession, StudentDailyAttenda
 from app.modules.lookups.models import LookupValue
 from app.modules.fees.models import StudentFeeDemand, FeeCollection, FeeInstallmentSchedule, FeeHead
 from app.modules.exams.models import ExamTerm
-from app.modules.development.models import StudentDevelopmentRecord, DevelopmentCriteria
+from app.modules.development.models import StudentDevelopmentRecord, DevelopmentCriteria, StudentDailyHabit
+from app.modules.development.services import HabitService
 from app.modules.users_rbac.models import User
 from app.modules.staff.models import StaffProfile
 
@@ -184,6 +185,33 @@ class ParentPortalService:
         qual_res = await db.execute(qual_stmt)
         qual_rows = qual_res.all()
 
+        # 4. 9-Point Daily Habit & Discipline telemetry
+        habit_journal = await HabitService.get_student_habit_journal(student.id, db, days=14)
+        today_habit_stmt = select(StudentDailyHabit).where(
+            StudentDailyHabit.student_id == student_id,
+            StudentDailyHabit.habit_date == today,
+        )
+        today_habit = (await db.execute(today_habit_stmt)).scalar_one_or_none()
+
+        today_exceptions = []
+        if today_habit:
+            if not today_habit.habit_punctuality:
+                today_exceptions.append("Late Arrival")
+            if not today_habit.habit_uniform:
+                today_exceptions.append("Uniform Violation")
+            if not today_habit.habit_material:
+                today_exceptions.append("Missing Books/Stationery")
+            if not today_habit.habit_homework:
+                today_exceptions.append("Incomplete Homework")
+            if not today_habit.habit_classwork:
+                today_exceptions.append("Classwork Lacking")
+            if not today_habit.habit_healthy_lunch:
+                today_exceptions.append("Unhealthy/No Lunch")
+            if not today_habit.habit_discipline:
+                today_exceptions.append("Discipline Warning")
+            if not today_habit.habit_neatness:
+                today_exceptions.append("Neatness/Hygiene Issue")
+
         return {
             "student_id": student.id,
             "student_name": f"{student.first_name} {student.last_name or ''}".strip(),
@@ -200,6 +228,16 @@ class ParentPortalService:
                 "present_days": p_days,
                 "total_days": tot_days,
                 "attendance_percentage": att_pct,
+            },
+            "habit_character_score": {
+                "today_score": today_habit.daily_score if today_habit else None,
+                "is_today_marked": today_habit is not None,
+                "attendance_status": today_habit.attendance_status if today_habit else "PENDING",
+                "current_streak": habit_journal.get("current_streak", 0),
+                "weekly_average": habit_journal.get("weekly_average", 9.0),
+                "monthly_average": habit_journal.get("monthly_average", 9.0),
+                "exceptions_breakdown": habit_journal.get("exceptions_breakdown", {}),
+                "today_exceptions": today_exceptions,
             },
             "recent_behavioral_ratings": [
                 {

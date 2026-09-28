@@ -789,3 +789,132 @@ async def view_award_certificate_html(
     )
     return HTMLResponse(content=html)
 
+
+@router.get("/general-register/html", response_class=HTMLResponse)
+async def view_general_register_html(
+    class_id: Optional[str] = None,
+    section_id: Optional[str] = None,
+    student_id: Optional[str] = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    current_user: CurrentTenantUser = Depends(get_current_user_or_token),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """
+    Renders the Statutory 2-Page General Register (G.R. / Scholar Register)
+    Spread Ledger for official government recordkeeping, school inspections, and audit compliance.
+    """
+    from app.modules.students.models import Student, StudentEnrollment, Parent
+    from app.modules.academics.models import ClassLevel, Section
+    from app.modules.lookups.models import LookupValue
+
+    stmt = (
+        select(Student, StudentEnrollment, ClassLevel, Section, Parent)
+        .join(StudentEnrollment, Student.id == StudentEnrollment.student_id)
+        .join(ClassLevel, StudentEnrollment.class_id == ClassLevel.id)
+        .join(Section, StudentEnrollment.section_id == Section.id)
+        .join(Parent, Student.parent_id == Parent.id)
+        .where(StudentEnrollment.is_active == True)
+    )
+
+    if student_id:
+        stmt = stmt.where(Student.id == student_id)
+    if class_id:
+        stmt = stmt.where(StudentEnrollment.class_id == class_id)
+    if section_id:
+        stmt = stmt.where(StudentEnrollment.section_id == section_id)
+
+    stmt = stmt.order_by(ClassLevel.id, Section.id, StudentEnrollment.roll_no, Student.admission_no).limit(limit).offset(offset)
+    res = await db.execute(stmt)
+    rows = res.all()
+
+    # Preload lookups for gender, religion, caste if mapped
+    lookups_res = await db.execute(select(LookupValue))
+    lookups_map = {lv.id: lv.label for lv in lookups_res.scalars().all()}
+
+    # Fetch settings
+    settings_res = await db.execute(select(SystemSetting))
+    settings_dict = {
+        s.setting_key: (s.setting_value.strip('"') if isinstance(s.setting_value, str) else str(s.setting_value))
+        for s in settings_res.scalars().all()
+    }
+    school_name = settings_dict.get("school_name", "7A Model Academy")
+    primary_color = settings_dict.get("theme_primary_color", "#1E40AF")
+    dise_code = settings_dict.get("dise_code", "24070501234")
+    affiliation_no = settings_dict.get("affiliation_no", "CBSE/GUJ/2026/089")
+    board = settings_dict.get("board", "State Board of Secondary Education / CBSE")
+    address = settings_dict.get("school_address", "Gujarat, India")
+
+    school_info = {
+        "school_name": school_name,
+        "dise_code": dise_code,
+        "affiliation_no": affiliation_no,
+        "board": board,
+        "address": address,
+    }
+
+    students_records = []
+    filter_label_parts = []
+    if class_id and rows:
+        filter_label_parts.append(f"{rows[0][2].name}")
+    if section_id and rows:
+        filter_label_parts.append(f"{rows[0][3].name}")
+    filter_label = " - ".join(filter_label_parts) if filter_label_parts else "All Enrolled Students"
+
+    for st, enroll, cls_lvl, sec, parent in rows:
+        cust = st.custom_attributes or {}
+        dob = st.dob
+        dob_fig = dob.strftime("%d/%m/%Y") if dob else "-"
+
+        gender_label = lookups_map.get(st.gender_id, "Male") if st.gender_id else (cust.get("gender") or "Male")
+        religion_label = lookups_map.get(st.religion_id, "Hindu") if st.religion_id else (cust.get("religion") or "-")
+        caste_label = lookups_map.get(st.caste_category_id, cust.get("caste", "-")) if st.caste_category_id else (cust.get("caste") or "-")
+
+        record = {
+            "admission_no": st.admission_no,
+            "student_name": st.first_name,
+            "father_name": parent.father_name,
+            "surname": st.last_name or "",
+            "mother_name": parent.mother_name or "-",
+            "gender": gender_label,
+            "religion": religion_label,
+            "caste": caste_label,
+            "category": cust.get("category", "General"),
+            "birth_place_village": cust.get("birth_place_village", cust.get("birth_place", "-")),
+            "birth_place_taluka": cust.get("birth_place_taluka", "-"),
+            "birth_place_district": cust.get("birth_place_district", "-"),
+            "birth_place_state": cust.get("birth_place_state", "Gujarat"),
+            "dob_date": dob,
+            "dob_fig": dob_fig,
+            "dob_words": cust.get("dob_words"),
+            "apaar_id": cust.get("apaar_id") or cust.get("apaar_no") or "",
+            "aadhaar_no": cust.get("aadhaar_no") or cust.get("aadhar") or "",
+            "uid_18": cust.get("uid_18") or cust.get("child_uid") or "",
+            "pen_11": cust.get("pen_11") or cust.get("pen_no") or "",
+            "last_school": cust.get("last_school_attended", "None / Direct Admission"),
+            "last_standard": cust.get("last_school_standard", "-"),
+            "admission_date": enroll.enrollment_date.strftime("%d/%m/%Y") if enroll.enrollment_date else "-",
+            "class_admitted": cust.get("class_admitted", cls_lvl.name),
+            "current_class": cls_lvl.name,
+            "current_section": sec.name,
+            "is_rte": bool(cust.get("is_rte") or cust.get("rte_quota")),
+            "progress": cust.get("academic_progress", "Satisfactory / Good (ઉત્તમ)"),
+            "conduct": cust.get("conduct", "Good (સારી)"),
+            "leaving_date": cust.get("leaving_date", "Currently Studying (ચાલુ વિદ્યાર્થી)"),
+            "standard_left": cust.get("standard_left", "-"),
+            "reason_leaving": cust.get("reason_leaving", "-"),
+            "remarks": cust.get("remarks", "Official Enrollment Verified in State Ledger"),
+            "address": parent.address or "-",
+            "phone": parent.primary_phone or "-",
+        }
+        students_records.append(record)
+
+    html = DocumentGeneratorService.generate_general_register_html(
+        students_records=students_records,
+        school_info=school_info,
+        brand_color=primary_color,
+        filter_label=filter_label,
+    )
+    return HTMLResponse(content=html)
+
+

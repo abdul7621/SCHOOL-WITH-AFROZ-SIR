@@ -19,6 +19,7 @@ from app.modules.academics.models import (
     StudentHomeworkSubmission,
     TimetablePeriod,
     TimetableSlot,
+    ClassDailyLearningPlan,
 )
 from app.modules.academics.schemas import (
     AcademicYearCreate,
@@ -46,6 +47,9 @@ from app.modules.academics.schemas import (
     PeriodUpdate,
     TimetableSlotAssignRequest,
     TimetableSlotCopyRequest,
+    TomorrowsLearningCreateRequest,
+    TomorrowsLearningUpdate,
+    TomorrowsLearningResponse,
 )
 from app.modules.students.models import StudentEnrollment
 from app.modules.users_rbac.models import User
@@ -2193,5 +2197,222 @@ async def get_syllabus_completion_summary(
         })
 
     return success_response(data=summary)
+
+
+# ==========================================
+# 11. Tomorrow's Learning Parent Dispatch Engine (Module 3)
+# ==========================================
+@router.post("/tomorrows-learning")
+async def create_or_update_tomorrows_learning(
+    req: TomorrowsLearningCreateRequest,
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """
+    Teacher Action: Dispatches next day's advance lesson objectives & required materials checklist.
+    Auto-resolves current academic year and performs upsert on (class, section, subject, date).
+    """
+    if not (
+        "ADMIN" in current_user.roles
+        or "TEACHER" in current_user.roles
+        or "PRINCIPAL" in current_user.roles
+        or "academics:manage" in current_user.permissions
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied: Requires Teacher or Staff role to publish Tomorrow's Learning plans.",
+        )
+
+    ay_id = req.academic_year_id
+    if not ay_id:
+        ay_res = await db.execute(select(AcademicYear.id).where(AcademicYear.is_current == True))
+        ay_id = ay_res.scalar_one_or_none()
+        if not ay_id:
+            ay_res = await db.execute(select(AcademicYear.id).order_by(AcademicYear.start_date.desc()))
+            ay_id = ay_res.scalar_one_or_none()
+
+    # Check for existing plan for this class, section, subject on this date
+    stmt = select(ClassDailyLearningPlan).where(
+        ClassDailyLearningPlan.class_id == req.class_id,
+        ClassDailyLearningPlan.section_id == req.section_id,
+        ClassDailyLearningPlan.subject_id == req.subject_id,
+        ClassDailyLearningPlan.teaching_date == req.teaching_date,
+    )
+    res = await db.execute(stmt)
+    plan = res.scalar_one_or_none()
+
+    if plan:
+        plan.topic_title = req.topic_title.strip()
+        plan.learning_objectives = req.learning_objectives.strip()
+        plan.required_materials = req.required_materials.strip() if req.required_materials else None
+        plan.teacher_user_id = current_user.id
+        if ay_id:
+            plan.academic_year_id = ay_id
+        await db.commit()
+        await db.refresh(plan)
+        return success_response(
+            data={"id": plan.id, "action": "UPDATED"},
+            message=f"Tomorrow's Learning plan for '{plan.topic_title}' updated successfully.",
+        )
+    else:
+        new_plan = ClassDailyLearningPlan(
+            academic_year_id=ay_id or "ay_default",
+            class_id=req.class_id,
+            section_id=req.section_id,
+            subject_id=req.subject_id,
+            teaching_date=req.teaching_date,
+            topic_title=req.topic_title.strip(),
+            learning_objectives=req.learning_objectives.strip(),
+            required_materials=req.required_materials.strip() if req.required_materials else None,
+            teacher_user_id=current_user.id,
+        )
+        db.add(new_plan)
+        await db.commit()
+        await db.refresh(new_plan)
+        return success_response(
+            data={"id": new_plan.id, "action": "CREATED"},
+            message=f"Tomorrow's Learning plan for '{new_plan.topic_title}' published successfully.",
+        )
+
+
+@router.get("/tomorrows-learning/class/{class_id}/{section_id}")
+async def list_class_tomorrows_learning(
+    class_id: str,
+    section_id: str,
+    target_date: Optional[date] = None,
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """
+    Lists advance learning dispatches for a class and section.
+    Defaults to tomorrow or specified teaching date.
+    """
+    if not target_date:
+        target_date = date.today()
+
+    stmt = (
+        select(ClassDailyLearningPlan)
+        .options(
+            selectinload(ClassDailyLearningPlan.subject),
+            selectinload(ClassDailyLearningPlan.teacher),
+            selectinload(ClassDailyLearningPlan.class_level),
+            selectinload(ClassDailyLearningPlan.section),
+        )
+        .where(
+            ClassDailyLearningPlan.class_id == class_id,
+            ClassDailyLearningPlan.section_id == section_id,
+            ClassDailyLearningPlan.teaching_date == target_date,
+        )
+        .order_by(ClassDailyLearningPlan.created_at.asc())
+    )
+    res = await db.execute(stmt)
+    records = res.scalars().all()
+
+    items = [
+        {
+            "id": r.id,
+            "academic_year_id": r.academic_year_id,
+            "class_id": r.class_id,
+            "class_name": r.class_level.name if r.class_level else "-",
+            "section_id": r.section_id,
+            "section_name": r.section_name if hasattr(r, "section_name") and r.section_name else (r.section.name if r.section else "-"),
+            "subject_id": r.subject_id,
+            "subject_name": r.subject.name if r.subject else "-",
+            "teaching_date": str(r.teaching_date),
+            "topic_title": r.topic_title,
+            "learning_objectives": r.learning_objectives,
+            "required_materials": r.required_materials,
+            "teacher_user_id": r.teacher_user_id,
+            "teacher_name": r.teacher.username.replace("_", " ").title() if r.teacher else "Subject Teacher",
+            "created_at": str(r.created_at),
+        }
+        for r in records
+    ]
+
+    return success_response(data=items)
+
+
+@router.get("/tomorrows-learning/student/{student_id}")
+async def get_student_tomorrows_learning(
+    student_id: str,
+    target_date: Optional[date] = None,
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """
+    Parent Portal Feed: Returns tomorrow's advance lesson plans and required materials
+    for the student's active enrolled class and section.
+    """
+    if not target_date:
+        # Default to tomorrow's date
+        target_date = date.today()
+
+    # Find active enrollment for student
+    enr_stmt = select(StudentEnrollment).where(
+        StudentEnrollment.student_id == student_id,
+        StudentEnrollment.is_active == True,
+    )
+    enr_res = await db.execute(enr_stmt)
+    enrollment = enr_res.scalars().first()
+
+    if not enrollment:
+        return success_response(data={"target_date": str(target_date), "plans": []})
+
+    stmt = (
+        select(ClassDailyLearningPlan)
+        .options(
+            selectinload(ClassDailyLearningPlan.subject),
+            selectinload(ClassDailyLearningPlan.teacher),
+        )
+        .where(
+            ClassDailyLearningPlan.class_id == enrollment.class_id,
+            ClassDailyLearningPlan.section_id == enrollment.section_id,
+            ClassDailyLearningPlan.teaching_date >= date.today(),
+        )
+        .order_by(ClassDailyLearningPlan.teaching_date.asc(), ClassDailyLearningPlan.created_at.asc())
+    )
+    res = await db.execute(stmt)
+    records = res.scalars().all()
+
+    plans = [
+        {
+            "id": r.id,
+            "subject_name": r.subject.name if r.subject else "Subject",
+            "teaching_date": str(r.teaching_date),
+            "topic_title": r.topic_title,
+            "learning_objectives": r.learning_objectives,
+            "required_materials": r.required_materials,
+            "teacher_name": r.teacher.username.replace("_", " ").title() if r.teacher else "Subject Teacher",
+        }
+        for r in records
+    ]
+
+    return success_response(
+        data={
+            "student_id": student_id,
+            "class_id": enrollment.class_id,
+            "section_id": enrollment.section_id,
+            "target_date": str(target_date),
+            "total_plans": len(plans),
+            "plans": plans,
+        }
+    )
+
+
+@router.delete("/tomorrows-learning/{plan_id}")
+async def delete_tomorrows_learning_plan(
+    plan_id: str,
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Deletes an advance lesson plan."""
+    stmt = select(ClassDailyLearningPlan).where(ClassDailyLearningPlan.id == plan_id)
+    res = await db.execute(stmt)
+    plan = res.scalar_one_or_none()
+    if not plan:
+        raise ResourceNotFoundException("ClassDailyLearningPlan", plan_id)
+
+    await db.delete(plan)
+    await db.commit()
+    return success_response(data={"id": plan_id}, message="Learning plan deleted successfully.")
+
 
 

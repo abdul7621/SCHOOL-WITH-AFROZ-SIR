@@ -1,4 +1,5 @@
 from typing import List, Optional
+from datetime import date, datetime
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +17,9 @@ from app.modules.development.models import (
     StudentDevelopmentRecord,
     DisciplineIncident,
     StudentAward,
+    StudentDailyHabit,
+    PrincipalActionItem,
+    NotebookCorrectionAudit,
 )
 from app.modules.development.schemas import (
     DevelopmentCriteriaCreate,
@@ -24,7 +28,14 @@ from app.modules.development.schemas import (
     SubmitDevelopmentEvaluationsRequest,
     DisciplineIncidentCreate,
     StudentAwardCreate,
+    SubmitDailyHabitsRequest,
+    PrincipalActionItemCreate,
+    PrincipalActionItemStatusUpdate,
+    NotebookCorrectionAuditCreate,
+    ConferHonorAwardRequest,
 )
+from app.modules.development.services import HabitService, PmrService
+
 
 router = APIRouter(prefix="/development", tags=["Qualitative Development & Behavioral Assessment"])
 
@@ -322,4 +333,398 @@ async def list_student_awards(
             for a in records
         ]
     )
+
+
+# ==============================================================================
+# Module 1: 60-Second 9-Point Daily Habit & Discipline Engine
+# ==============================================================================
+
+@router.get("/habits/grid")
+async def get_daily_habit_grid(
+    academic_year_id: Optional[str] = Query(None),
+    class_id: str = Query(...),
+    section_id: str = Query(...),
+    habit_date: date = Query(default_factory=date.today),
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """
+    Teacher 60-Second Fast Grid: Returns class roster initialized at 9/9
+    with today's attendance sync and pre-existing habit exception flags.
+    """
+    grid = await HabitService.get_daily_habit_grid(
+        academic_year_id=academic_year_id,
+        class_id=class_id,
+        section_id=section_id,
+        habit_date=habit_date,
+        db=db,
+    )
+    return success_response(data=grid)
+
+
+@router.post("/habits/submit")
+async def submit_daily_habits(
+    req: SubmitDailyHabitsRequest,
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """
+    Fast Grid Batch Submit: Atomically saves daily habit exceptions and scores.
+    """
+    result = await HabitService.submit_daily_habits(
+        req=req,
+        recorded_by_user_id=current_user.id,
+        db=db,
+    )
+    return success_response(
+        data=result,
+        message=f"Successfully marked 9-Point Habits for {result['saved_count']} students."
+    )
+
+
+@router.get("/habits/student/{student_id}/journal")
+async def get_student_habit_journal(
+    student_id: str,
+    days: int = Query(30, ge=1, le=180),
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """
+    Parent & Student Habit Journal: Returns streak, weekly average score,
+    frequent exceptions, and day-by-day habit evaluation history.
+    """
+    journal = await HabitService.get_student_habit_journal(
+        student_id=student_id,
+        db=db,
+        days=days,
+    )
+    return success_response(data=journal)
+
+
+@router.get("/habits/school-radar")
+async def get_school_habit_radar(
+    academic_year_id: Optional[str] = Query(None),
+    target_date: Optional[date] = Query(None),
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """
+    Principal Habit Radar Heatmap: Returns school-wide Class Habit Index (CHI),
+    dimension compliance rates, red alerts (<6/9), and Friday Assembly Honor Roll.
+    """
+    radar = await HabitService.get_school_habit_radar(
+        academic_year_id=academic_year_id,
+        target_date=target_date,
+        db=db,
+    )
+    return success_response(data=radar)
+
+
+# ==========================================
+# Module 2 Bridge: 1-Click Honor Roll Award Conferral
+# ==========================================
+@router.post("/awards/confer-honor")
+async def confer_honor_roll_award(
+    req: ConferHonorAwardRequest,
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """
+    1-Click Bridge: Automatically confers official award and generates certificate
+    for a top-performing student from the Friday Assembly Honor Roll.
+    """
+    from app.modules.academics.models import AcademicYear
+
+    ay_id = req.academic_year_id
+    if not ay_id:
+        ay_res = await db.execute(select(AcademicYear.id).where(AcademicYear.is_current == True))
+        ay_id = ay_res.scalar_one_or_none()
+        if not ay_id:
+            ay_res = await db.execute(select(AcademicYear.id).order_by(AcademicYear.start_date.desc()))
+            ay_id = ay_res.scalar_one_or_none()
+
+    award_date_obj = datetime.strptime(req.award_date, "%Y-%m-%d").date() if req.award_date else date.today()
+
+    award = StudentAward(
+        student_id=req.student_id,
+        academic_year_id=ay_id or "ay_default",
+        award_name=req.award_name,
+        award_category=req.award_category,
+        award_date=award_date_obj,
+        description=req.description,
+        certificate_issued=True,
+        awarded_by_user_id=current_user.id,
+    )
+    db.add(award)
+    await db.commit()
+    await db.refresh(award)
+
+    return success_response(
+        data={
+            "award_id": award.id,
+            "student_id": award.student_id,
+            "award_name": award.award_name,
+            "award_date": str(award.award_date),
+            "certificate_url": f"/api/v1/documents/award-certificate/{award.id}/html",
+        },
+        message=f"Award '{award.award_name}' successfully conferred. Certificate generated.",
+    )
+
+
+# ==========================================
+# Module 4: Principal Monitoring Report (PMR) Scorecard
+# ==========================================
+@router.get("/pmr/weekly-scorecard")
+async def get_weekly_pmr_scorecard(
+    academic_year_id: Optional[str] = Query(None),
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """
+    PMR Executive Scorecard: Returns attendance velocity, fee pace, habit health,
+    notebook audit quality score, and action item overdue telemetry.
+    """
+    scorecard = await PmrService.get_weekly_pmr_scorecard(
+        academic_year_id=academic_year_id,
+        db=db,
+    )
+    return success_response(data=scorecard)
+
+
+# ==========================================
+# Module 4: Executive Action Items Tracker
+# ==========================================
+@router.get("/action-items")
+async def list_action_items(
+    status_filter: Optional[str] = Query(None),
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Lists executive administrative action items with overdue detection."""
+    from app.modules.users_rbac.models import User
+
+    stmt = (
+        select(PrincipalActionItem)
+        .options(selectinload(PrincipalActionItem.assigned_to))
+        .order_by(PrincipalActionItem.deadline.asc())
+    )
+    if status_filter:
+        stmt = stmt.where(PrincipalActionItem.status == status_filter.upper())
+
+    res = await db.execute(stmt)
+    items = res.scalars().all()
+
+    today = date.today()
+    results = []
+    for item in items:
+        is_overdue = item.status != "RESOLVED" and item.deadline < today
+        eff_status = "OVERDUE" if is_overdue and item.status == "OPEN" else item.status
+
+        assigned_name = "Assigned Staff"
+        if item.assigned_to:
+            assigned_name = item.assigned_to.username.replace("_", " ").title()
+
+        results.append({
+            "id": item.id,
+            "title": item.title,
+            "description": item.description,
+            "category": item.category,
+            "assigned_to_user_id": item.assigned_to_user_id,
+            "assigned_to_name": assigned_name,
+            "deadline": str(item.deadline),
+            "status": eff_status,
+            "resolution_notes": item.resolution_notes,
+            "is_overdue": is_overdue,
+            "created_by_user_id": item.created_by_user_id,
+            "created_at": str(item.created_at),
+        })
+
+    return success_response(data=results)
+
+
+@router.post("/action-items", status_code=status.HTTP_201_CREATED)
+async def create_action_item(
+    req: PrincipalActionItemCreate,
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Principal Action: Logs new institutional action item with assignee & deadline."""
+    dl_obj = datetime.strptime(req.deadline, "%Y-%m-%d").date()
+
+    item = PrincipalActionItem(
+        title=req.title.strip(),
+        description=req.description.strip(),
+        category=req.category.upper(),
+        assigned_to_user_id=req.assigned_to_user_id,
+        deadline=dl_obj,
+        status="OPEN",
+        created_by_user_id=current_user.id,
+    )
+    db.add(item)
+    await db.commit()
+    await db.refresh(item)
+    return success_response(data={"id": item.id, "title": item.title}, message="Action item logged successfully.")
+
+
+@router.patch("/action-items/{item_id}/status")
+async def update_action_item_status(
+    item_id: str,
+    req: PrincipalActionItemStatusUpdate,
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Updates action item status ('IN_PROGRESS', 'RESOLVED') and resolution notes."""
+    stmt = select(PrincipalActionItem).where(PrincipalActionItem.id == item_id)
+    res = await db.execute(stmt)
+    item = res.scalar_one_or_none()
+    if not item:
+        raise ResourceNotFoundException("PrincipalActionItem", item_id)
+
+    item.status = req.status.upper()
+    if req.resolution_notes:
+        item.resolution_notes = req.resolution_notes.strip()
+
+    await db.commit()
+    await db.refresh(item)
+    return success_response(data={"id": item.id, "status": item.status}, message="Action item status updated.")
+
+
+@router.delete("/action-items/{item_id}")
+async def delete_action_item(
+    item_id: str,
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Deletes an action item."""
+    stmt = select(PrincipalActionItem).where(PrincipalActionItem.id == item_id)
+    res = await db.execute(stmt)
+    item = res.scalar_one_or_none()
+    if not item:
+        raise ResourceNotFoundException("PrincipalActionItem", item_id)
+
+    await db.delete(item)
+    await db.commit()
+    return success_response(data={"id": item_id}, message="Action item deleted successfully.")
+
+
+# ==========================================
+# Module 4: Notebook / Workbook Correction Audits
+# ==========================================
+@router.post("/notebook-audits", status_code=status.HTTP_201_CREATED)
+async def create_notebook_correction_audit(
+    req: NotebookCorrectionAuditCreate,
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """
+    Quality Audit Sampling: Records 5-notebook random correction audit
+    scored across 5 rubric criteria (0 to 10 each = 50 pts total).
+    """
+    from app.modules.academics.models import AcademicYear
+
+    ay_id = req.academic_year_id
+    if not ay_id:
+        ay_res = await db.execute(select(AcademicYear.id).where(AcademicYear.is_current == True))
+        ay_id = ay_res.scalar_one_or_none()
+        if not ay_id:
+            ay_res = await db.execute(select(AcademicYear.id).order_by(AcademicYear.start_date.desc()))
+            ay_id = ay_res.scalar_one_or_none()
+
+    audit_dt = datetime.strptime(req.audit_date, "%Y-%m-%d").date() if req.audit_date else date.today()
+
+    total_pts = (
+        req.index_score
+        + req.date_score
+        + req.red_pen_correction_score
+        + req.spelling_correction_score
+        + req.teacher_signature_score
+    )
+    score_pct = round((total_pts / 50.0) * 100.0, 1)
+
+    audit = NotebookCorrectionAudit(
+        academic_year_id=ay_id or "ay_default",
+        class_id=req.class_id,
+        section_id=req.section_id,
+        subject_id=req.subject_id,
+        teacher_user_id=req.teacher_user_id,
+        audit_date=audit_dt,
+        notebooks_checked_count=req.notebooks_checked_count,
+        index_score=req.index_score,
+        date_score=req.date_score,
+        red_pen_correction_score=req.red_pen_correction_score,
+        spelling_correction_score=req.spelling_correction_score,
+        teacher_signature_score=req.teacher_signature_score,
+        total_score_pct=score_pct,
+        auditor_user_id=current_user.id,
+        remarks=req.remarks.strip() if req.remarks else None,
+    )
+    db.add(audit)
+    await db.commit()
+    await db.refresh(audit)
+
+    return success_response(
+        data={"id": audit.id, "total_score_pct": score_pct},
+        message=f"Notebook correction audit logged successfully (Score: {score_pct}%).",
+    )
+
+
+@router.get("/notebook-audits")
+async def list_notebook_correction_audits(
+    teacher_id: Optional[str] = Query(None),
+    class_id: Optional[str] = Query(None),
+    current_user: CurrentTenantUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+):
+    """Lists recent notebook quality audits with teacher scores."""
+    from app.modules.users_rbac.models import User
+    from app.modules.academics.models import ClassLevel, Section, Subject
+
+    stmt = (
+        select(NotebookCorrectionAudit)
+        .options(
+            selectinload(NotebookCorrectionAudit.teacher),
+            selectinload(NotebookCorrectionAudit.class_level),
+            selectinload(NotebookCorrectionAudit.section),
+            selectinload(NotebookCorrectionAudit.subject),
+        )
+        .order_by(NotebookCorrectionAudit.audit_date.desc(), NotebookCorrectionAudit.created_at.desc())
+    )
+    if teacher_id:
+        stmt = stmt.where(NotebookCorrectionAudit.teacher_user_id == teacher_id)
+    if class_id:
+        stmt = stmt.where(NotebookCorrectionAudit.class_id == class_id)
+
+    res = await db.execute(stmt)
+    audits = res.scalars().all()
+
+    items = []
+    for a in audits:
+        pct = float(a.total_score_pct)
+        grade = "A (Exemplary)" if pct >= 85 else ("B (Good)" if pct >= 70 else ("C (Needs Focus)" if pct >= 50 else "D (Critical Alert)"))
+        teacher_name = a.teacher.username.replace("_", " ").title() if a.teacher else "Staff Teacher"
+
+        items.append({
+            "id": a.id,
+            "teacher_user_id": a.teacher_user_id,
+            "teacher_name": teacher_name,
+            "class_name": a.class_level.name if a.class_level else "-",
+            "section_name": a.section.name if a.section else "-",
+            "subject_name": a.subject.name if a.subject else "-",
+            "audit_date": str(a.audit_date),
+            "notebooks_checked_count": a.notebooks_checked_count,
+            "scores": {
+                "index_score": a.index_score,
+                "date_score": a.date_score,
+                "red_pen_correction": a.red_pen_correction_score,
+                "spelling_correction": a.spelling_correction_score,
+                "teacher_signature": a.teacher_signature_score,
+            },
+            "total_score_pct": pct,
+            "grade_quality": grade,
+            "remarks": a.remarks or "",
+        })
+
+    return success_response(data=items)
+
+
 

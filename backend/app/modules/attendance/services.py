@@ -243,14 +243,43 @@ class AttendanceService:
                 )
                 db.add(record)
 
-        # Collect absent students for notification alerts
+        # Collect absent students for notification alerts and synchronize to StudentDailyHabit
         absent_student_ids = []
-        for item in req.records:
-            status_id = item.attendance_status_id
-            val = status_map_by_id.get(status_id)
-            code = val.code.upper() if val else str(status_id).upper()
-            if code == "ABSENT":
-                absent_student_ids.append(item.student_id)
+        try:
+            from app.modules.development.models import StudentDailyHabit
+            habit_stmt = select(StudentDailyHabit).where(
+                StudentDailyHabit.class_id == req.class_id,
+                StudentDailyHabit.section_id == req.section_id,
+                StudentDailyHabit.habit_date == req.attendance_date,
+            )
+            habit_res = await db.execute(habit_stmt)
+            existing_habits = {h.student_id: h for h in habit_res.scalars().all()}
+
+            for item in req.records:
+                status_id = item.attendance_status_id
+                val = status_map_by_id.get(status_id)
+                code = val.code.upper() if val else str(status_id).upper()
+                if code == "ABSENT":
+                    absent_student_ids.append(item.student_id)
+
+                if item.student_id in existing_habits:
+                    h_rec = existing_habits[item.student_id]
+                    h_rec.attendance_status = code
+                    if code in ("ABSENT", "EXCUSED"):
+                        h_rec.daily_score = 0
+                    elif code in ("PRESENT", "LATE") and h_rec.daily_score == 0:
+                        h_rec.daily_score = 1 + (
+                            (1 if h_rec.habit_punctuality else 0)
+                            + (1 if h_rec.habit_uniform else 0)
+                            + (1 if h_rec.habit_material else 0)
+                            + (1 if h_rec.habit_homework else 0)
+                            + (1 if h_rec.habit_classwork else 0)
+                            + (1 if h_rec.habit_healthy_lunch else 0)
+                            + (1 if h_rec.habit_discipline else 0)
+                            + (1 if h_rec.habit_neatness else 0)
+                        )
+        except Exception as habit_sync_err:
+            logger.debug(f"Habit attendance sync notice: {habit_sync_err}")
 
         await db.commit()
 

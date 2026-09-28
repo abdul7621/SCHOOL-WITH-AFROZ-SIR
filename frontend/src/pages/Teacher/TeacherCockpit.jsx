@@ -18,6 +18,11 @@ import {
   Coffee,
   School,
   RefreshCw,
+  Send,
+  ClipboardList,
+  Layers,
+  X,
+  Trash2,
 } from 'lucide-react';
 import api from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
@@ -32,6 +37,30 @@ export const TeacherCockpit = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+
+  // Module 2: Tomorrow's Learning Dispatch State
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const defaultTomorrowStr = tomorrow.toISOString().split('T')[0];
+
+  const [classesList, setClassesList] = useState([]);
+  const [subjectsList, setSubjectsList] = useState([]);
+  const [tomorrowsPlans, setTomorrowsPlans] = useState([]);
+  const [showPlanModal, setShowPlanModal] = useState(false);
+  const [submittingPlan, setSubmittingPlan] = useState(false);
+  const [selectedPlanClassId, setSelectedPlanClassId] = useState('');
+  const [selectedPlanSectionId, setSelectedPlanSectionId] = useState('');
+  const [planForm, setPlanForm] = useState({
+    class_id: '',
+    section_id: '',
+    subject_id: '',
+    teaching_date: defaultTomorrowStr,
+    topic_name: '',
+    learning_objectives: '',
+    materials_required: '',
+    homework_preview: '',
+    is_published: true,
+  });
 
   const fetchCockpit = async (isManual = false) => {
     if (isManual) setRefreshing(true);
@@ -50,10 +79,98 @@ export const TeacherCockpit = () => {
 
   useEffect(() => {
     fetchCockpit();
-    // Auto-refresh every 60 seconds to update live period indicators
     const interval = setInterval(() => fetchCockpit(), 60000);
     return () => clearInterval(interval);
   }, []);
+
+  // Fetch Classes & Subjects for Tomorrow's Learning
+  useEffect(() => {
+    const fetchDropdowns = async () => {
+      try {
+        const [cRes, sRes] = await Promise.all([
+          api.get('/academics/classes'),
+          api.get('/academics/subjects'),
+        ]);
+        if (cRes.data && cRes.data.length > 0) {
+          setClassesList(cRes.data);
+          setSelectedPlanClassId(cRes.data[0].id);
+          if (cRes.data[0].sections && cRes.data[0].sections.length > 0) {
+            setSelectedPlanSectionId(cRes.data[0].sections[0].id);
+          }
+        }
+        if (sRes.data) setSubjectsList(sRes.data);
+      } catch (e) {
+        console.error('Error loading classes/subjects for learning dispatch:', e);
+      }
+    };
+    fetchDropdowns();
+  }, []);
+
+  const fetchTomorrowsPlans = async (cId, sId) => {
+    if (!cId || !sId) return;
+    try {
+      const res = await api.get(`/academics/tomorrows-learning/class/${cId}/${sId}`);
+      const data = res?.data?.data || res?.data || [];
+      setTomorrowsPlans(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error('Error fetching tomorrow learning plans:', e);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedPlanClassId && selectedPlanSectionId) {
+      fetchTomorrowsPlans(selectedPlanClassId, selectedPlanSectionId);
+    }
+  }, [selectedPlanClassId, selectedPlanSectionId]);
+
+  const handlePlanClassChange = (cId) => {
+    setSelectedPlanClassId(cId);
+    const cls = classesList.find((c) => c.id === cId);
+    if (cls && cls.sections && cls.sections.length > 0) {
+      setSelectedPlanSectionId(cls.sections[0].id);
+    } else {
+      setSelectedPlanSectionId('');
+    }
+  };
+
+  const handleSavePlan = async (e) => {
+    e.preventDefault();
+    setSubmittingPlan(true);
+    try {
+      await api.post('/academics/tomorrows-learning', {
+        ...planForm,
+        class_id: planForm.class_id || selectedPlanClassId,
+        section_id: planForm.section_id || selectedPlanSectionId,
+      });
+      setShowPlanModal(false);
+      setPlanForm({
+        class_id: selectedPlanClassId,
+        section_id: selectedPlanSectionId,
+        subject_id: subjectsList[0]?.id || '',
+        teaching_date: defaultTomorrowStr,
+        topic_name: '',
+        learning_objectives: '',
+        materials_required: '',
+        homework_preview: '',
+        is_published: true,
+      });
+      fetchTomorrowsPlans(selectedPlanClassId, selectedPlanSectionId);
+    } catch (err) {
+      alert('Failed to save learning plan: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setSubmittingPlan(false);
+    }
+  };
+
+  const handleDeletePlan = async (planId) => {
+    if (!window.confirm('Are you sure you want to withdraw this advance learning plan?')) return;
+    try {
+      await api.delete(`/academics/tomorrows-learning/${planId}`);
+      fetchTomorrowsPlans(selectedPlanClassId, selectedPlanSectionId);
+    } catch (err) {
+      alert('Failed to delete plan: ' + (err.response?.data?.message || err.message));
+    }
+  };
 
   if (loading) {
     return (
@@ -209,22 +326,30 @@ export const TeacherCockpit = () => {
                     </p>
                   </div>
 
-                  <div>
+                  <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2">
                     {cts.attendance_marked ? (
                       <button
-                        onClick={() => navigate('/attendance')}
-                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+                        onClick={() => navigate('/attendance?tab=roster')}
+                        className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
                       >
-                        <CalendarCheck size={14} /> View Roster
+                        <CalendarCheck size={14} /> Attendance
                       </button>
                     ) : (
                       <button
-                        onClick={() => navigate('/attendance')}
-                        className="px-4 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-amber-600/20 transition-all animate-pulse"
+                        onClick={() => navigate('/attendance?tab=roster')}
+                        className="px-3.5 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-amber-600/20 transition-all animate-pulse"
                       >
                         <CalendarCheck size={14} /> Mark Attendance
                       </button>
                     )}
+
+                    <button
+                      onClick={() => navigate('/attendance?tab=habits')}
+                      className="px-3.5 py-2 bg-gradient-to-r from-amber-600 to-indigo-600 hover:from-amber-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+                    >
+                      <Sparkles size={14} className="text-amber-200" />
+                      <span>9-Point Habits</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -411,7 +536,149 @@ export const TeacherCockpit = () => {
         )}
       </div>
 
-      {/* 5. Quick Shortcuts & Operations Dock */}
+      {/* 5. Module 2: Tomorrow's Learning Dispatch (90-Second Advance Lesson Planner) */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+        <div className="border-b border-slate-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <ClipboardList size={18} className="text-indigo-600" />
+              <h3 className="font-bold text-slate-900 text-sm">Tomorrow's Learning Dispatch (Advance Planner)</h3>
+              <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-black uppercase tracking-wider">
+                90-SEC DISPATCH
+              </span>
+            </div>
+            <p className="text-xs text-slate-500">
+              Publish tomorrow's topics, materials checklist, and objectives so parents & students come prepared.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedPlanClassId}
+              onChange={(e) => handlePlanClassChange(e.target.value)}
+              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700"
+            >
+              {classesList.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+
+            {classesList.find((c) => c.id === selectedPlanClassId)?.sections?.length > 0 && (
+              <select
+                value={selectedPlanSectionId}
+                onChange={(e) => setSelectedPlanSectionId(e.target.value)}
+                className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700"
+              >
+                {classesList.find((c) => c.id === selectedPlanClassId).sections.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            )}
+
+            <button
+              onClick={() => {
+                setPlanForm({
+                  class_id: selectedPlanClassId,
+                  section_id: selectedPlanSectionId,
+                  subject_id: subjectsList[0]?.id || '',
+                  teaching_date: defaultTomorrowStr,
+                  topic_name: '',
+                  learning_objectives: '',
+                  materials_required: '',
+                  homework_preview: '',
+                  is_published: true,
+                });
+                setShowPlanModal(true);
+              }}
+              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition-all"
+            >
+              <Plus size={14} />
+              <span>Dispatch Lesson</span>
+            </button>
+          </div>
+        </div>
+
+        {tomorrowsPlans.length === 0 ? (
+          <div className="p-6 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200 space-y-2">
+            <div>No advance learning plans dispatched yet for {classesList.find(c => c.id === selectedPlanClassId)?.name || 'this class'} on tomorrow ({defaultTomorrowStr}).</div>
+            <button
+              onClick={() => {
+                setPlanForm({
+                  class_id: selectedPlanClassId,
+                  section_id: selectedPlanSectionId,
+                  subject_id: subjectsList[0]?.id || '',
+                  teaching_date: defaultTomorrowStr,
+                  topic_name: '',
+                  learning_objectives: '',
+                  materials_required: '',
+                  homework_preview: '',
+                  is_published: true,
+                });
+                setShowPlanModal(true);
+              }}
+              className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold inline-flex items-center gap-1"
+            >
+              <Plus size={13} />
+              <span>Click to Dispatch in 90 Seconds</span>
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {tomorrowsPlans.map((plan) => (
+              <div
+                key={plan.id}
+                className="p-4 rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50/40 to-white shadow-sm space-y-2 flex flex-col justify-between"
+              >
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="px-2.5 py-0.5 rounded-full bg-indigo-600 text-white font-black text-[10px]">
+                      {plan.subject_name || 'Subject'}
+                    </span>
+                    <button
+                      onClick={() => handleDeletePlan(plan.id)}
+                      className="text-slate-400 hover:text-rose-600 transition-colors p-1"
+                      title="Withdraw Plan"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+
+                  <h4 className="font-bold text-slate-900 text-sm">
+                    {plan.topic_name}
+                  </h4>
+
+                  {plan.learning_objectives && (
+                    <div className="text-xs text-slate-600">
+                      <strong className="text-slate-700 font-semibold">Objectives:</strong> {plan.learning_objectives}
+                    </div>
+                  )}
+
+                  {plan.materials_required && (
+                    <div className="text-[11px] bg-amber-50 border border-amber-200 text-amber-900 p-2 rounded-lg font-medium">
+                      🎒 <strong>Bring to Class:</strong> {plan.materials_required}
+                    </div>
+                  )}
+
+                  {plan.homework_preview && (
+                    <div className="text-[11px] text-slate-500">
+                      📝 <strong>Preview:</strong> {plan.homework_preview}
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
+                  <span>Date: <strong className="text-slate-700">{plan.teaching_date}</strong></span>
+                  <span className="text-emerald-700 font-bold flex items-center gap-1">
+                    <CheckCircle2 size={11} /> Published to Parents
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 6. Quick Shortcuts & Operations Dock */}
       <div className="space-y-3">
         <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
           <Sparkles size={16} className="text-blue-600" />
@@ -472,6 +739,116 @@ export const TeacherCockpit = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal: Tomorrow's Learning Dispatch (90-Second Planner) */}
+      {showPlanModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <ClipboardList size={18} className="text-indigo-600" />
+                <h3 className="font-bold text-slate-900 text-sm">Tomorrow's Learning Dispatch (90-Sec Planner)</h3>
+              </div>
+              <button onClick={() => setShowPlanModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePlan} className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">Subject *</label>
+                  <select
+                    required
+                    value={planForm.subject_id}
+                    onChange={(e) => setPlanForm({ ...planForm, subject_id: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold"
+                  >
+                    <option value="">-- Choose Subject --</option>
+                    {subjectsList.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">Teaching Date *</label>
+                  <input
+                    type="date"
+                    required
+                    value={planForm.teaching_date}
+                    onChange={(e) => setPlanForm({ ...planForm, teaching_date: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Chapter / Topic Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Chapter 4: Fractions & Decimals / Photosynthesis"
+                  value={planForm.topic_name}
+                  onChange={(e) => setPlanForm({ ...planForm, topic_name: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Key Learning Objectives</label>
+                <textarea
+                  rows={2}
+                  placeholder="What will students learn and practice tomorrow?"
+                  value={planForm.learning_objectives}
+                  onChange={(e) => setPlanForm({ ...planForm, learning_objectives: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-amber-800 font-semibold mb-1">🎒 Required Materials Checklist (Parents Alert)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Geometry Box, Graph Paper, 30cm Ruler, Chart Paper"
+                  value={planForm.materials_required}
+                  onChange={(e) => setPlanForm({ ...planForm, materials_required: e.target.value })}
+                  className="w-full px-3 py-2 bg-amber-50/60 border border-amber-200 rounded-lg text-xs font-medium text-amber-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Advance Homework / Read Preview</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Read Textbook pages 45 to 48 in advance"
+                  value={planForm.homework_preview}
+                  onChange={(e) => setPlanForm({ ...planForm, homework_preview: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowPlanModal(false)}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingPlan}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold shadow disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <Send size={13} />
+                  <span>{submittingPlan ? 'Dispatching...' : 'Publish to Parent Portal'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

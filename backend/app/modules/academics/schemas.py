@@ -199,3 +199,39 @@ class TimetableSlotCopyRequest(BaseModel):
     academic_year_id: Optional[str] = None
 
 
+class TomorrowsLearningCreateRequest(BaseModel):
+    academic_year_id: Optional[str] = None
+    class_id: str
+    section_id: str
+    subject_id: str
+    teaching_date: date
+    topic_title: str
+    learning_objectives: str
+    required_materials: Optional[str] = None
+
+
+class TomorrowsLearningUpdate(BaseModel):
+    topic_title: Optional[str] = None
+    learning_objectives: Optional[str] = None
+    required_materials: Optional[str] = None
+
+
+class TomorrowsLearningResponse(BaseModel):
+    id: str
+    academic_year_id: str
+    class_id: str
+    class_name: Optional[str] = None
+    section_id: str
+    section_name: Optional[str] = None
+    subject_id: str
+    subject_name: Optional[str] = None
+    teaching_date: date
+    topic_title: str
+    learning_objectives: str
+    required_materials: Optional[str] = None
+    teacher_user_id: str
+    teacher_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+

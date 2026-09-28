@@ -409,3 +409,178 @@ class ExcelMigrationService:
         wb.save(output)
         output.seek(0)
         return output.getvalue()
+
+    @staticmethod
+    def export_udise_plus_to_excel(
+        students_data: List[Dict[str, Any]],
+        school_name: str,
+        dise_code: str = "24070501234",
+        academic_year: str = "2026-2027",
+    ) -> bytes:
+        """
+        Generates official Government NIC UDISE+ SDMS (Student Database Management System)
+        35-Column standard bulk data upload spreadsheet.
+        """
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "UDISE_PLUS_SDMS_DATA"
+
+        # Top Banner Title
+        ws.merge_cells("A1:AI1")
+        title_cell = ws["A1"]
+        title_cell.value = f"UDISE+ SDMS 2026-27 COMPLIANT STUDENT DATA EXPORT — {school_name.upper()} (DISE: {dise_code})"
+        title_cell.font = Font(name="Segoe UI", size=13, bold=True, color="FFFFFF")
+        title_cell.fill = PatternFill(start_color="0F172A", end_color="0F172A", fill_type="solid")
+        title_cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 32
+
+        # Subtitle Info Row
+        ws.merge_cells("A2:AI2")
+        sub_cell = ws["A2"]
+        sub_cell.value = f"Ministry of Education / NIC SDMS Format | Total Students: {len(students_data)} | Academic Session: {academic_year} | Generated: {datetime.now().strftime('%d-%b-%Y %H:%M')}"
+        sub_cell.font = Font(name="Segoe UI", size=9.5, italic=True, color="E2E8F0")
+        sub_cell.fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+        sub_cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[2].height = 20
+
+        # Official 35 Columns
+        headers = [
+            "1. Student_PEN (11-Digits)",
+            "2. Student_Full_Name",
+            "3. Gender_Code (1:M, 2:F, 3:T)",
+            "4. DOB (DD/MM/YYYY)",
+            "5. Mother_Name",
+            "6. Father_Name",
+            "7. Guardian_Name",
+            "8. Aadhaar_Number (12-Digits)",
+            "9. Name_as_per_Aadhaar",
+            "10. Student_Address",
+            "11. Pincode",
+            "12. Mobile_Number",
+            "13. Alternate_Mobile",
+            "14. Contact_Email",
+            "15. Mother_Tongue",
+            "16. Social_Category (1:Gen, 2:SC, 3:ST, 4:OBC)",
+            "17. Minority_Group (0:None, 1:Muslim, 2:Christian...)",
+            "18. BPL_Beneficiary (1:Yes, 2:No)",
+            "19. AAY_Beneficiary (1:Yes, 2:No)",
+            "20. CWSN_Status (1:Yes, 2:No)",
+            "21. CWSN_Type",
+            "22. Indian_National (1:Yes, 2:No)",
+            "23. Out_of_School_Child (1:Yes, 2:No)",
+            "24. Student_Admission_No",
+            "25. Admission_Date (DD/MM/YYYY)",
+            "26. Class_Enrolled",
+            "27. Section",
+            "28. Roll_Number",
+            "29. Academic_Stream",
+            "30. Previous_School_Status (1:Same, 2:Other, 3:None)",
+            "31. Previous_Class_Studied",
+            "32. Previous_Exam_Status (1:Passed, 2:Failed)",
+            "33. Previous_Marks_Percentage",
+            "34. RTE_Admission_Status (1:Yes, 2:No)",
+            "35. APAAR_ID (12-Digits)",
+        ]
+
+        ws.append(headers)  # Row 3
+        ws.row_dimensions[3].height = 28
+
+        header_fill = PatternFill(start_color="1E40AF", end_color="1E40AF", fill_type="solid")
+        header_font = Font(name="Segoe UI", size=10, bold=True, color="FFFFFF")
+        border = Border(
+            left=Side(style='thin', color='CBD5E1'),
+            right=Side(style='thin', color='CBD5E1'),
+            top=Side(style='thin', color='CBD5E1'),
+            bottom=Side(style='thin', color='CBD5E1')
+        )
+
+        for col_idx in range(1, len(headers) + 1):
+            cell = ws.cell(row=3, column=col_idx)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border = border
+            ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = 20
+
+        # Adjust specific column widths
+        ws.column_dimensions["A"].width = 24  # PEN
+        ws.column_dimensions["B"].width = 26  # Name
+        ws.column_dimensions["E"].width = 22  # Mother
+        ws.column_dimensions["F"].width = 22  # Father
+        ws.column_dimensions["H"].width = 22  # Aadhaar
+        ws.column_dimensions["J"].width = 32  # Address
+        ws.column_dimensions["X"].width = 22  # Admission No
+        ws.column_dimensions["AI"].width = 22 # APAAR ID
+
+        # Append Data Rows
+        row_font = Font(name="Segoe UI", size=10, color="0F172A")
+        alt_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+
+        for r_idx, st in enumerate(students_data, start=4):
+            # Gender code
+            gender_val = str(st.get("gender", "")).upper()
+            g_code = 1 if "MALE" in gender_val and "FEMALE" not in gender_val else (2 if "FEMALE" in gender_val else 3)
+
+            # Social Category code
+            cat_val = str(st.get("category", "")).upper()
+            c_code = 2 if "SC" in cat_val else (3 if "ST" in cat_val else (4 if "OBC" in cat_val or "SEBC" in cat_val else 1))
+
+            # RTE
+            rte_code = 1 if st.get("is_rte") else 2
+
+            row = [
+                st.get("pen_11") or st.get("pen") or "-",
+                st.get("full_name") or f"{st.get('first_name', '')} {st.get('last_name', '')}".strip(),
+                g_code,
+                st.get("dob_str") or "-",
+                st.get("mother_name") or "-",
+                st.get("father_name") or "-",
+                st.get("guardian_name") or st.get("father_name") or "-",
+                st.get("aadhaar_no") or st.get("aadhar") or "-",
+                st.get("name_as_per_aadhaar") or st.get("full_name") or "-",
+                st.get("address") or "-",
+                st.get("pincode") or "380001",
+                st.get("primary_phone") or "-",
+                st.get("alternate_phone") or "-",
+                st.get("email") or "-",
+                st.get("mother_tongue") or "Gujarati",
+                c_code,
+                st.get("minority_code", 0),
+                st.get("bpl_code", 2),
+                st.get("aay_code", 2),
+                st.get("cwsn_code", 2),
+                st.get("cwsn_type", "NA"),
+                1,  # Indian National
+                2,  # Out of School
+                st.get("admission_no") or "-",
+                st.get("admission_date_str") or "-",
+                st.get("class_name") or "-",
+                st.get("section_name") or "A",
+                st.get("roll_no") or "-",
+                st.get("academic_stream") or "General",
+                st.get("prev_school_code", 1),
+                st.get("prev_class", "-"),
+                st.get("prev_exam_code", 1),
+                st.get("prev_marks_pct", "80.00"),
+                rte_code,
+                st.get("apaar_id") or "-",
+            ]
+            ws.append(row)
+
+            # Apply row styling
+            is_even = (r_idx % 2 == 0)
+            for col_idx in range(1, len(row) + 1):
+                cell = ws.cell(row=r_idx, column=col_idx)
+                cell.font = row_font
+                cell.border = border
+                if is_even:
+                    cell.fill = alt_fill
+
+        # Freeze Panes under Header Row (Row 3)
+        ws.freeze_panes = "C4"
+
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        return output.getvalue()
+

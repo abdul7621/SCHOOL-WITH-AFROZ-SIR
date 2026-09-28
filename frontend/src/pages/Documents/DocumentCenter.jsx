@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Printer, Search, ShieldCheck, CreditCard, Award, ArrowUpRight } from 'lucide-react';
+import { FileText, Printer, Search, ShieldCheck, CreditCard, Award, ArrowUpRight, Download, BookOpen, Sparkles, Database } from 'lucide-react';
 import api from '../../api/client';
 
 export const DocumentCenter = () => {
@@ -8,6 +8,8 @@ export const DocumentCenter = () => {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClass, setSelectedClass] = useState('');
+  const [grClass, setGrClass] = useState('');
+  const [udiseClass, setUdiseClass] = useState('');
   const [examTerms, setExamTerms] = useState([]);
   const [selectedTermId, setSelectedTermId] = useState('');
   const [leavingReason, setLeavingReason] = useState('Parent Relocation / Transferred to another city');
@@ -265,7 +267,90 @@ export const DocumentCenter = () => {
             )}
           </div>
         </div>
+
+        {/* Card 5: Statutory 2-Page General Register (G.R. Ledger) */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+          <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+            <BookOpen size={18} className="text-amber-600" />
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-slate-900 text-sm">Statutory 2-Page General Register (G.R. Ledger Book)</h3>
+              <span className="bg-amber-100 text-amber-800 font-extrabold text-[10px] px-2 py-0.5 rounded-md">GAZETTE A3 SPREAD</span>
+            </div>
+          </div>
+
+          <div className="space-y-4 text-xs">
+            <p className="text-slate-600 leading-relaxed">
+              Official 2-page landscape dual spread (Left Page: Student Name breakdown, Caste, Birthplace, DOB in words, APAAR & Aadhaar ID; Right Page: 18-digit Gujarat UID, PEN, Previous School, RTE quota, Conduct & Discharge).
+            </p>
+
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">Filter by Class (Optional)</label>
+              <select
+                value={grClass}
+                onChange={(e) => setGrClass(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-semibold text-slate-800"
+              >
+                <option value="">-- All Classes & Enrolled Students --</option>
+                {classes.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <a
+              href={`/api/v1/documents/general-register/html?${grClass ? `class_id=${grClass}&` : ''}token=${encodeURIComponent(localStorage.getItem('token') || '')}&tenant_slug=${encodeURIComponent(localStorage.getItem('tenant_slug') || '7aschoolerpuat')}`}
+              target="_blank"
+              rel="noreferrer"
+              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-bold py-2.5 rounded-lg transition-all shadow"
+            >
+              <Printer size={14} />
+              <span>Open Statutory G.R. Ledger Book (A3 Landscape)</span>
+            </a>
+          </div>
+        </div>
+
+        {/* Card 6: UDISE+ SDMS 1-Click Schema Exporter */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+          <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+            <Database size={18} className="text-blue-600" />
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-slate-900 text-sm">UDISE+ SDMS 1-Click Schema Bulk Exporter</h3>
+              <span className="bg-blue-100 text-blue-800 font-extrabold text-[10px] px-2 py-0.5 rounded-md">NIC 35-COLUMNS</span>
+            </div>
+          </div>
+
+          <div className="space-y-4 text-xs">
+            <p className="text-slate-600 leading-relaxed">
+              Instantly generates the official 35-column Ministry of Education UDISE+ SDMS student spreadsheet with 11-digit PEN, APAAR ID, RTE quota, Aadhaar verification, and demographic codes for state portal uploads.
+            </p>
+
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">Filter by Class (Optional)</label>
+              <select
+                value={udiseClass}
+                onChange={(e) => setUdiseClass(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-semibold text-slate-800"
+              >
+                <option value="">-- All Enrolled Students (Full School) --</option>
+                {classes.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <a
+              href={`/api/v1/excel/export/udise-plus?${udiseClass ? `class_id=${udiseClass}&` : ''}token=${encodeURIComponent(localStorage.getItem('token') || '')}&tenant_slug=${encodeURIComponent(localStorage.getItem('tenant_slug') || '7aschoolerpuat')}`}
+              target="_blank"
+              rel="noreferrer"
+              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 rounded-lg transition-colors shadow"
+            >
+              <Download size={14} />
+              <span>Download Official UDISE+ SDMS Excel File</span>
+            </a>
+          </div>
+        </div>
       </div>
     </div>
   );
 };
+

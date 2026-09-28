@@ -94,6 +94,65 @@ TENANT_SCHEMA_DDL = [
     """
     ALTER TABLE student_fee_demands ADD COLUMN waiver_reason TEXT NULL;
     """,
+    # 7. Tomorrow's Learning Plans (Module 3)
+    """
+    CREATE TABLE IF NOT EXISTS class_daily_learning_plans (
+        id VARCHAR(36) PRIMARY KEY,
+        academic_year_id VARCHAR(36) NOT NULL,
+        class_id VARCHAR(36) NOT NULL,
+        section_id VARCHAR(36) NOT NULL,
+        subject_id VARCHAR(36) NOT NULL,
+        teaching_date DATE NOT NULL,
+        topic_title VARCHAR(200) NOT NULL,
+        learning_objectives TEXT NOT NULL,
+        required_materials VARCHAR(500) NULL,
+        teacher_user_id VARCHAR(36) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_cdlp_class_sec_date (class_id, section_id, teaching_date),
+        UNIQUE KEY uk_cls_sec_sub_date (class_id, section_id, subject_id, teaching_date)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    """,
+    # 8. Principal Executive Action Items (Module 4)
+    """
+    CREATE TABLE IF NOT EXISTS principal_action_items (
+        id VARCHAR(36) PRIMARY KEY,
+        title VARCHAR(200) NOT NULL,
+        description TEXT NOT NULL,
+        category VARCHAR(50) NOT NULL DEFAULT 'ACADEMIC',
+        assigned_to_user_id VARCHAR(36) NOT NULL,
+        deadline DATE NOT NULL,
+        status VARCHAR(30) NOT NULL DEFAULT 'OPEN',
+        resolution_notes TEXT NULL,
+        created_by_user_id VARCHAR(36) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_pai_status_deadline (status, deadline)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    """,
+    # 9. Notebook Correction Audit Sampling (Module 4)
+    """
+    CREATE TABLE IF NOT EXISTS notebook_correction_audits (
+        id VARCHAR(36) PRIMARY KEY,
+        academic_year_id VARCHAR(36) NOT NULL,
+        class_id VARCHAR(36) NOT NULL,
+        section_id VARCHAR(36) NOT NULL,
+        subject_id VARCHAR(36) NOT NULL,
+        teacher_user_id VARCHAR(36) NOT NULL,
+        audit_date DATE NOT NULL,
+        notebooks_checked_count INT DEFAULT 5,
+        index_score INT NOT NULL,
+        date_score INT NOT NULL,
+        red_pen_correction_score INT NOT NULL,
+        spelling_correction_score INT NOT NULL,
+        teacher_signature_score INT NOT NULL,
+        total_score_pct DECIMAL(5, 2) NOT NULL,
+        auditor_user_id VARCHAR(36) NOT NULL,
+        remarks TEXT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_nca_teacher_date (teacher_user_id, audit_date)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    """,
 ]
 
 DEFAULT_FINANCE_CATEGORIES = [

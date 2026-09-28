@@ -1127,6 +1127,115 @@ class TenantProvisioningService:
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
                 """)
 
+                # Student Daily Habits (Module 1: 9-Point Scoring Engine)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS student_daily_habits (
+                    id VARCHAR(36) PRIMARY KEY,
+                    student_id VARCHAR(36) NOT NULL,
+                    academic_year_id VARCHAR(36) NULL,
+                    class_id VARCHAR(36) NOT NULL,
+                    section_id VARCHAR(36) NOT NULL,
+                    habit_date DATE NOT NULL,
+                    attendance_status VARCHAR(20) NOT NULL DEFAULT 'PRESENT',
+                    habit_punctuality TINYINT(1) NOT NULL DEFAULT 1,
+                    habit_uniform TINYINT(1) NOT NULL DEFAULT 1,
+                    habit_material TINYINT(1) NOT NULL DEFAULT 1,
+                    habit_homework TINYINT(1) NOT NULL DEFAULT 1,
+                    habit_classwork TINYINT(1) NOT NULL DEFAULT 1,
+                    habit_healthy_lunch TINYINT(1) NOT NULL DEFAULT 1,
+                    habit_discipline TINYINT(1) NOT NULL DEFAULT 1,
+                    habit_neatness TINYINT(1) NOT NULL DEFAULT 1,
+                    daily_score INT NOT NULL DEFAULT 9,
+                    exception_notes TEXT NULL,
+                    recorded_by_user_id VARCHAR(36) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+                    FOREIGN KEY (academic_year_id) REFERENCES academic_years(id) ON DELETE SET NULL,
+                    FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE,
+                    FOREIGN KEY (section_id) REFERENCES sections(id) ON DELETE CASCADE,
+                    FOREIGN KEY (recorded_by_user_id) REFERENCES users(id),
+                    INDEX idx_sdh_class_sec_date (class_id, section_id, habit_date),
+                    INDEX idx_sdh_student_date (student_id, habit_date),
+                    UNIQUE KEY uk_student_habit_date (student_id, habit_date)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """)
+
+                # Tomorrow's Learning Plans (Module 3)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS class_daily_learning_plans (
+                    id VARCHAR(36) PRIMARY KEY,
+                    academic_year_id VARCHAR(36) NOT NULL,
+                    class_id VARCHAR(36) NOT NULL,
+                    section_id VARCHAR(36) NOT NULL,
+                    subject_id VARCHAR(36) NOT NULL,
+                    teaching_date DATE NOT NULL,
+                    topic_title VARCHAR(200) NOT NULL,
+                    learning_objectives TEXT NOT NULL,
+                    required_materials VARCHAR(500) NULL,
+                    teacher_user_id VARCHAR(36) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (academic_year_id) REFERENCES academic_years(id) ON DELETE CASCADE,
+                    FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE,
+                    FOREIGN KEY (section_id) REFERENCES sections(id) ON DELETE CASCADE,
+                    FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE,
+                    FOREIGN KEY (teacher_user_id) REFERENCES users(id),
+                    INDEX idx_cdlp_class_sec_date (class_id, section_id, teaching_date),
+                    UNIQUE KEY uk_cls_sec_sub_date (class_id, section_id, subject_id, teaching_date)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """)
+
+                # Principal Action Items (Module 4)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS principal_action_items (
+                    id VARCHAR(36) PRIMARY KEY,
+                    title VARCHAR(200) NOT NULL,
+                    description TEXT NOT NULL,
+                    category VARCHAR(50) NOT NULL DEFAULT 'ACADEMIC',
+                    assigned_to_user_id VARCHAR(36) NOT NULL,
+                    deadline DATE NOT NULL,
+                    status VARCHAR(30) NOT NULL DEFAULT 'OPEN',
+                    resolution_notes TEXT NULL,
+                    created_by_user_id VARCHAR(36) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (assigned_to_user_id) REFERENCES users(id),
+                    FOREIGN KEY (created_by_user_id) REFERENCES users(id),
+                    INDEX idx_pai_status_deadline (status, deadline)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """)
+
+                # Notebook Correction Audits (Module 4)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS notebook_correction_audits (
+                    id VARCHAR(36) PRIMARY KEY,
+                    academic_year_id VARCHAR(36) NOT NULL,
+                    class_id VARCHAR(36) NOT NULL,
+                    section_id VARCHAR(36) NOT NULL,
+                    subject_id VARCHAR(36) NOT NULL,
+                    teacher_user_id VARCHAR(36) NOT NULL,
+                    audit_date DATE NOT NULL,
+                    notebooks_checked_count INT DEFAULT 5,
+                    index_score INT NOT NULL,
+                    date_score INT NOT NULL,
+                    red_pen_correction_score INT NOT NULL,
+                    spelling_correction_score INT NOT NULL,
+                    teacher_signature_score INT NOT NULL,
+                    total_score_pct DECIMAL(5, 2) NOT NULL,
+                    auditor_user_id VARCHAR(36) NOT NULL,
+                    remarks TEXT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (academic_year_id) REFERENCES academic_years(id) ON DELETE CASCADE,
+                    FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE,
+                    FOREIGN KEY (section_id) REFERENCES sections(id) ON DELETE CASCADE,
+                    FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE,
+                    FOREIGN KEY (teacher_user_id) REFERENCES users(id),
+                    FOREIGN KEY (auditor_user_id) REFERENCES users(id),
+                    INDEX idx_nca_teacher_date (teacher_user_id, audit_date)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """)
+
                 logger.info(f"Initialized all base tables in tenant database '{db_name}'")
         finally:
             connection.close()

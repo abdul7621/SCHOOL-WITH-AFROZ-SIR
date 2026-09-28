@@ -177,3 +177,28 @@ class TimetableSlot(BaseTenantModel):
     )
 
 
+class ClassDailyLearningPlan(BaseTenantModel):
+    __tablename__ = "class_daily_learning_plans"
+
+    academic_year_id = Column(String(36), ForeignKey("academic_years.id", ondelete="CASCADE"), nullable=False, index=True)
+    class_id = Column(String(36), ForeignKey("classes.id", ondelete="CASCADE"), nullable=False, index=True)
+    section_id = Column(String(36), ForeignKey("sections.id", ondelete="CASCADE"), nullable=False, index=True)
+    subject_id = Column(String(36), ForeignKey("subjects.id", ondelete="CASCADE"), nullable=False, index=True)
+    teaching_date = Column(Date, nullable=False, index=True)
+    topic_title = Column(String(200), nullable=False)
+    learning_objectives = Column(Text, nullable=False)
+    required_materials = Column(String(500), nullable=True)
+    teacher_user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    academic_year = relationship("AcademicYear")
+    class_level = relationship("ClassLevel")
+    section = relationship("Section")
+    subject = relationship("Subject")
+    teacher = relationship("app.modules.users_rbac.models.User")
+
+    __table_args__ = (
+        UniqueConstraint("class_id", "section_id", "subject_id", "teaching_date", name="uk_cls_sec_sub_date"),
+    )
+
+
+
