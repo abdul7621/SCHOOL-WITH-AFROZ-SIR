@@ -655,6 +655,8 @@ export const ParentDashboard = () => {
             })}
           </div>
         )}
+      </div>
+
       {/* Module 2: Tomorrow's Advance Lesson & Material Checklist */}
       <div className="bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-900 rounded-2xl p-6 text-white shadow-lg space-y-4 border border-indigo-800/40">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-3">
