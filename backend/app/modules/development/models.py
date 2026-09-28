@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Boolean, Text, ForeignKey, JSON, Date, DateTime, UniqueConstraint
+from sqlalchemy import Column, String, Integer, Float, Boolean, Text, ForeignKey, JSON, Date, DateTime, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import date, datetime
 from app.shared.base_models import BaseTenantModel
